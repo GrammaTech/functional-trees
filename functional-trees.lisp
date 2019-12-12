@@ -2,11 +2,12 @@
   (:nicknames :ft/ft)
   (:use cl :alexandria :iterate)
   (:export tree tree-node data children predecessor
-           transform root path residue
+           transform root finger path residue
            path-transform from-tree to-tree
            transforms transform-finger
            transform-path var local-path
-           value)           
+           value
+           make-tree to-list)
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
 
@@ -56,7 +57,7 @@ a tree node."))
          :documentation "A list of (integer 0) values, giving paths
 from the root of TREE down to some node.")
    (residue :reader residue :initarg :residue
-            :initform (required-argument :residue)
+            :initform nil ;; (required-argument :residue)
             :type list
             :documentation "If this finger was created from another finger
 by a path-transform, some part of the path may not have been translated.
@@ -73,7 +74,7 @@ a node in the tree."))
          (node (root tree)))
     (iter (for i in path)
           (unless (typep node 'tree-node)
-            (error "Path ~a not valid for tree ~a" (path f) (tree f)))
+            (error "Path ~a not valid for tree ~a: ~a" (path f) (tree f) node))
           (let ((children (children node)))
             (unless (and (<= 0 i) (< i (length children)))
               (error "~a not a valid child index for ~a" i node))
@@ -127,7 +128,7 @@ tree to another."))
             (return
               (ecase status
                 (:live (append new-segment (subseq path (length segment))))
-                (:dead (values new-segment (subseq path (length segment)))))))
+                (:dead (values new-segment (subseq path (length new-segment)))))))
           (finally (return path)))))
 
 (defmethod transform-finger ((f finger) (tree tree))
@@ -156,13 +157,15 @@ to the value for the var.")
   (:documentation "VAR objects represent not only the value matched at a location
 in an AST, but the local path it took to get there."))
 
-(defun make-tree (list-form)
-  (let ((root (if (consp list-form)
-                  (make-instance 'tree-node
-                                 :data (car list-form)
-                                 :children (mapcar #'make-tree
-                                                   (cdr list-form))))))
-    (make-instance 'tree :root root)))
+(defun make-tree (list-form &key predecessor)
+  (make-instance 'tree :root (make-tree-node list-form)
+                 :predecessor predecessor))
+
+(defun make-tree-node (list-form)
+  (if (consp list-form)
+      (make-instance 'tree-node :data (car list-form)
+                     :children (mapcar #'make-tree-node (cdr list-form)))
+      list-form))
 
 (defgeneric to-list (node)
   (:method ((tree tree)) (to-list (root tree)))
@@ -203,6 +206,23 @@ in an AST, but the local path it took to get there."))
       (call-next-method)
       (print-unreadable-object (obj stream :type t)
         (format stream "~a ~a" (local-path obj) (value obj)))))
-        
 
-      
+;;; This expensive function is used in testing
+;;; Computes the path leading from ROOT to NODE, or
+;;; signals an error if it cannot be found.
+(defun path-of-node (root node)
+  (labels ((%search (path n)
+             (when (eql n node)
+               (return-from path-of-node (nreverse path)))
+             (typecase n
+               (tree-node
+                (iter (for i from 0)
+                      (for c in (children n))
+                      (%search (cons i path) c))))))
+    (%search nil root)
+    (error "Cannot find ~a in ~a" node root)))
+
+                           
+;;; To add: algorithm for extracting a set of transforms from
+;;; a set of rewrites (with var objects).  Also, conversion of the
+;;; transform set to a trie.
