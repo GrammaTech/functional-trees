@@ -1,0 +1,52 @@
+Ideas for functional tree data structures
+
+All objects described here are immutable.  New objects can be created,
+but existing ones cannot change.
+
+There are objects that represent pointers into a tree.  I call these
+"fingers".  A finger is associated with a specific tree.  One can use
+a finger to get to a specific node in the tree.
+
+Trees are derived from other trees
+
+Each tree has a predecessor, the tree from which it was derived
+(or none, if it is created from scratch.)
+
+A tree can be a predecessor of more than one tree.
+
+Information is retained that allows fingers for a predecessor
+tree to be turned into fingers for a successor tree.
+
+---------
+
+In the following example, S expressions represent tree nodes, in which
+the car of a list is a keyword that is the node's data, and the cdr is
+the list of children.
+
+(:a (:b) (:c (:d) (:e)))   ;; A tree with five nodes
+
+Paths through this tree are sequences of child indices, starting at 0.
+So, (:b) is at (0), (:c ...) is at (1), and (:d) is at (1 0).
+
+Consider the rewrite where (:f) is inserted between (:b) and (:c ...).
+This rewrite would be associated with the following rule for changing
+paths:  if a path starts with (1), replace that segment with (2).
+In more complex rewrites more rules can obtain, but only one will apply.
+
+These rules can be put together into a trie so translation of a finger
+from one tree to another can be performed efficiently.
+
+In doing pattern matching for rewrites, then, we not only have to
+discover the subtrees that occur at particular places in the pattern,
+we must also remember the path used to reach that pattern variable.
+When building up a new tree fragment, this information will be used
+to produce transformation rules for fingers.
+
+I anticipate we can write an SSR-like interface to do this matching
+and these writes, so it's all handled automatically.  In more detail:
+matching gives var objects, which record the (local) path to a value,
+as well as the actual value (an ast node).  The constructor then
+builds an AST in which these var objects occur as leaves.  This AST
+fragment is then walked to pull out the var objects and replace them
+with true ast nodes, while simultaneously building up the list
+of rules for transforming paths.
