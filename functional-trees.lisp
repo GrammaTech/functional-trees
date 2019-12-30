@@ -223,6 +223,6 @@ in an AST, but the local path it took to get there."))
     (error "Cannot find ~a in ~a" node root)))
 
                            
-;;; To add: algorithm for extracting a set of transforms from
+;;; To add: algorithm for extracting a  path transform from
 ;;; a set of rewrites (with var objects).  Also, conversion of the
 ;;; transform set to a trie.
