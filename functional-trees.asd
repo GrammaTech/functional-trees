@@ -23,4 +23,4 @@ from one tree to its successors"
   :description "Test the FUNCTIONAL-TREES package."
   :version "0.0.0"
   :perform
-  (test-op (o c) (symbol-call :functional-trees/test '#:run-batch)))
+  (test-op (o c) (symbol-call :functional-trees/test '#:test)))
