@@ -1,7 +1,8 @@
 (defpackage :functional-trees/test
   (:nicknames :ft/test)
   (:use :cl :functional-trees/functional-trees
-        :software-evolution-library/stefil-plus)
+        :software-evolution-library/stefil-plus
+        :iterate)
   (:export test))
 
 (in-package :ft/test)
@@ -144,14 +145,12 @@
 (deftest update-tree.2 ()
     (let* ((n1 (make-node '(:a (:b) (:c) (:d))))
            (n2 (update-tree-at-data n1 :c)))
-      (format *trace-output* "~a~%" (path-transform-of n1 n2))
       (is (not (eql n1 n2)))
       (is (equal (to-list n1) (to-list n2)))))
 
 (deftest update-tree.3 ()
     (let* ((n1 (make-node '(:a (:b) (:c) (:d))))
            (n2 (remove-nodes-if n1 (lambda (n) (eql (data n) :c)))))
-      (format *trace-output* "~a~%" (path-transform-of n1 n2))
       (is (not (eql n1 n2)))
       (is (equal (to-list n2) '(:a (:b) (:d))))
       ))
@@ -162,7 +161,27 @@
            (n2 (@ n1 '(1)))
            (n3 (@ n1 '(2)))
            (n4 (swap-nodes n1 n2 n3)))
-      (format *trace-output* "~a~%" (path-transform-of n1 n4))
       (is (not (eql n1 n4)))
       (is (equal (to-list n4) '(:a (:b) (:d) (:c))))
       ))
+
+(deftest random.1 ()
+  ;; Randomized test of path transforms
+  (iter (repeat 100)
+        (let* ((n1 (ft/ft::make-random-tree 10))
+               (n2 (ft/ft::remove-nodes-randomly n1 0.1))
+               (pt (path-transform-of n1 n2))
+               (names nil))
+          (traverse-nodes n2 (lambda (n) (push (name n) names)))
+          ;; (format t "NAMES = ~a~%" names)
+          (traverse-nodes-with-rpaths
+           n1
+           (lambda (n rpath)
+             (when (member (name n) names)
+               (let* ((f (make-instance 'finger
+                                        :node n1 :path (reverse rpath)))
+                      (n3 (@ n2 f)))
+                 ;; (format t "n = ~a~% n3 = ~a~%" n n3)
+                 (when (typep n3 'node)
+                   (is (eql (name n) (name n3))))))
+             t)))))

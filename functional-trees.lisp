@@ -10,11 +10,27 @@
            path-transform-of
            remove-nodes-if
            swap-nodes
-           make-node to-list)
+           make-node to-list
+           traverse-nodes
+           traverse-nodes-with-rpaths
+           name)
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
 
 (in-package :functional-trees/functional-trees)
+
+(deftype path ()
+  `(and list (satisfies path-p)))
+
+(defun path-p (list)
+  (every (lambda (x)
+           (typecase x
+             ((integer 0) t)
+             ((cons (integer 0)
+                    (cons integer null))
+              (<= (first x) (second x)))
+             (t nil)))
+         list))
 
 (defvar *node-name-counter* 0 "Counter used to initialize the NAME slot of nodes.")
 
@@ -25,16 +41,23 @@ finger objects"))
   ((data :reader data :initarg :data
          :initform (required-argument :data)
          :documentation "Arbitrary data")
-   (name :reader name :initarg :name :initform nil)
-   (transform :reader transform :initarg :transform
+   ;; TODO: consider replacing name with the unique ID
+   ;; given to objects in the Fset package
+   (name :reader name :initarg :name :initform nil
+         :documentation "The NAME of a node is an EQL-unique
+value used in place of EQ-ness to determine when two nodes
+are 'the same'.  No two nodes in the same tree should have the
+same name.")
+   (transform :reader transform
+              :initarg :transform
               :initform nil
-              :type (or null path-transform)
-              :documentation "If non-nil, is a PATH-TRANSFORM object
-to this node.")
+              :type (or null node path-transform)
+              :documentation "If non-nil, is either a PATH-TRANSFORM object
+to this node, or the node that led to this node.")
    (finger :reader finger
            :initform nil
-           :type (or null finger)
-           :documentation "A finger back to the root of the tree")
+           :type (or null node finger)
+           :documentation "A finger back to the root of the (a?) tree.")
    (children :reader children
              :type list
              :initarg :children
@@ -43,11 +66,19 @@ to this node.")
 which may be more nodes, or other values."))
   (:documentation "A node in a tree."))
 
+(defmethod transform :around ((n node))
+  ;; Compute the PT lazily, when TRANSFORM is a node
+  (let ((tr (call-next-method)))
+    (if (typep tr 'node)
+        (setf (slot-value n 'transform) (path-transform-of tr n))
+        tr)))
+
 (defmethod copy ((node node) &key (data (data node)) (name (name node)) (transform (transform node))
                                     (children (children node)))
   (make-instance 'node :data data :name name :transform transform :children children))
 
-
+;;; TODO: make the INCF here thread safe on SBCL, using atomic
+;;; increment. 
 (defmethod initialize-instance :after ((node node) &key &allow-other-keys)
   (unless (name node)
     (setf (slot-value node 'name) (incf *node-name-counter*))))
@@ -75,7 +106,7 @@ a node."))
   (:documentation "A wrapper for a path to get to a node"))
 
 (defmethod slot-unbound ((class t) (f finger) (slot (eql 'cache)))
-  ;; Fill in the NODE slot
+  ;; Fill in the NODE slot of finger F
   (let* ((node (node f))
          (path (path f)))
     (iter (for i in path)
@@ -96,12 +127,12 @@ a node."))
     :initform (required-argument :from))
    (transforms :initarg :transforms
                :reader transforms
-               :initform (required-argument :transforms)
                :type list
                :documentation "A list of (<path-set> <path> <status>) triples
 where <path-set> is a path set, <path> is the mapping of the initial path
 in that <path-set>, and <status> is one of :live :dead. These should be
-sorted into non-increasing order of length of <path>."))
+sorted into non-increasing order of length of <path>.  If missing, compute
+from the source/target node pair, if possible."))
   (:documentation "An object used to rewrite fingers from one
 tree to another."))
 
@@ -152,11 +183,15 @@ points through the root NODE.  NODE must be derived from the tree
 that FINGER is pointed through."))
 
 (defmethod transform-finger ((f finger) (node node) &key (error-p t))
+  (declare (ignore error-p)) ;; for now
   (let ((node-of-f (node f)))
     (labels ((%transform (x)
                (cond
                  ((eql x node-of-f) f)
                  ((null x)
+                  ;; As an alternative, create a fresh path transform
+                  ;; from the root for f to node, and use that instead
+                  ;; However, we'd want to cache that somehow.
                   (error "Cannot find path from ~a to ~a"
                          node-of-f node))
                  (t
@@ -166,20 +201,11 @@ that FINGER is pointed through."))
                      transform x))))))
       (%transform node))))
 
-(defclass var ()
-  ((local-path :initarg :local-path
-               :type list
-               :accessor local-path
-               :documentation "Path in a subtree from the root of the subtree
-to the value for the var.")
-   (value :initarg :value
-          :type t
-          :accessor value
-          :documentation "The tree node (or leaf value) matched by the variable."))
-  (:documentation "VAR objects represent not only the value matched at a location
-in an AST, but the local path it took to get there."))
-
+;;; This is an example of tree construction
+;;; 
 (defun make-tree (list-form &key name transform)
+  "Produce a tree from a list-form.  Uses MAKE-NODE for actual
+construction, then walks it filling in the PATH attributes."
   (let ((root (make-node list-form :name name :transform transform)))
     ;; Walk tree, creating fingers back to root
     (traverse-nodes-with-rpaths
@@ -187,8 +213,9 @@ in an AST, but the local path it took to get there."))
      (lambda (n rpath)
        ;; This is the only place this slot should be assigned,
        ;; which is why there's no writer method
-       (setf (slot-value n 'finger)
-             (make-instance 'finger :node root :path (reverse rpath)))
+       (unless (finger n)
+         (setf (slot-value n 'finger)
+               (make-instance 'finger :node root :path (reverse rpath))))
        n))
     root))
 
@@ -220,6 +247,7 @@ in an AST, but the local path it took to get there."))
       (values (@ node (path new-finger)) (residue new-finger))))
 
 (defgeneric to-list (node)
+  (:documentation "Convert tree rooted at NODE to list form.")
   (:method ((finger finger))
     (to-list (cache finger)))
   (:method ((node node))
@@ -248,12 +276,6 @@ in an AST, but the local path it took to get there."))
         (format stream "~a ~a"
                 (transforms obj) (from obj)))))
 
-(defmethod print-object ((obj var) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a" (local-path obj) (value obj)))))
-
 ;;; This expensive function is used in testing
 ;;; Computes the path leading from ROOT to NODE, or
 ;;; signals an error if it cannot be found.
@@ -275,8 +297,8 @@ in an AST, but the local path it took to get there."))
 ;;; transform set to a trie.
 
 (defun traverse-nodes (root fn)
-  ;; Apply FN at every node below ROOT, in preorder, left to right
-  ;; If FN returns NIL, stop traversal below this point.  Returns NIL.
+  "Apply FN at every node below ROOT, in preorder, left to right
+   If FN returns NIL, stop traversal below this point.  Returns NIL."
   (labels ((%traverse (node)
              (when (and (typep node 'node)
                         (funcall fn node))
@@ -285,7 +307,10 @@ in an AST, but the local path it took to get there."))
     nil))
 
 (defun traverse-nodes-with-rpaths (root fn)
-  ;; Like TRAVERSE-NODES, but pass a rpath to FN as well as the node
+  "Apply FN at every node below ROOT, in preorder, left to right.
+   Also pass to FN a list of indexes that is the reverse of the
+   path from ROOT to the node.  If FN returns NIL, stop traversal
+   below this point.  Returns NIL."
   (labels ((%traverse (node rpath)
              (when (and (typep node 'node)
                         (funcall fn node rpath))
@@ -349,19 +374,8 @@ below ROOT and produce a valid tree."))
        t))
     t))
 
-(defgeneric implant (root path new-node)
-  (:documentation "Implants NEW-NODE at location PATH in tree rooted at ROOT"))
-
-(defgeneric path-transform-of (from-node to-node)
-  (:documentation "Produce a path transform that maps FROM-NODE to TO-NODE"))
-
-(defstruct pto-data
-  from
-  to
-  from-path
-  to-path)
-
 (defun lexicographic-< (list1 list2)
+  "Lexicographic comparison of lists of reals"
   (loop (cond
           ((null list1)
            (return (not (null list2))))
@@ -374,6 +388,7 @@ below ROOT and produce a valid tree."))
            (pop list2)))))
 
 (defun prefix? (p1 p2)
+  "True if list P1 is a prefix of P2"
   (loop (cond
           ((null p1) (return t))
           ((null p2) (return nil))
@@ -382,13 +397,27 @@ below ROOT and produce a valid tree."))
            (pop p2))
           (t (return nil)))))
 
+(defgeneric path-transform-of (from-node to-node)
+  (:documentation "Produce a path transform that maps FROM-NODE to TO-NODE"))
+
+;;; Structure used in computation of path-transform-of
+(defstruct pto-data
+  ;; Node in the source tree
+  from
+  ;; Node in the target tree
+  to
+  ;; Path from root of source tree to FROM node
+  from-path
+  ;; Path from root of target tree to TO node
+  to-path)
+
 (defmethod path-transform-of ((from node) (to node))
   (let ((table (make-hash-table)))
     (traverse-nodes-with-rpaths
      from
      (lambda (n rpath)
        (setf (gethash (name n) table) (make-pto-data :from n :from-path (reverse rpath)))))
-    (format t "Table (1): ~a~%" table)
+    #+debug (format t "Table (1): ~a~%" table)
     ;; Now find nodes that are shared
     (traverse-nodes-with-rpaths
      to
@@ -404,18 +433,18 @@ below ROOT and produce a valid tree."))
     (let (mapping)
       (maphash (lambda (n pd)
                  (declare (ignorable n))
-                 (format t "Maphash ~a, ~a~%" n pd)
+                 #+debug (format t "Maphash ~a, ~a~%" n pd)
                  (when (pto-data-to pd)
                    (push
                     (list (pto-data-from-path pd)
                           (pto-data-to-path pd))
                     mapping)))
                table)
-      (format t "Mapping:~%~A~%" mapping)
+      #+debug (format t "Mapping:~%~A~%" mapping)
       ;; Mapping is now a list of (<old path> <new path>) lists
       ;; Sort this into increasing order of <old path>, lexicographically
       (setf mapping (sort mapping #'lexicographic-< :key #'car))
-      (format t "Sorted mapping:~%~A~%" mapping)
+      #+debug (format t "Sorted mapping:~%~A~%" mapping)
 
       (let ((sorted-result (path-transform-compress-mapping mapping)))
         (make-instance
@@ -424,7 +453,11 @@ below ROOT and produce a valid tree."))
          :transforms (mapcar (lambda (p) (append p (list :live)))
                              sorted-result))))))
 
+;;; TODO: enhance this compression so that paths that differ
+;;; only in the final index are compressed into "range" paths.
 (defun path-transform-compress-mapping (mapping)
+  "Internal function used to remove redundancy from a set
+   of path mappings."
   (let (stack result)
     (iter (for (old new) in mapping)
           (iter (until (or (null stack)
@@ -440,7 +473,7 @@ below ROOT and produce a valid tree."))
                     nil
                     ;; Otherwise, push a new entry
                     (push (list old new) stack)))))
-    (stable-sort (revappend stack result) #'> :key #'length)))
+    (stable-sort (revappend stack result) #'> :key #'(lambda (x) (length (car x))))))
 
 (defgeneric compare-nodes (node1 node2)
   (:documentation "Check that two nodes are the same tree")
@@ -451,7 +484,6 @@ below ROOT and produce a valid tree."))
            (and (eql (length c1) (length c2))
                 (every #'compare-nodes c1 c2)))))
   (:method (node1 node2) (equal node1 node2)))
-
 
 (defun update-tree (node fn)
   "Traverse tree rooted at NODE, in postorder, calling
@@ -467,12 +499,11 @@ names.)"
                    (setf n (copy n :children new-c)))
                  (funcall fn n))
                n)))
-    (%traverse node)))
+    (copy (%traverse node) :transform node)))
 
 (defun update-tree-at-data (node data)
   "Cause nodes with DATA to be copied (and all ancestors)"
   (update-tree node (lambda (n) (if (eql (data n) data) (copy n) n))))
-
 
 (defun remove-nodes-if (node fn)
   "Remove nodes/leaves for which FN is true"
