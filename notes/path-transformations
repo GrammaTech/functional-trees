@@ -1,0 +1,150 @@
+Notes on algebras of path transformations in trees
+
+Things:  Node, Leaf, Path, PathTransform, Name
+
+Each tree corresponds to a set of paths, and data associated with the
+termination of each path.  Each path is a directed sequence of nodes from
+the root of the tree.
+
+Each node of a tree has an associate name.  The names of nodes in a tree
+are distinct.
+
+Functions:
+
+name: Node -> Name
+children: Node -> List[Node]
+
+Path: List[Natural]
+
+source: PathTransform -> Node
+dest: PathTransform -> Node
+
+apply: PathTransform x Path -> Path
+compose: PathTransform x PathTransform -> PathTransform
+
+is-prefix: Path x Path -> Bool
+
+path-to: Node x Node -> Path | None
+
+implant: Node x Path x Node -> Node
+  Implant the third argument at the place under the first
+  given by Path.  Create new nodes from that root to the implanted
+  node.
+
+implant-transform:  Node x Path x Node -> PathTransform
+  The path transform associated with an implant operation
+
+path-transform-of: Node x Node -> PathTransform
+  Between any two valid trees we can construct a path transform
+  This is not necessarily a good way to build a path transform
+
+(defmethod nodes-at ((node Node))
+  ;; bag of nodes at or below node
+  (apply #'bag-union (bag node)
+         (mapcar #'nodes-at (children node))))
+
+A Node is valid if:
+
+(defmethod node-valid ((node Node))
+  ;; No name occurs in the subtree rooted at node
+  ;; more than once
+  ;; this also implies no Node occurs in the subtree
+  ;; rooted at node more than once
+  (notany (lambda (n) (> (bag-count n) 1))
+          (bag-map #'name (nodes-at node))))
+
+A Path is valid at a node if:
+
+(defmethod path-valid ((path Path) (node Node))
+  (or (null path)
+      (let ((i (first path)))
+        (and (< i (length (children node)))
+             (path-value (rest path)
+                         (elt (children node) i))))))
+
+(defmethod path-dest ((path Path) (node Node))
+  "Defined iff (path-valid path node)"
+  (if (null path)
+      node
+      (path-dest (rest path) (elt (children node) (first path)))))
+
+In the following, free variables are universally quantified
+with the appropriate types.
+
+Axiom for path transforms:
+
+(implies
+  (and (path-valid p (source pt))
+       (path-valid (apply pt p) (destination pt)))
+  (equal (name (path-dest p (source pt)))
+         (name (path-dest (apply pt p) (dest pt)))))
+
+Node uniqueness axiom:
+
+(implies (and (path-valid path1 node)
+              (path-valid path2 node)
+              (equal (path-dest path1 node) (path-dest path2 node)))
+   (equal path1 path2))
+
+Path transform composition axiom:
+
+(implies (and (equal (dest pt1) (source pt2))
+              (path-valid path (source pt1))
+              (path-value (apply pt1 path) (source pt2)))
+   (equal (apply pt2 (apply pt1 path))
+          (apply (compose pt2 pt1) path)))
+
+
+Path-To:
+
+(iff (equal (path-dest path n1) n2)
+     (equal (path-to n1 n2) path))
+
+(iff (not (exists (path) (equal (path-dest path n1) n2)))
+     (equal (path-to n1 n2) none))
+
+Implant:
+
+Path above new node is new
+
+(implies (and (prefix path2 path1)
+              (not (equal path2 path1))
+              (path-valid path1 node1)
+              (path-valid path2 node1)
+              ;; Need condition that node2 is not already
+              ;; overlapping tree under node1, except perhaps
+              ;; (path-dest path1 node1)
+              )
+  (not (equal (path-dest path2 node1)
+              (path-dest path2 (implant node1 path1 node2)))))
+
+Tree at and below implement point is the implanted tree
+
+(implies (and (prefix path1 path2)
+              (path-valid (suffix path1 path2) node2))
+   (and (path-valid path2 (implant node1 path1 node2))
+        (equal (path-dest (suffix path1 path2) node2)
+               (path-dest path2 (implant node1 path1 node2)))))
+
+path-transform-of:
+
+(equal (source (path-transform-of node1 node2) node1))
+(equal (dest (path-transform-of node1 node2) node2))
+
+;; Not sure if this is correct?
+(implies (and (path-valid path node1)
+              (path-valid (apply (path-transform-of node1 node2) path)))
+   (equal (name (path-dest path node1))
+          (name (path-dest (apply (path-transform-of node1 node2) path)
+          node2))))
+
+(implies (and
+            (path-valid path1 node1)
+            (path-valid path2 node1)
+            (equal (name (path-dest path1 node1))
+                   (name (path-dest path2 node2))))
+   (equal path2 (apply (path-transform-of node1 node2) path1)))             
+
+(defmethod implant-transform ((node1 Node) (path Path) (node2 Node))
+   (path-transform-of node1 (implant node1 path1 node2)))
+
