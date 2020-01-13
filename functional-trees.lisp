@@ -35,7 +35,6 @@ to this node.")
            :initform nil
            :type (or null finger)
            :documentation "A finger back to the root of the tree")
-   ;; Should also have a ROOT object
    (children :reader children
              :type list
              :initarg :children
