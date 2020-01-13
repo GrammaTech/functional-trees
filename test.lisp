@@ -3,6 +3,10 @@
   (:use :cl :functional-trees/functional-trees
         :software-evolution-library/stefil-plus
         :iterate)
+  (:import-from :functional-trees/functional-trees
+                :make-random-tree
+                :remove-nodes-randomly
+                :path-of-node)
   (:export test))
 
 (in-package :ft/test)
@@ -167,9 +171,9 @@
 
 (deftest random.1 ()
   ;; Randomized test of path transforms
-  (iter (repeat 100)
-        (let* ((n1 (ft/ft::make-random-tree 10))
-               (n2 (ft/ft::remove-nodes-randomly n1 0.1))
+  (iter (repeat 50)
+        (let* ((n1 (make-random-tree 20))
+               (n2 (remove-nodes-randomly n1 0.1))
                (pt (path-transform-of n1 n2))
                (names nil))
           (traverse-nodes n2 (lambda (n) (push (name n) names)))
@@ -185,3 +189,14 @@
                  (when (typep n3 'node)
                    (is (eql (name n) (name n3))))))
              t)))))
+
+(deftest random.2 ()
+  (let ((root (make-random-tree 20)))
+    (traverse-nodes-with-rpaths
+     root
+     (lambda (n rpath)
+       (let ((p (reverse rpath)))
+         (is (eql (@ root p) n))
+         (is (equal (path-of-node root n) p)))
+       t))))
+
