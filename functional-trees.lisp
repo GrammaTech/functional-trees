@@ -382,10 +382,11 @@ below ROOT and produce a valid tree."))
           ((null list2)
            (return nil))
           ((<= (car list1) (car list2))
-           (return (< (car list1) (car list2))))
-          (t
+           (when (< (car list1) (car list2))
+             (return t))
            (pop list1)
-           (pop list2)))))
+           (pop list2))
+          (t (return nil)))))
 
 (defun prefix? (p1 p2)
   "True if list P1 is a prefix of P2"
@@ -552,7 +553,7 @@ bucket getting at least 1.  Return as a list."
       ((< size 1)
        (error "SIZE should be a positive number: ~a" size))
       ((= size 1))
-      ((> size 1)
+      (t ;; (> size 1)
        (let* ((n-children (1+ (random (min child-bound (1- size)))))
               (child-sizes (random-partition (1- size) n-children)))
          (setf children (mapcar #'make-random-tree child-sizes)))))

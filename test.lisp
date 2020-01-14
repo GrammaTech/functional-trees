@@ -4,15 +4,29 @@
         :software-evolution-library/stefil-plus
         :iterate)
   (:import-from :functional-trees/functional-trees
+                :copy :finger :make-tree
                 :make-random-tree
                 :remove-nodes-randomly
-                :path-of-node)
+                :path-of-node
+                :path :path-p :node-valid
+                :nodes-disjoint
+                :lexicographic-<)
   (:export test))
 
 (in-package :ft/test)
 
 (defroot test)
 (defsuite ft-tests "Functional tree tests")
+
+(deftest lexicographic-<.1 ()
+  (is (not (lexicographic-< nil nil)))
+  (is (not (lexicographic-< '(1) nil)))
+  (is (not (lexicographic-< '(1) '(0))))
+  (is (not (lexicographic-< '(1 2 3 0) '(1 2 3))))
+  (is (not (lexicographic-< '(1) '(1))))
+  (is (lexicographic-< nil '(1)))
+  (is (lexicographic-< '(0) '(1)))
+  (is (lexicographic-< '(1 2 3) '(1 2 3 0))))
 
 (deftest make-node.1 ()
   (is (not (make-node nil)))
@@ -169,11 +183,67 @@
       (is (equal (to-list n4) '(:a (:b) (:d) (:c))))
       ))
 
+(deftest path-p.1 ()
+  (is (path-p '()))
+  (is (path-p '((1 2))))
+  (is (not (path-p '((2 1)))))
+  (is (path-p '(0 1 2)))
+  (is (not (path-p '(-1))))
+  (is (not (path-p '(-1 1)))))
+
+(deftest path.1 ()
+  (is (typep '() 'path))
+  (is (typep '((1 2)) 'path))
+  (is (not (typep '((2 1)) 'path)))
+  (is (typep '(0 1 2) 'path))
+  (is (not (typep '(-1) 'path)))
+  (is (not (typep '(-1 1) 'path))))
+
+(deftest node-valid.1 ()
+  (is (node-valid (make-node '(:a))))
+  (is (node-valid (make-node '(:a (:a) (:b)))))
+  (is (not (node-valid
+            (let ((n (make-node '(:a))))
+              (make-node `(:b ,n ,n)))))))
+
+(deftest nodes-disjoint.1 ()
+  (is (nodes-disjoint (make-node '(:a)) (make-node '(:b))))
+  (is (nodes-disjoint (make-node '(:a)) (make-node '(:a))))
+  (is (nodes-disjoint (make-node '(:a (:b))) (make-node '(:a (:b)))))
+  (let ((n (make-node '(:a))))
+    (is (not (nodes-disjoint n n))))
+  (let ((n (make-node '(:a))))
+    (is (not (nodes-disjoint (make-node `(:b ,n))
+                             (make-node `(:c ,n))))))
+  (let* ((n (make-node '(:a)))
+         (n2 (copy n :data :b)))
+    (is (not (nodes-disjoint (make-node `(:c ,n))
+                             (make-node `(:d ,n2)))))))
+
+(deftest print.1 ()
+  (let ((*print-readably* nil)
+        (n1 (make-node '(:a)))
+        (t1 (make-tree '(:a))))
+    (is (stringp (with-output-to-string (s) (prin1 (make-node '(:a))))))
+    (is (stringp (with-output-to-string (s) (prin1 (path-transform-of n1 n1)))))
+    (is (stringp (with-output-to-string (s) (prin1 (finger t1)))))))
+
+(deftest print.2 ()
+  (let ((*print-readably* t)
+        (n1 (make-node '(:a)))
+        (t1 (make-tree '(:a))))
+    (flet ((%e (v)
+             (handler-case (progn (prin1 v) nil)
+               (error () t))))
+    (is (%e (make-node '(:a))))
+    (is (%e (path-transform-of n1 n1)))
+    (is (%e (finger t1))))))
+
 (deftest random.1 ()
   ;; Randomized test of path transforms
   (iter (repeat 50)
         (let* ((n1 (make-random-tree 20))
-               (n2 (remove-nodes-randomly n1 0.1))
+               (n2 (remove-nodes-randomly n1 0.2))
                (pt (path-transform-of n1 n2))
                (names nil))
           (traverse-nodes n2 (lambda (n) (push (name n) names)))
@@ -196,6 +266,8 @@
      root
      (lambda (n rpath)
        (let ((p (reverse rpath)))
+         (is (path-p p))
+         (is (typep p 'path))
          (is (eql (@ root p) n))
          (is (equal (path-of-node root n) p)))
        t))))
