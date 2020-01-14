@@ -10,7 +10,8 @@
                 :path-of-node
                 :path :path-p :node-valid
                 :nodes-disjoint
-                :lexicographic-<)
+                :lexicographic-<
+                :compare-nodes)
   (:export test))
 
 (in-package :ft/test)
@@ -219,6 +220,28 @@
          (n2 (copy n :data :b)))
     (is (not (nodes-disjoint (make-node `(:c ,n))
                              (make-node `(:d ,n2)))))))
+
+;;; Note that COMPARE-NODES is comparing by name, not by data
+(deftest compare-nodes.1 ()
+  (is (compare-nodes nil nil))
+  (is (compare-nodes 1 1))
+  (is (compare-nodes '(1) '(1)))
+  (is (not (compare-nodes 1 2)))
+  (let ((n (make-node '(:a))))
+    (is (compare-nodes n n))
+    (is (compare-nodes n (copy n :data :b)))
+    (is (not (compare-nodes n (make-node '(:a)))))
+    (is (not (compare-nodes n (make-node '(:a (:b))))))
+    (is (not (compare-nodes n (copy n :children (list (make-node '(:b))))))))
+  (let ((n (make-node '(:a (:b)))))
+    (is (compare-nodes n
+                       (copy n
+                             :children
+                             (list (copy (car (children n))
+                                         :data :c)))))
+    (is (not (compare-nodes n
+                            (copy n :children (list (make-node '(:c)))))))))
+  
 
 (deftest print.1 ()
   (let ((*print-readably* nil)
