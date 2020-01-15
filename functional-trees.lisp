@@ -464,14 +464,19 @@ below ROOT and produce a valid tree."))
    of path mappings."
   (let (stack result)
     (iter (for (old new) in mapping)
+          #+debug
+          (progn 
+            (format t "(old new) = ~a~%" (list old new))
+            (format t "stack = ~a~%" stack)
+            (format t "result = ~a~%" result))
           (iter (until (or (null stack)
                            (prefix? (caar stack) old)))
                 (push (pop stack) result))
           (if (null stack)
               (push (list old new) stack)
               (let ((len (length (caar stack))))
-                (if (equal (subseq old len)
-                           (subseq new len))
+                (if (and (prefix? (caar stack) old)
+                         (equal new (append (cadr stack) (subseq old len))))
                     ;; This rewrite is subsumed by
                     ;; the one on the stack -- do nothing
                     nil

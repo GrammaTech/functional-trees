@@ -13,7 +13,8 @@
                 :nodes-disjoint
                 :lexicographic-<
                 :compare-nodes
-                :node-can-implant)
+                :node-can-implant
+                :path-transform-compress-mapping)
   (:export test))
 
 (in-package :ft/test)
@@ -355,8 +356,18 @@
        t))))
 
 (deftest random.3 ()
-  (is (equal (random-test 7 50 (lambda (n)
-                                 (iter (repeat (1+ (random 1)))
+  (is (equal (random-test 7 1000 (lambda (n)
+                                 (iter (repeat (1+ (random 2)))
                                        (setf n (swap-random-nodes n)))
                                  n))
              nil)))
+
+(deftest path-transform-compress-mapping.1 ()
+  (let ((mapping '((NIL NIL) ((0) (2 0)) ((1) (0 1)) ((2) (2)) ((2 0) (0)) ((2 0 1) (1)))))
+    ;; Not right
+    (is (equal (path-transform-compress-mapping mapping)
+               '(((2 0 1) (1))
+                 ((2 0) (0))
+                 ((1) (0 1))
+                 ((0) (2 0))
+                 (nil nil))))))
