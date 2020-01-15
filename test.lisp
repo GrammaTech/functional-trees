@@ -7,11 +7,13 @@
                 :copy :finger :make-tree
                 :make-random-tree
                 :remove-nodes-randomly
+                :swap-random-nodes
                 :path-of-node
                 :path :path-p :node-valid
                 :nodes-disjoint
                 :lexicographic-<
-                :compare-nodes)
+                :compare-nodes
+                :node-can-implant)
   (:export test))
 
 (in-package :ft/test)
@@ -184,6 +186,33 @@
       (is (equal (to-list n4) '(:a (:b) (:d) (:c))))
       ))
 
+(deftest @.error ()
+  (is (handler-case (progn (@ (make-node '(:a)) '(:bad)) nil)
+        (error () t)))
+  (is (handler-case (progn (@ (make-node '(:a)) '(-1)) nil)
+        (error () t)))
+  (is (handler-case (progn (@ (make-node '(:a (:b))) '(1)) nil)
+        (error () t))))
+
+(deftest path-of-node.1 ()
+  (let ((n1 (make-node '(:a)))
+        (n2 (make-node '(:a (:b) (:b (:c) (:d) (:e)) (:d)))))
+    (is (handler-case (progn (path-of-node n2 n1) nil)
+          (error () t)))
+    (is (equal (path-of-node n2 (second (children n2))) '(1)))
+    (is (equal (path-of-node n1 n1) nil))
+    (is (equal (path-of-node n2 (third (children (second (children n2)))))
+               '(1 2)))))
+
+(deftest node-can-implant.1 ()
+  (let* ((n1 (make-node '(:a (:b) (:b (:c) (:d) (:e)) (:d))))
+         (n2 (second (children n1)))
+         (n3 (third (children n1))))
+    (is (node-can-implant n1 n1 n1))
+    (is (node-can-implant n1 n2 n2))
+    (is (not (node-can-implant n1 n2 n1)))
+    (is (not (node-can-implant n1 n2 n3)))))
+
 (deftest path-p.1 ()
   (is (path-p '()))
   (is (path-p '((1 2))))
@@ -247,9 +276,9 @@
   (let ((*print-readably* nil)
         (n1 (make-node '(:a)))
         (t1 (make-tree '(:a))))
-    (is (stringp (with-output-to-string (s) (prin1 (make-node '(:a))))))
-    (is (stringp (with-output-to-string (s) (prin1 (path-transform-of n1 n1)))))
-    (is (stringp (with-output-to-string (s) (prin1 (finger t1)))))))
+    (is (stringp (with-output-to-string (s) (prin1 (make-node '(:a)) s))))
+    (is (stringp (with-output-to-string (s) (prin1 (path-transform-of n1 n1) s))))
+    (is (stringp (with-output-to-string (s) (prin1 (finger t1) s))))))
 
 (deftest print.2 ()
   (let ((*print-readably* t)
@@ -262,26 +291,56 @@
     (is (%e (path-transform-of n1 n1)))
     (is (%e (finger t1))))))
 
-(deftest random.1 ()
-  ;; Randomized test of path transforms
-  (iter (repeat 50)
-        (let* ((n1 (make-random-tree 20))
-               (n2 (remove-nodes-randomly n1 0.2))
+(defun random-test (size reps mutate-fn)
+  (iter (repeat reps)
+        (let* ((n1 (make-random-tree size))
+               (n2 (funcall mutate-fn n1))
                (pt (path-transform-of n1 n2))
                (names nil))
-          (traverse-nodes n2 (lambda (n) (push (name n) names)))
-          ;; (format t "NAMES = ~a~%" names)
-          (traverse-nodes-with-rpaths
-           n1
-           (lambda (n rpath)
-             (when (member (name n) names)
-               (let* ((f (make-instance 'finger
-                                        :node n1 :path (reverse rpath)))
-                      (n3 (@ n2 f)))
-                 ;; (format t "n = ~a~% n3 = ~a~%" n n3)
-                 (when (typep n3 'node)
-                   (is (eql (name n) (name n3))))))
-             t)))))
+          (handler-case
+              (progn
+                (traverse-nodes n2 (lambda (n) (push (name n) names)))
+                ;; (format t "NAMES = ~a~%" names)
+                (traverse-nodes-with-rpaths
+                 n1
+                 (lambda (n rpath)
+                   (when (member (name n) names)
+                     (let* ((f (make-instance 'finger
+                                              :node n1 :path (reverse rpath)))
+                            (n3 (@ n2 f)))
+                       ;; (format t "n = ~a~% n3 = ~a~%" n n3)
+                       (when (typep n3 'node)
+                         (unless (eql (name n) (name n3))
+                           (return-from random-test (list n1 n2 n3 n (name n) (name n3)))))))
+                   t)))
+            (error (e)
+              (return-from random-test
+                (list n1 n2 pt e))))))
+  nil)
+
+(deftest swap.1 ()
+  (let* ((l1 '(:i 17 17 (:d 26) (:m (:b 54 84))))
+         (n1 (make-node l1))
+         (n2 (@ n1 '(2)))
+         (n3 (@ n1 '(3 0)))
+         (n4 (swap-nodes n1 n2 n3)))
+    (is (equal (transform n1) nil))
+    (is (typep (transform n4) 'path-transform))
+    (is (equal (to-list n1) l1))
+    (is (equal (to-list n2) '(:d 26)))
+    (is (equal (to-list n3) '(:b 54 84)))
+    (is (equal (to-list n4) '(:i 17 17 (:b 54 84) (:m (:d 26)))))
+    (let ((f1 (make-instance 'finger :node n1 :path '(2))))
+      ;; (format t "(@ n4 f1) ==> ~a~%" (@ n4 f1))
+      ;; (format t "n2 ==> ~a~%" n2)
+      (is (equal (name (@ n4 f1)) (name n2))))
+    (let ((f2 (make-instance 'finger :node n1 :path'(3 0))))
+      (is (equal (name (@ n4 f2)) (name n3))))
+    ))
+
+(deftest random.1 ()
+  ;; Randomized test of path transforms
+  (is (equal (random-test 20 50 (lambda (n) (remove-nodes-randomly n 0.2))) nil)))
 
 (deftest random.2 ()
   (let ((root (make-random-tree 20)))
@@ -295,3 +354,9 @@
          (is (equal (path-of-node root n) p)))
        t))))
 
+(deftest random.3 ()
+  (is (equal (random-test 7 50 (lambda (n)
+                                 (iter (repeat (1+ (random 1)))
+                                       (setf n (swap-random-nodes n)))
+                                 n))
+             nil)))

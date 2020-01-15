@@ -172,9 +172,12 @@ tree to another."))
                         collect (if (consp i)
                                     (+ init (- p (car i)))
                                     init))))
-                (ecase status
-                  (:live (append new-segment (subseq path (length segment))))
-                  (:dead (values new-segment (subseq path (length new-segment))))))))
+                (if (< len (length new-initial-segment))
+                    (append new-segment (subseq new-initial-segment len)
+                            (subseq path (length segment)))
+                    (ecase status
+                      (:live (append new-segment (subseq path (length segment))))
+                      (:dead (values new-segment (subseq path (length new-segment)))))))))
           (finally (return path)))))
 
 (defgeneric transform-finger (finger node &key error-p)
@@ -236,9 +239,9 @@ construction, then walks it filling in the PATH attributes."
       (unless (typep i '(integer 0))
         (error "Not a valid path index: ~a" i))
       (let* ((c (children node)))
-        (iter (while (> i 0))
-              (unless c (error "Path index too large: ~a (must be < ~a)"
+        (iter (unless c (error "Path index too large: ~a (must be < ~a)"
                                (car path) (- (car path) i)))
+              (while (> i 0))
               (pop c)
               (decf i))
         (@ (car c) (cdr path)))))
@@ -497,7 +500,9 @@ names.)"
                (let* ((c (children n))
                       (new-c (mapcar #'%traverse c)))
                  (unless (every #'eql c new-c)
-                   (setf n (copy n :children new-c)))
+                   (let ((new-n (copy n :children new-c)))
+                     (assert (eql (name n) (name new-n)))
+                     (setf n (copy n :children new-c))))
                  (funcall fn n))
                n)))
     (copy (%traverse node) :transform node)))
@@ -522,14 +527,35 @@ names.)"
   (assert (typep p '(real 0)))
   (remove-nodes-if root (lambda (n) (declare (ignore n)) (<= (random 1.0) p))))
 
+;; This fails if NODE1 is an ancestor of NODE2, or
+;; vice versa
 (defun swap-nodes (root node1 node2)
   (update-tree
    root
    (lambda (n)
      (cond
-       ((eql (data n) (data node1)) node2)
-       ((eql (data n) (data node2)) node1)
+       ((eql (name n) (name node1)) node2)
+       ((eql (name n) (name node2)) node1)
        (t n)))))
+
+(defun swap-random-nodes (root)
+  (let ((node1 (random-node root))
+        (node2 (random-node root)))
+    (if (or (is-ancestor-of node1 node2)
+            (is-ancestor-of node2 node1))
+        root
+        (swap-nodes root node1 node2))))
+
+(defun random-node (root)
+  (let ((nodes nil))
+    (traverse-nodes root (lambda (n) (push n nodes)))
+    (elt nodes (random (length nodes)))))
+
+(defun is-ancestor-of (node1 node2)
+  (traverse-nodes node1 (lambda (n) (when (eql n node2)
+                                      (return-from is-ancestor-of t))
+                                t))
+  nil)
 
 (defun random-partition (n m)
   "Partition N into M buckets, randomly, with each
