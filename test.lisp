@@ -293,6 +293,11 @@
     (is (%e (finger t1))))))
 
 (defun random-test (size reps mutate-fn)
+  "For REPS repetitions, generate a random tree of size
+SIZE, mutate it with MUTATE-FN, then check that the path
+transform from the former to the latter correctly maps
+paths to the right nodes.  Return NIL on success or
+diagnostic information on error or failure."
   (iter (repeat reps)
         (let* ((n1 (make-random-tree size))
                (n2 (funcall mutate-fn n1))
@@ -341,29 +346,39 @@
 
 (deftest random.1 ()
   ;; Randomized test of path transforms
-  (is (equal (random-test 20 50 (lambda (n) (remove-nodes-randomly n 0.2))) nil)))
+  (is (equal (random-test 20 200 (lambda (n) (remove-nodes-randomly n 0.2))) nil)))
 
 (deftest random.2 ()
-  (let ((root (make-random-tree 20)))
-    (traverse-nodes-with-rpaths
-     root
-     (lambda (n rpath)
-       (let ((p (reverse rpath)))
-         (is (path-p p))
-         (is (typep p 'path))
-         (is (eql (@ root p) n))
-         (is (equal (path-of-node root n) p)))
-       t))))
+  (let ((result :pass)
+        (size 50))
+    (iter (repeat 1000)
+          (let ((root (make-random-tree size)))
+            (traverse-nodes-with-rpaths
+             root
+             (lambda (n rpath)
+               (let ((p (reverse rpath)))
+                 (macrolet ((is (e)
+                              `(unless ,e
+                                 (setf result (list :fail ',e p n root))
+                                 (return))))
+                   (is (path-p p))
+                   (is (typep p 'path))
+                   (is (eql (@ root p) n))
+                   (is (equal (path-of-node root n) p))))
+               t))))
+      (is (equal result :pass))))
 
 (deftest random.3 ()
   (is (equal (random-test 20 1000 (lambda (n)
-                                 (iter (repeat (1+ (random 4)))
-                                       (setf n (swap-random-nodes n)))
-                                 n))
+                                    (iter (repeat (1+ (random 4)))
+                                          (setf n (swap-random-nodes n)))
+                                    n))
              nil)))
 
 (deftest path-transform-compress-mapping.1 ()
-  (let ((mapping '((NIL NIL) ((0) (2 0)) ((1) (0 1)) ((2) (2)) ((2 0) (0)) ((2 0 1) (1)))))
+  (let ((mapping '((nil nil) ((0) (2 0)) ((1) (0 1))
+                   ((2) (2)) ;; This is dominated by (nil nil)
+                   ((2 0) (0)) ((2 0 1) (1)))))
     (is (equal (path-transform-compress-mapping mapping)
                '(((2 0 1) (1))
                  ((2 0) (0))
