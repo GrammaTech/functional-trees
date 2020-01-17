@@ -1,5 +1,5 @@
 (defpackage :functional-trees/functional-trees
-  (:nicknames :ft/ft)
+  (:nicknames :ft/ft :functional-trees :ft)
   (:use cl :alexandria :iterate)
   (:export data children predecessor
            transform root finger path residue
