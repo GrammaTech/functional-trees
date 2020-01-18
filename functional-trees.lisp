@@ -13,7 +13,8 @@
            make-node to-list
            traverse-nodes
            traverse-nodes-with-rpaths
-           name)
+           name
+           copy)
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
 

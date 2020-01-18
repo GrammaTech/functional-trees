@@ -20,20 +20,6 @@
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
 
-(defmacro do-tree ((var tree &key (path nil pathp)) &body body)
-  ;; ((var seq
-  ;;       &key (start nil start?) (end nil end?) (from-end? nil from-end??)
-  ;;       (index nil index?) (value nil))
-  ;;  &body body)
-  (with-gensyms (stack current)
-    `(let ((,stack (list ,tree)))
-       (iterate (for ,current = (pop ,stack))
-                (for ,var = (data ,current))
-                ,@(when pathp `((for ,path = (finger ,current))))
-                (while ,stack)
-                (collect ,@body)
-                (push (children ,current) ,stack)))))
-
 
 ;;; Useful replacement function, not specific to FT or FSET.
 (defgeneric substitute-when (predicate sequence)
@@ -81,5 +67,46 @@ If secondary return value of PREDICATE is non-nil force substitution
   (apply #'count-if-not predicate (flatten (to-list node)) rest))
 
 (defmethod position (item (node node) &key (test #'equalp) &allow-other-keys)
-  (do-tree (current node :path location)
-    (when (funcall test item current) (return location))))
+  (position-if (curry (coerce test 'function) item) node))
+
+(defmethod position-if (predicate (node node) &key &allow-other-keys)
+  (labels ((position- (predicate node path)
+             (if (typep node 'node)
+                 (if (funcall predicate (data node))
+                     (return-from position-if (nreverse path))
+                     (mapcar (lambda (child index)
+                               (position- predicate child (cons index path)))
+                             (children node)
+                             (iota (length (children node)))))
+                 (when (funcall predicate node)
+                   (return-from position-if (nreverse path))))))
+    (position- (coerce predicate 'function) node nil)))
+
+(defmethod position-if-not (predicate (node node) &key &allow-other-keys)
+  (position-if (cl:complement predicate) node))
+
+(defmethod remove (item (node node) &key (test #'equalp) &allow-other-keys)
+  (remove-if (curry (coerce test 'function) item) node))
+
+(defmethod remove-if (predicate (node node) &key &allow-other-keys)
+  (labels
+      ((remove- (predicate node)
+         (if (typep node 'node)
+             (if (funcall predicate (data node))
+                 (values nil t)
+                 (let* ((modifiedp nil)
+                        (new-children
+                         (mappend
+                          (lambda (child)
+                            (multiple-value-bind (new was-modified-p)
+                                (remove- predicate child)
+                              (when was-modified-p (setf modifiedp t))
+                              new))
+                          (children node))))
+                   (if (not modifiedp)
+                       (values (list node) nil)
+                       (values (list (copy node :children new-children)) t))))
+             (if (funcall predicate node)
+                 (values nil t)
+                 (values (list node) nil)))))
+    (car (remove- (coerce predicate 'function) node))))
