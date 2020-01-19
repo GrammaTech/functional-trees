@@ -2,8 +2,6 @@
   (:nicknames :ft/fset)
   (:use cl :alexandria :iterate :functional-trees :fset)
   (:shadowing-import-from :fset
-			  ;; Shadowed set operations
-			  #:union #:intersection #:set-difference #:complement
 			  ;; Shadowed sequence operations
 			  #:first #:last #:subseq #:reverse #:sort #:stable-sort
 			  #:reduce
@@ -15,7 +13,8 @@
 			  #:some #:every #:notany #:notevery
                           ;; Shadowed from Alexandria
                           #:compose #:unionf #:appendf #:removef)
-  (:shadowing-import-from :cl :set :map)
+  (:shadowing-import-from
+   :cl :set :map #:union #:intersection #:set-difference #:complement)
   (:shadowing-import-from :iterate :with)
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
@@ -83,7 +82,7 @@ If secondary return value of PREDICATE is non-nil force substitution
     (position- (coerce predicate 'function) node nil)))
 
 (defmethod position-if-not (predicate (node node) &key &allow-other-keys)
-  (position-if (cl:complement predicate) node))
+  (position-if (complement predicate) node))
 
 (defmethod remove (item (node node) &key (test #'equalp) &allow-other-keys)
   (remove-if (curry (coerce test 'function) item) node))
@@ -110,3 +109,37 @@ If secondary return value of PREDICATE is non-nil force substitution
                  (values nil t)
                  (values (list node) nil)))))
     (car (remove- (coerce predicate 'function) node))))
+
+(defmethod remove-if-not (predicate (node node) &key &allow-other-keys)
+  (remove-if (complement predicate) node))
+
+(defmethod substitute
+    (newitem olditem (node node) &key (test #'equalp) &allow-other-keys)
+  (substitute-if newitem (curry (coerce test 'function) olditem) node))
+
+(defmethod substitute-if (newitem predicate (node node) &key (copy nil copyp) &allow-other-keys)
+  (when copyp (setf copy (coerce copy 'function)))
+  (labels
+      ((substitute- (predicate node)
+         (if (typep node 'node)
+             (if (funcall predicate (data node))
+                 (values (list (if copyp (funcall copy newitem) newitem)) t)
+                 (let* ((modifiedp nil)
+                        (new-children
+                         (mappend
+                          (lambda (child)
+                            (multiple-value-bind (new was-modified-p)
+                                (substitute- predicate child)
+                              (when was-modified-p (setf modifiedp t))
+                              new))
+                          (children node))))
+                   (if (not modifiedp)
+                       (values (list node) nil)
+                       (values (list (copy node :children new-children)) t))))
+             (if (funcall predicate node)
+                 (values (list (if copyp (funcall copy newitem) newitem)) t)
+                 (values (list node) nil)))))
+    (car (substitute- (coerce predicate 'function) node))))
+
+(defmethod substitute-if-not (predicate (node node) &key &allow-other-keys)
+  (substitute-if (complement predicate) node))
