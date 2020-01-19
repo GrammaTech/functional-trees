@@ -22,7 +22,7 @@
 
 
 ;;; Useful replacement function, not specific to FT or FSET.
-(defgeneric substitute-when (predicate sequence)
+(defgeneric substitute-with (predicate sequence)
   (:documentation
    "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.
 If secondary return value of PREDICATE is non-nil force substitution
