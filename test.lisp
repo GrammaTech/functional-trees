@@ -401,16 +401,6 @@ diagnostic information on error or failure."
 
 (defsuite ft-fset-tests "Functional tree FSET tests")
 
-;;; TODO:
-;;; 1. Implement simple tests of FSET functions.
-;;;    > DONE.
-;;; 2. Switch FSET implementation to using `update-tree' and `remove-node-if'.
-;;;    > Actually keep implementations in fset.lisp because they have
-;;;    > different semantics that might more closely match fset
-;;;    > semantics.
-;;; 3. Implement `with' and `less' and test both.
-;;; 4. Ensure that `(setf @)' works as expected on a functional tree.
-
 (deftest reduce-tree ()
   (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (reduce #'+ (iota 10)) (reduce #'+ tree)))))
@@ -434,15 +424,16 @@ diagnostic information on error or failure."
     (is (= (count-if [#'zerop {mod _ 3}] tree) 3))
     (is (zerop (count-if (constantly nil) tree)))))
 
-;; (deftest position-tree ()
-;;   (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
-;;     (is (equalp (position 4 tree) '(2)))
-;;     (is (not (position 10 tree)))))
+(deftest position-tree ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
+    (is (equalp (position 4 tree) '(2)))
+    (is (equalp (position 11 tree) '(4 0 0)))
+    (is (not (position 12 tree)))))
 
-;; (deftest position-if-tree ()
-;;   (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
-;;     (is (= (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree) 6))
-;;     (is (not (position-if (constantly nil) tree)))))
+(deftest position-if-tree ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
+    (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree)) 6))
+    (is (not (position-if (constantly nil) tree)))))
 
 (deftest remove-tree ()
   (is (= (length (to-list (remove 24 (make-tree (iota 100)))))
