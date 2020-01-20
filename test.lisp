@@ -3,6 +3,7 @@
   (:use :cl :functional-trees/functional-trees
         :software-evolution-library/stefil-plus
         :iterate)
+  (:import-from :fset :@)
   (:import-from :functional-trees/functional-trees
                 :copy :finger :make-tree
                 :make-random-tree
@@ -15,6 +16,14 @@
                 :compare-nodes
                 :node-can-implant
                 :path-transform-compress-mapping)
+  (:shadowing-import-from :functional-trees/fset
+                          :with :less
+                          :reduce
+                          :find :find-if :find-if-not
+                          :count :count-if :count-if-not
+                          :position :position-if :position-if-not
+                          :remove :remove-if :remove-if-not
+                          :substitute :substitute-if :substitute-if-not)
   (:export test))
 
 (in-package :ft/test)
@@ -361,6 +370,7 @@ diagnostic information on error or failure."
                               `(unless ,e
                                  (setf result (list :fail ',e p n root))
                                  (return))))
+                   ;; TODO: Iterate needs to be taught how to walk `is'.
                    (is (path-p p))
                    (is (typep p 'path))
                    (is (eql (@ root p) n))
@@ -385,3 +395,11 @@ diagnostic information on error or failure."
                  ((1) (0 1))
                  ((0) (2 0))
                  (nil nil))))))
+
+(defsuite ft-fset-tests "Functional tree FSET tests")
+
+;;; TODO:
+;;; 1. Implement simple tests of FSET functions.
+;;; 2. Switch FSET implementation to using `update-tree' and `remove-node-if'.
+;;; 3. Implement `with' and `less' and test both.
+;;; 4. Ensure that `(setf @)' works as expected on a functional tree.

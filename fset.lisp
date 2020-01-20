@@ -2,20 +2,21 @@
   (:nicknames :ft/fset)
   (:use cl :alexandria :iterate :functional-trees :fset)
   (:shadowing-import-from :fset
+                          :with
 			  ;; Shadowed sequence operations
-			  #:first #:last #:subseq #:reverse #:sort #:stable-sort
-			  #:reduce
-			  #:find #:find-if #:find-if-not
-			  #:count #:count-if #:count-if-not
-			  #:position #:position-if #:position-if-not
-			  #:remove #:remove-if #:remove-if-not
-			  #:substitute #:substitute-if #:substitute-if-not
-			  #:some #:every #:notany #:notevery
+			  :first :last :subseq :reverse :sort :stable-sort
+			  :reduce
+			  :find :find-if :find-if-not
+			  :count :count-if :count-if-not
+			  :position :position-if :position-if-not
+			  :remove :remove-if :remove-if-not
+			  :substitute :substitute-if :substitute-if-not
+			  :some :every :notany :notevery
                           ;; Shadowed from Alexandria
-                          #:compose #:unionf #:appendf #:removef)
+                          :compose :unionf :appendf :removef)
   (:shadowing-import-from
-   :cl :set :map #:union #:intersection #:set-difference #:complement)
-  (:shadowing-import-from :iterate :with)
+   :cl :set :map :union :intersection :set-difference :complement)
+  (:shadowing-import-from :iterate )
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
 
@@ -36,6 +37,16 @@
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
+
+(defmethod with ((tree node) path &optional (value nil valuep))
+  "Adds VALUE (value2) at PATH (value1) in TREE."
+  (fset::check-three-arguments valuep 'with 'node)
+  (error "TODO: Implement ~S" (list tree path value)))
+
+(defmethod less (tree path &optional (arg2 nil arg2p))
+  (declare (ignore arg2))
+  (fset::check-two-arguments arg2p 'less 'node)
+  (error "TODO: Implement ~S" (list tree path)))
 
 
 ;;; Useful replacement function, not specific to FT or FSET.
