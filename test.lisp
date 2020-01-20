@@ -468,3 +468,8 @@ diagnostic information on error or failure."
   (let ((two-fives (with (make-tree (iota 10)) '(2) 5)))
     (is (= 2 (count 5 two-fives)))
     (is (zerop (count 3 two-fives)))))
+
+(deftest less-test ()
+  (let ((no-threes (less (make-tree (iota 10)) '(2))))
+    (is (zerop (count 3 no-threes)))
+    (is (= 9 (length (to-list no-threes))))))

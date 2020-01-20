@@ -46,15 +46,25 @@
              (if (emptyp path)
                  value
                  (let ((index (car path)))
-                   (copy node :children (append (subseq (children node) 0 index)
-                                                (list (with- node (cdr path)))
-                                                (subseq (children node) (1+ index))))))))
+                   (copy node
+                         :children
+                         (append (subseq (children node) 0 index)
+                                 (list (with- node (cdr path)))
+                                 (subseq (children node) (1+ index))))))))
     (with- tree path)))
 
 (defmethod less (tree path &optional (arg2 nil arg2p))
   (declare (ignore arg2))
   (fset::check-two-arguments arg2p 'less 'node)
-  (error "TODO: Implement ~S" (list tree path)))
+  (labels ((less- (node path)
+             (let ((index (car path)))
+               (copy node
+                     :children
+                     (append (subseq (children node) 0 index)
+                             (unless (emptyp (cdr path))
+                               (list (less- node (cdr path))))
+                             (subseq (children node) (1+ index)))))))
+    (less- tree path)))
 
 
 ;;; Useful replacement function, not specific to FT or FSET.
