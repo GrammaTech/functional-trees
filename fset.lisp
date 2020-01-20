@@ -41,7 +41,15 @@
 (defmethod with ((tree node) path &optional (value nil valuep))
   "Adds VALUE (value2) at PATH (value1) in TREE."
   (fset::check-three-arguments valuep 'with 'node)
-  (error "TODO: Implement ~S" (list tree path value)))
+  ;; Walk down the path creating new trees on the way up.
+  (labels ((with- (node path)
+             (if (emptyp path)
+                 value
+                 (let ((index (car path)))
+                   (copy node :children (append (subseq (children node) 0 index)
+                                                (list (with- node (cdr path)))
+                                                (subseq (children node) (1+ index))))))))
+    (with- tree path)))
 
 (defmethod less (tree path &optional (arg2 nil arg2p))
   (declare (ignore arg2))

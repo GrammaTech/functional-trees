@@ -463,3 +463,8 @@ diagnostic information on error or failure."
   (let ((no-odd (substitute-if :odd #'oddp (make-tree (iota 100)))))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd)))))
+
+(deftest with-test ()
+  (let ((two-fives (with (make-tree (iota 10)) '(2) 5)))
+    (is (= 2 (count 5 two-fives)))
+    (is (zerop (count 3 two-fives)))))
