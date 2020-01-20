@@ -403,7 +403,11 @@ diagnostic information on error or failure."
 
 ;;; TODO:
 ;;; 1. Implement simple tests of FSET functions.
+;;;    > DONE.
 ;;; 2. Switch FSET implementation to using `update-tree' and `remove-node-if'.
+;;;    > Actually keep implementations in fset.lisp because they have
+;;;    > different semantics that might more closely match fset
+;;;    > semantics.
 ;;; 3. Implement `with' and `less' and test both.
 ;;; 4. Ensure that `(setf @)' works as expected on a functional tree.
 

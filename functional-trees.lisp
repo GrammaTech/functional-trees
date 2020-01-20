@@ -505,6 +505,8 @@ names.)"
 
 (defun remove-nodes-if (node fn)
   "Remove nodes/leaves for which FN is true"
+  ;; FIXME: Doesn't apply FN to the root.
+  ;; (length (to-list (remove-if #'evenp (make-tree (iota 100))))) => 51 not 0.
   (update-tree
    node
    (lambda (n)
