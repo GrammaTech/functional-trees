@@ -1,6 +1,9 @@
 (defpackage :functional-trees/test
   (:nicknames :ft/test)
   (:use :cl :functional-trees/functional-trees
+        :alexandria
+        :named-readtables
+        :curry-compose-reader-macros
         :software-evolution-library/stefil-plus
         :iterate)
   (:import-from :fset :@)
@@ -25,8 +28,8 @@
                           :remove :remove-if :remove-if-not
                           :substitute :substitute-if :substitute-if-not)
   (:export test))
-
 (in-package :ft/test)
+(in-readtable :curry-compose-reader-macros)
 
 (defroot test)
 (defsuite ft-tests "Functional tree tests")
@@ -403,3 +406,56 @@ diagnostic information on error or failure."
 ;;; 2. Switch FSET implementation to using `update-tree' and `remove-node-if'.
 ;;; 3. Implement `with' and `less' and test both.
 ;;; 4. Ensure that `(setf @)' works as expected on a functional tree.
+
+(deftest reduce-tree ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (is (= (reduce #'+ (iota 10)) (reduce #'+ tree)))))
+
+(deftest find-tree ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (is (= (find 4 tree) 4))
+    (is (not (find 10 tree)))))
+
+(deftest find-if-tree ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (is (= (find-if «and [#'zerop {mod _ 3}] {< 4 }» tree) 6))
+    (is (not (find-if (constantly nil) tree)))))
+
+(deftest count-tree ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (is (= (count 3 tree) 1))))
+
+(deftest count-if-tree ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (is (= (count-if [#'zerop {mod _ 3}] tree) 3))
+    (is (zerop (count-if (constantly nil) tree)))))
+
+;; (deftest position-tree ()
+;;   (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+;;     (is (equalp (position 4 tree) '(2)))
+;;     (is (not (position 10 tree)))))
+
+;; (deftest position-if-tree ()
+;;   (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+;;     (is (= (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree) 6))
+;;     (is (not (position-if (constantly nil) tree)))))
+
+(deftest remove-tree ()
+  (is (= (length (to-list (remove 24 (make-tree (iota 100)))))
+         99)))
+
+(deftest remove-tree-if ()
+  ;; NOTE: Counterintuitively, because the "0" node is the parent of
+  ;; the rest of the tree.
+  (is (zerop (length (to-list (remove-if #'evenp (make-tree (iota 100)))))))
+  (is (= 50 (length (to-list (remove-if #'oddp (make-tree (iota 100))))))))
+
+(deftest substitute-test ()
+  (let ((no-twenty (substitute 40 20 (make-tree (iota 100)))))
+    (is (= 0 (count 20 no-twenty)))
+    (is (= 2 (count 40 no-twenty)))))
+
+(deftest substitute-if-test ()
+  (let ((no-odd (substitute-if :odd #'oddp (make-tree (iota 100)))))
+    (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
+    (is (= 50 (count :odd no-odd)))))

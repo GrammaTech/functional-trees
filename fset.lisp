@@ -94,6 +94,7 @@ If secondary return value of PREDICATE is non-nil force substitution
 (defmethod count-if-not (predicate (node node) &rest rest &key &allow-other-keys)
   (apply #'count-if-not predicate (flatten (to-list node)) rest))
 
+;;; TODO: Position functions are broken.
 (defmethod position (item (node node) &key (test #'equalp) &allow-other-keys)
   (position-if (curry (coerce test 'function) item) node))
 
