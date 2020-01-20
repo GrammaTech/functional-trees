@@ -16,7 +16,6 @@
                           :compose :unionf :appendf :removef)
   (:shadowing-import-from
    :cl :set :map :union :intersection :set-difference :complement)
-  (:shadowing-import-from :iterate )
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
 
