@@ -66,6 +66,10 @@
                              (subseq (children node) (1+ index)))))))
     (less- tree path)))
 
+(defmethod size ((other t)) 0)
+(defmethod size ((node node))
+  (1+ (reduce #'+ (mapcar #'size (children node)))))
+
 
 ;;; Useful replacement function, not specific to FT or FSET.
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)

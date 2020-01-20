@@ -14,7 +14,6 @@
            traverse-nodes
            traverse-nodes-with-rpaths
            name
-           size
            copy)
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
@@ -74,10 +73,6 @@ which may be more nodes, or other values."))
     (if (typep tr 'node)
         (setf (slot-value n 'transform) (path-transform-of tr n))
         tr)))
-
-(defmethod size ((other t)) 0)
-(defmethod size ((node node))
-  (1+ (reduce #'+ (mapcar #'size (children node)))))
 
 (defmethod copy ((node node) &key (data (data node)) (name (name node)) (transform (transform node))
                                     (children (children node)))
