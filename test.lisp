@@ -467,9 +467,23 @@ diagnostic information on error or failure."
 (deftest with-test ()
   (let ((two-fives (with (make-tree (iota 10)) '(2) 5)))
     (is (= 2 (count 5 two-fives)))
-    (is (zerop (count 3 two-fives)))))
+    (is (zerop (count 3 two-fives))))
+  ;; Should replace (5 6 7 8) with :TOUCHED.
+  (is (= 6 (length (flatten (to-list
+                             (with (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))
+                                   '(3) :touched))))))
+  ;; Should replace 6 with :TOUCHED.
+  (is (= 9 (length (flatten (to-list
+                             (with (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))
+                                   '(3 0) :touched)))))))
 
 (deftest less-test ()
   (let ((no-threes (less (make-tree (iota 10)) '(2))))
     (is (zerop (count 3 no-threes)))
     (is (= 9 (length (to-list no-threes))))))
+
+(deftest @-test ()
+  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (let ((it (copy tree)))
+      (setf (@ it '(3 0)) :deleted)
+      (is (zerop (count 6 it))))))

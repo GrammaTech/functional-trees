@@ -49,7 +49,7 @@
                    (copy node
                          :children
                          (append (subseq (children node) 0 index)
-                                 (list (with- node (cdr path)))
+                                 (list (with- (nth index (children node)) (cdr path)))
                                  (subseq (children node) (1+ index))))))))
     (with- tree path)))
 
