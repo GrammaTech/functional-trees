@@ -20,6 +20,24 @@
 (in-package :functional-trees/fset)
 
 
+;;; Define `lookup' methods to work with FSet's `@' macro.
+(defmethod lookup ((node t) (path null)) node)
+(defmethod lookup ((node node) (path cons))
+    (let ((i (car path)))
+      (unless (typep i '(integer 0))
+        (error "Not a valid path index: ~a" i))
+      (let* ((c (children node)))
+        (iter (unless c (error "Path index too large: ~a (must be < ~a)"
+                               (car path) (- (car path) i)))
+              (while (> i 0))
+              (pop c)
+              (decf i))
+        (lookup (car c) (cdr path)))))
+(defmethod lookup ((node node) (finger finger))
+    (let ((new-finger (transform-finger finger node)))
+      (values (lookup node (path new-finger)) (residue new-finger))))
+
+
 ;;; Useful replacement function, not specific to FT or FSET.
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation

@@ -6,7 +6,7 @@
            path-transform from to
            transforms transform-finger transform-finger-to
            transform-path var local-path
-           value node @ update-tree update-tree-at-data
+           value node update-tree-at-data
            path-transform-of
            remove-nodes-if
            swap-nodes
@@ -230,25 +230,6 @@ construction, then walks it filling in the PATH attributes."
                      :transform transform
                      :children (mapcar #'make-node (cdr list-form)))
       list-form))
-
-(defgeneric @ (node path &key &allow-other-keys)
-    (:documentation "The node (or leaf value) at PATH below NODE."))
-
-(defmethod @ ((node t) (path null) &key) node)
-(defmethod @ ((node node) (path cons) &key)
-    (let ((i (car path)))
-      (unless (typep i '(integer 0))
-        (error "Not a valid path index: ~a" i))
-      (let* ((c (children node)))
-        (iter (unless c (error "Path index too large: ~a (must be < ~a)"
-                               (car path) (- (car path) i)))
-              (while (> i 0))
-              (pop c)
-              (decf i))
-        (@ (car c) (cdr path)))))
-(defmethod @ ((node node) (finger finger) &key (error-p t))
-    (let ((new-finger (transform-finger finger node :error-p error-p)))
-      (values (@ node (path new-finger)) (residue new-finger))))
 
 (defgeneric to-list (node)
   (:documentation "Convert tree rooted at NODE to list form.")
