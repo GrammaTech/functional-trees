@@ -27,6 +27,7 @@ finger objects"))
   (every (lambda (x)
            (typecase x
              ((integer 0) t)
+             (symbol t)
              ((cons (integer 0)
                     (cons integer null))
               (<= (first x) (second x)))
@@ -73,6 +74,10 @@ which may be more nodes, or other values."))
     (if (typep tr 'node)
         (setf (slot-value n 'transform) (path-transform-of tr n))
         tr)))
+
+;;; There should be a way to chain together methods for COPY for
+;;; classes and their superclasses, perhaps using the initialization
+;;; infrastructure in CL for objects.
 
 (defmethod copy ((node node) &key (data (data node)) (name (name node)) (transform (transform node))
                                     (children (children node)))
@@ -163,7 +168,8 @@ tree to another."))
                      (every (lambda (i i-set)
                               (or (eql i i-set)
                                   (and (consp i-set)
-                                       (<= i (car i-set) (cadr i-set)))))
+                                       (integerp i)
+                                       (<= (car i-set) i (cadr i-set)))))
                             path segment))
             (return
               (let ((new-segment
@@ -281,9 +287,12 @@ construction, then walks it filling in the PATH attributes."
 ;;; a set of rewrites (with var objects).  Also, conversion of the
 ;;; transform set to a trie.
 
-(defun traverse-nodes (root fn)
+(defgeneric traverse-nodes (root fn)
+  (:documentation 
   "Apply FN at every node below ROOT, in preorder, left to right
-   If FN returns NIL, stop traversal below this point.  Returns NIL."
+   If FN returns NIL, stop traversal below this point.  Returns NIL."))
+
+(defmethod traverse-nodes ((root node) fn)
   (labels ((%traverse (node)
              (when (and (typep node 'node)
                         (funcall fn node))
@@ -291,11 +300,14 @@ construction, then walks it filling in the PATH attributes."
     (%traverse root)
     nil))
 
-(defun traverse-nodes-with-rpaths (root fn)
-  "Apply FN at every node below ROOT, in preorder, left to right.
+(defgeneric traverse-nodes-with-rpaths (root fn)
+  (:documentation
+   "Apply FN at every node below ROOT, in preorder, left to right.
    Also pass to FN a list of indexes that is the reverse of the
    path from ROOT to the node.  If FN returns NIL, stop traversal
-   below this point.  Returns NIL."
+   below this point.  Returns NIL."))
+
+(defmethod traverse-nodes-with-rpaths ((root node) fn)
   (labels ((%traverse (node rpath)
              (when (and (typep node 'node)
                         (funcall fn node rpath))
@@ -304,6 +316,11 @@ construction, then walks it filling in the PATH attributes."
                      (%traverse c (cons i rpath))))))
     (%traverse root nil)
     nil))
+
+;;; To traverse fields aside from CHILDREN, write methods
+;;; for the particular class for these functions that explicitly
+;;; traverse those fields, then (if none returned NIL) performs
+;;; (call-next-method) to the general methods for node.
 
 
 (defgeneric node-valid (node)
@@ -360,18 +377,26 @@ below ROOT and produce a valid tree."))
     t))
 
 (defun lexicographic-< (list1 list2)
-  "Lexicographic comparison of lists of reals"
-  (loop (cond
-          ((null list1)
-           (return (not (null list2))))
-          ((null list2)
-           (return nil))
-          ((<= (car list1) (car list2))
-           (when (< (car list1) (car list2))
-             (return t))
-           (pop list1)
-           (pop list2))
-          (t (return nil)))))
+  "Lexicographic comparison of lists of reals or symbols
+Symbols are considered to be less than reals, and symbols
+are compared with each other using fset:compare"
+  (loop
+     (unless list1
+       (return (not (null list2))))
+     (unless list2
+       (return nil))
+     (let ((c1 (pop list1))
+           (c2 (pop list2)))
+       (cond
+         ((symbolp c1)
+          (unless (symbolp c2) (return t))
+          (unless (eql c1 c2)
+            (return (eql (fset:compare c1 c2) :less))))
+         ((symbolp c2) (return nil))
+         ((<= c1 c2)
+          (when (< c1 c2)
+            (return t)))
+         (t (return nil))))))
 
 (defun prefix? (p1 p2)
   "True if list P1 is a prefix of P2"

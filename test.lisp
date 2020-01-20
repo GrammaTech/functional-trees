@@ -42,7 +42,12 @@
   (is (not (lexicographic-< '(1) '(1))))
   (is (lexicographic-< nil '(1)))
   (is (lexicographic-< '(0) '(1)))
-  (is (lexicographic-< '(1 2 3) '(1 2 3 0))))
+  (is (lexicographic-< '(1 2 3) '(1 2 3 0)))
+  (is (lexicographic-< '(a) '(b)))
+  (is (not (lexicographic-< '(b) '(a))))
+  (is (lexicographic-< '(a) '(0)))
+  (is (not (lexicographic-< '(0) '(a))))
+  (is (not (lexicographic-< '(a) '(a)))))
 
 (deftest make-node.1 ()
   (is (not (make-node nil)))
