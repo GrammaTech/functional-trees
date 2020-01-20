@@ -21,12 +21,12 @@
 
 
 ;;; Useful replacement function, not specific to FT or FSET.
-(defgeneric substitute-with (predicate sequence)
+(defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
    "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.
 If secondary return value of PREDICATE is non-nil force substitution
   with primary value even if it is nil.")
-  (:method (predicate (sequence sequence))
+  (:method (predicate (sequence sequence) &key &allow-other-keys )
     (let ((predicate (coerce predicate 'function)))
       (map (type-of sequence)
            (lambda (element)
@@ -34,7 +34,7 @@ If secondary return value of PREDICATE is non-nil force substitution
                  (funcall predicate element)
                (if force value (or value element))))
            sequence)))
-  (:method (predicate (seq seq) &aux result)
+  (:method (predicate (seq seq) &key &allow-other-keys &aux result)
     (let ((predicate (coerce predicate 'function)))
       (do-seq (element seq)
         (multiple-value-bind (value force)
@@ -125,8 +125,8 @@ If secondary return value of PREDICATE is non-nil force substitution
                        (values (if copyp (funcall copy newitem) newitem) t)))
                    node))
 
-(defmethod substitute-if-not (predicate (node node) &key &allow-other-keys)
-  (substitute-if (complement predicate) node))
+(defmethod substitute-if-not (newitem predicate (node node) &key &allow-other-keys)
+  (substitute-if newitem (complement predicate) node))
 
 (defmethod substitute-with (function (node node) &key &allow-other-keys)
   (labels
