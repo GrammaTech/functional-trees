@@ -63,7 +63,7 @@
                      :children
                      (append (subseq (children node) 0 index)
                              (unless (emptyp (cdr path))
-                               (list (less- node (cdr path))))
+                               (list (less- (nth index (children node)) (cdr path))))
                              (subseq (children node) (1+ index)))))))
     (less- tree path)))
 
