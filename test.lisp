@@ -1,14 +1,12 @@
 (defpackage :functional-trees/test
   (:nicknames :ft/test)
-  (:use :cl :functional-trees/functional-trees
-        :functional-trees/fset
+  (:use :cl :functional-trees
         :alexandria
         :named-readtables
         :curry-compose-reader-macros
         :software-evolution-library/stefil-plus
         :iterate)
-  (:import-from :fset :@ :less :lookup :splice :insert)
-  (:import-from :functional-trees/functional-trees
+  (:import-from :functional-trees/core
                 :node :copy :finger :make-tree
                 :make-random-tree
                 :remove-nodes-randomly
@@ -20,21 +18,20 @@
                 :compare-nodes
                 :node-can-implant
                 :path-transform-compress-mapping)
-  (:shadowing-import-from :fset
-                          :with
-			  ;; Shadowed type/constructor names
-			  #:set #:map
+  (:shadowing-import-from :functional-trees/all
+                          :map :set :partition :alist :size
+                          :range :compose :unionf :appendf :with :removef
 			  ;; Shadowed set operations
-			  #:union #:intersection #:set-difference #:complement
+			  :union :intersection :set-difference :complement
 			  ;; Shadowed sequence operations
-			  #:first #:last #:subseq #:reverse #:sort #:stable-sort
-			  #:reduce
-			  #:find #:find-if #:find-if-not
-			  #:count #:count-if #:count-if-not
-			  #:position #:position-if #:position-if-not
-			  #:remove #:remove-if #:remove-if-not
-			  #:substitute #:substitute-if #:substitute-if-not
-			  #:some #:every #:notany #:notevery)
+			  :first :last :subseq :reverse :sort :stable-sort
+			  :reduce
+			  :find :find-if :find-if-not
+			  :count :count-if :count-if-not
+			  :position :position-if :position-if-not
+			  :remove :remove-if :remove-if-not
+			  :substitute :substitute-if :substitute-if-not
+			  :some :every :notany :notevery)
   (:export test))
 (in-package :ft/test)
 (in-readtable :curry-compose-reader-macros)
