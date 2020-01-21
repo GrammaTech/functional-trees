@@ -1,6 +1,6 @@
 (defpackage :functional-trees/fset
   (:nicknames :ft/fset)
-  (:use cl :alexandria :iterate :functional-trees :fset)
+  (:use cl :alexandria :iterate :functional-trees/core :fset)
   (:shadowing-import-from :fset
                           :@
                           :compose :unionf :appendf :with :removef
