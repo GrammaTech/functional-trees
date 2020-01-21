@@ -1,24 +1,26 @@
 (defpackage :functional-trees/fset
   (:nicknames :ft/fset)
   (:use cl :alexandria :iterate :functional-trees/core :fset)
+  (:shadow :map)
   (:shadowing-import-from :fset
                           :@
                           :compose :unionf :appendf :with :removef
 			  ;; Shadowed type/constructor names
-			  #:set #:map
+			  :set
 			  ;; Shadowed set operations
-			  #:union #:intersection #:set-difference #:complement
+			  :union :intersection :set-difference :complement
 			  ;; Shadowed sequence operations
-			  #:first #:last #:subseq #:reverse #:sort #:stable-sort
-			  #:reduce
-			  #:find #:find-if #:find-if-not
-			  #:count #:count-if #:count-if-not
-			  #:position #:position-if #:position-if-not
-			  #:remove #:remove-if #:remove-if-not
-			  #:substitute #:substitute-if #:substitute-if-not
-			  #:some #:every #:notany #:notevery)
+			  :first :last :subseq :reverse :sort :stable-sort
+			  :reduce
+			  :find :find-if :find-if-not
+			  :count :count-if :count-if-not
+			  :position :position-if :position-if-not
+			  :remove :remove-if :remove-if-not
+			  :substitute :substitute-if :substitute-if-not
+			  :some :every :notany :notevery)
   (:shadowing-import-from
-   :cl :set :map :union :intersection :set-difference :complement)
+   :cl :set :union :intersection :set-difference :complement)
+  (:export :map :substitute-with)
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
 
@@ -94,7 +96,26 @@
   (1+ (reduce #'+ (mapcar #'size (children node)))))
 
 
-;;; Useful replacement function, not specific to FT or FSET.
+;;; Relevant FSET operations (+ two) for functional tree.
+(defgeneric map (result-type function first &rest more)
+  (:documentation
+   "If FIRST is a Lisp sequence, this simply calls `cl:map'.
+On a functional tree the nodes of the tree are mapped.")
+  (:method (result-type function (first sequence) &rest more)
+    (apply #'cl:map function first more))
+  (:method (result-type function (first node) &rest more)
+    (when more (error "`ft:map' does not support mapping multiple trees."))
+    (labels ((map- (function subtree)
+               (if (typep subtree 'node)
+                   (make-instance 'node
+                     :data (funcall function (data subtree))
+                     :children (mapcar function (children subtree)))
+                   (funcall function subtree))))
+      (let ((result (map- (coerce function 'function) first)))
+        (case result-type
+          (node result)
+          (otherwise (coerce (to-list result) result-type)))))))
+
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
    "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.
@@ -116,8 +137,6 @@ If secondary return value of PREDICATE is non-nil force substitution
           (push (if force value (or value element)) result)))
       (convert 'seq (nreverse result)))))
 
-
-;;; Relevant FSET operations for functional tree.
 (defmethod reduce (fn (node node) &rest rest &key &allow-other-keys)
   (apply #'reduce fn (flatten (to-list node)) rest))
 
