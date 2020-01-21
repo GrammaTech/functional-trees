@@ -1,5 +1,5 @@
-(defpackage :functional-trees/functional-trees
-  (:nicknames :ft/ft :functional-trees :ft)
+(defpackage :functional-trees/core
+  (:nicknames :ft/core)
   (:use cl :alexandria :iterate)
   (:export data children predecessor
            transform root finger path residue
@@ -18,7 +18,7 @@
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
 
-(in-package :functional-trees/functional-trees)
+(in-package :functional-trees/core)
 
 (deftype path ()
   `(and list (satisfies path-p)))

@@ -7,14 +7,11 @@ and rewriting of parts of trees in a functional manner, along
 with translation of references to internal nodes that can be carried
 from one tree to its successors"
   :version "0.0.0"
-  :depends-on (functional-trees/functional-trees)
+  :depends-on (functional-trees/all)
   :class :package-inferred-system
   :defsystem-depends-on (:asdf-package-system)
   :in-order-to ((test-op (test-op "functional-trees/test"))))
 
-(register-system-packages
- "functional-trees/functional-trees"
- '(:functional-trees))
 
 ;;;; Tests and binaries.
 (defsystem "functional-trees/test"
