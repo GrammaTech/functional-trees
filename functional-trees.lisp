@@ -10,11 +10,11 @@
            path-transform-of
            remove-nodes-if
            swap-nodes
-           make-node to-list
+           make-node make-node* to-list to-list*
            traverse-nodes
            traverse-nodes-with-rpaths
            name
-           copy)
+           copy update-tree update-tree*)
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
 
@@ -233,21 +233,47 @@ construction, then walks it filling in the PATH attributes."
        n))
     root))
 
-(defun make-node (list-form &key name transform)
+(defun make-node (list-form &rest args &key name transform)
+  (declare (ignorable name transform))
   (if (consp list-form)
-      (make-instance 'node :name name
-                     :data (car list-form)
-                     :transform transform
-                     :children (mapcar #'make-node (cdr list-form)))
+      (if (or (typep (car list-form) 'standard-class)
+              (and (symbolp (car list-form))
+                   (find-class (car list-form) nil)))
+          (apply #'make-node* (car list-form) (cdr list-form) args)
+          (apply #'make-node* 'node list-form args))
       list-form))
 
+(defgeneric make-node* (class vals &key &allow-other-keys)
+  (:documentation "Generate a node with appropriate values"))
+
+(defmethod make-node* ((class standard-class) vals &rest args)
+  (apply #'make-node* (class-name class) vals args))
+
+(defmethod make-node* ((class (eql 'node)) vals &key name transform)
+  (make-instance 'node :name name
+                 :data (car vals)
+                 :transform transform
+                 :children (mapcar #'make-node (cdr vals))))
+
+;; TODO: refactor this for better extensibility on subclasses
 (defgeneric to-list (node)
   (:documentation "Convert tree rooted at NODE to list form.")
   (:method ((finger finger))
     (to-list (cache finger)))
   (:method ((node node))
-    (cons (data node) (mapcar #'to-list (children node))))
+    (let ((tail (cons (data node) (to-list* node))))
+      (let ((class (class-name (class-of node))))
+        (if (eql class 'node)
+            tail
+            (cons class tail)))))
   (:method (node) node))
+
+(defgeneric to-list* (node)
+  (:method-combination append)
+  (:documentation "Internal generic function used to assemble
+the list describing the contents of a NODE"))
+
+(defmethod to-list* append ((node node)) (mapcar #'to-list (children node)))
 
 ;;; Printing methods
 
@@ -548,6 +574,7 @@ names.)"))
   "Remove nodes/leaves for which FN is true"
   ;; FIXME: Doesn't apply FN to the root.
   ;; (length (to-list (remove-if #'evenp (make-tree (iota 100))))) => 51 not 0.
+  ;; FIXME: Doesn't apply to non-children fields
   (update-tree
    node
    (lambda (n)

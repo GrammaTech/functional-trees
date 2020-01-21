@@ -7,7 +7,7 @@
         :curry-compose-reader-macros
         :software-evolution-library/stefil-plus
         :iterate)
-  (:import-from :fset :@ :less)
+  (:import-from :fset :@ :less :lookup)
   (:import-from :functional-trees/functional-trees
                 :node :copy :finger :make-tree
                 :make-random-tree
@@ -70,14 +70,36 @@ to subtrees."))
           (new-b (update-tree* b fn)))
       (if (and (eql a new-a) (eql b new-b))
           n
-          (copy n :a new-a :b :new-b)))))
+          (copy n :a new-a :b new-b)))))
+
+(defmethod to-list* append ((n node-with-fields))
+  (with-slots (a b) n
+  `(,@(when a `(:a ,(to-list a)))
+    ,@(when b `(:b ,(to-list b))))))
 
 (defmethod copy ((n node-with-fields) &key (a (node-a n)) (b (node-b n))
                                         (children (children n))
-                                        (data (data node)) (name (name node))
-                                        (transform (transform node)))
+                                        (data (data n)) (name (name n))
+                                        (transform (transform n)))
   (make-instance (class-of n) :a a :b b :children children
                  :data data :name name :transform transform))
+
+(defmethod make-node* ((n (eql 'node-with-fields)) vals &key name transform)
+  (make-instance 'node-with-fields
+                 :name name
+                 :transform transform
+                 :data (car vals)
+                 :a (make-node (getf (cdr vals) :a))
+                 :b (make-node (getf (cdr vals) :b))
+                 :children (mapcar #'make-node
+                                   (plist-drop-keys '(:a :b) (cdr vals)))))
+
+(defun plist-drop-keys (keys plist)
+  (iter (for e on plist by #'cddr)
+        (unless (member (car e) keys)
+          (collecting (car e))
+          (when (cdr e)
+            (collecting (cadr e))))))
 
 (defroot test)
 (defsuite ft-tests "Functional tree tests")
@@ -452,6 +474,39 @@ diagnostic information on error or failure."
                  ((0) (2 0))
                  (nil nil))))))
 
+;;; Tests of subclass of NODE with discrete fields
+
+(deftest node-with-fields.1 ()
+  (let ((n (make-instance 'node-with-fields :a 1 :b 2 :data :foo
+                          :children '(3))))
+    (is (equal (to-list n) '(node-with-fields :foo :a 1 :b 2 3)))
+    (is (equal (@ n :a) 1))
+    (is (equal (@ n :b) 2))
+    (is (equal (@ n 0) 3))))
+
+(deftest node-with-fields.2 ()
+  (let ((n (make-node '(node-with-fields))))
+    (is (equal (node-a n) nil))
+    (is (equal (node-b n) nil))
+    (is (equal (children n) nil))))
+
+(deftest node-with-fields.3 ()
+  (let ((n (make-node '(node-with-fields :foo :a 1 :b 2 3 4 5))))
+    (is (equal (node-a n) 1))
+    (is (equal (node-b n) 2))
+    (is (equal (children n) '(3 4 5)))))
+
+(deftest node-with-fields.4 ()
+  (let* ((n (make-node '(node-with-fields :n1
+                         :a (:n2 1)
+                         :b (:n3 2))))
+         (n4 (update-tree-at-data n :n2))
+         (n5 (make-node '(:n5 5)))
+         (n6 (update-tree n (lambda (x) (if (eql (data x) :n3) n5 x)))))
+    (is (equal (to-list n) '(node-with-fields :n1 :a (:n2 1) :b (:n3 2))))
+    (is (equal (to-list n4) '(node-with-fields :n1 :a (:n2 1) :b (:n3 2))))
+    (is (equal (to-list n6) '(node-with-fields :n1 :a (:n2 1) :b (:n5 5))))))
+
 (defsuite ft-fset-tests "Functional tree FSET tests")
 
 (deftest reduce-tree ()
@@ -542,3 +597,4 @@ diagnostic information on error or failure."
                                (setf a (- a b))
                                (setf b (- b a))))))))
     (is (= 1 (count 'defun (flatten (to-list (less it (position '= it)))))))))
+
