@@ -15,6 +15,7 @@
            traverse-nodes-with-rpaths
            name
            copy update-tree update-tree*)
+  (:import-from :fset :compare)
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
 
@@ -431,7 +432,7 @@ are compared with each other using fset:compare"
          ((symbolp c1)
           (unless (symbolp c2) (return t))
           (unless (eql c1 c2)
-            (return (eql (fset:compare c1 c2) :less))))
+            (return (eql (compare c1 c2) :less))))
          ((symbolp c2) (return nil))
          ((<= c1 c2)
           (when (< c1 c2)
