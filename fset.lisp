@@ -26,19 +26,21 @@
 ;;; Define `lookup' methods to work with FSet's `@' macro.
 (defmethod lookup ((node t) (path null)) node)
 (defmethod lookup ((node node) (path cons))
-    (let ((i (car path)))
-      (unless (typep i '(integer 0))
-        (error "Not a valid path index: ~a" i))
-      (let* ((c (children node)))
-        (iter (unless c (error "Path index too large: ~a (must be < ~a)"
-                               (car path) (- (car path) i)))
-              (while (> i 0))
-              (pop c)
-              (decf i))
-        (lookup (car c) (cdr path)))))
+  (lookup (lookup node (car path)) (cdr path)))
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
+(defmethod lookup ((node node) (i integer))
+  ;; Replace this with (@ (children node) i)?
+  (unless (typep i '(integer 0))
+        (error "Not a valid path index: ~a" i))
+  (let* ((c (children node)))
+    (iter (unless c (error "Path index too large: ~a (must be < ~a)"
+                           (car path) (- (car path) i)))
+          (while (> i 0))
+          (pop c)
+          (decf i))
+    (car c)))
 
 (defmethod with ((tree node) path &optional (value nil valuep))
   "Adds VALUE (value2) at PATH (value1) in TREE."
