@@ -7,7 +7,7 @@
         :curry-compose-reader-macros
         :software-evolution-library/stefil-plus
         :iterate)
-  (:import-from :fset :@ :less :lookup)
+  (:import-from :fset :@ :less :lookup :splice :insert)
   (:import-from :functional-trees/functional-trees
                 :node :copy :finger :make-tree
                 :make-random-tree
@@ -358,7 +358,7 @@ to subtrees."))
                                          :data :c)))))
     (is (not (compare-nodes n
                             (copy n :children (list (make-node '(:c)))))))))
-  
+
 
 (deftest print.1 ()
   (let ((*print-readably* nil)
@@ -602,3 +602,8 @@ diagnostic information on error or failure."
   (let ((it (make-tree '(0 1 2 3 4))))
     (is (equalp (to-list (splice it '(1) '(:a :b :c)))
                 '(0 1 :a :b :c 2 3 4)))))
+
+(deftest insert-test ()
+  (let ((it (make-tree '(0 1 2 3 4))))
+    (is (equalp (to-list (insert it '(1) ':a))
+                '(0 1 :a 2 3 4)))))
