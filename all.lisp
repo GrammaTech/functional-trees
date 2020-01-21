@@ -1,6 +1,7 @@
 (uiop/package:define-package :functional-trees/all
     (:nicknames :functional-trees :ft)
   (:use-reexport :functional-trees/core :functional-trees/fset :fset)
+  (:shadowing-import-from :functional-trees/fset :map)
   (:shadowing-import-from :fset :some :every :notany :notevery))
 
 ;;; To include this library the following (admittedly way too verbose)
@@ -12,9 +13,8 @@
 #+example
 (defpackage :ft/user
   (:use :common-lisp :functional-trees)
-  (:shadowing-import-from :common-lisp :map)
   (:shadowing-import-from :functional-trees/all
-                          :set :partition :alist :size
+                          :map :set :partition :alist :size
                           :range :compose :unionf :appendf :with :removef
 			  ;; Shadowed set operations
 			  :union :intersection :set-difference :complement

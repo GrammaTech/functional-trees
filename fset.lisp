@@ -101,8 +101,14 @@
   (:documentation
    "If FIRST is a Lisp sequence, this simply calls `cl:map'.
 On a functional tree the nodes of the tree are mapped.")
+  (:method (result-type (function symbol) first &rest more)
+    (apply #'map (coerce function 'function) first more))
   (:method (result-type function (first sequence) &rest more)
     (apply #'cl:map function first more))
+  (:method (result-type function (first seq) &rest more &aux result)
+    (when more (error "`ft:map' does not support mapping multiple trees."))
+    (do-seq (element first :value (coerce (nreverse result) result-type))
+      (push (funcall function element) result)))
   (:method (result-type function (first node) &rest more)
     (when more (error "`ft:map' does not support mapping multiple trees."))
     (labels ((map- (function subtree)
@@ -111,7 +117,7 @@ On a functional tree the nodes of the tree are mapped.")
                      :data (funcall function (data subtree))
                      :children (mapcar function (children subtree)))
                    (funcall function subtree))))
-      (let ((result (map- (coerce function 'function) first)))
+      (let ((result (map- function first)))
         (case result-type
           (node result)
           (otherwise (coerce (to-list result) result-type)))))))
