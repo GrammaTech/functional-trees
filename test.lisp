@@ -598,3 +598,7 @@ diagnostic information on error or failure."
                                (setf b (- b a))))))))
     (is (= 1 (count 'defun (flatten (to-list (less it (position '= it)))))))))
 
+(deftest splice-test ()
+  (let ((it (make-tree '(0 1 2 3 4))))
+    (is (equalp (to-list (splice it '(1) '(:a :b :c)))
+                '(0 1 :a :b :c 2 3 4)))))

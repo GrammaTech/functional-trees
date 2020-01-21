@@ -19,6 +19,7 @@
 			  #:some #:every #:notany #:notevery)
   (:shadowing-import-from
    :cl :set :map :union :intersection :set-difference :complement)
+  (:export :splice)
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
 
@@ -69,6 +70,22 @@
                                (list (less- (nth index (children node)) (cdr path))))
                              (subseq (children node) (1+ index)))))))
     (less- tree path)))
+
+(defgeneric splice (container path values)
+  (:documentation "Splice VALUES just before the location of PATH in TREE.")
+  (:method ((tree node) (path list) (values list))
+    ;; Walk down the path creating new trees on the way up.
+    (labels ((splice- (node path)
+               (let ((index (car path)))
+                 (copy node
+                       :children
+                       (append (subseq (children node) 0 index)
+                               (if (emptyp (cdr path))
+                                   values
+                                   (list (splice- (nth index (children node))
+                                                  (cdr path))))
+                               (subseq (children node) index))))))
+      (splice- tree path))))
 
 (defmethod size ((other t)) 0)
 (defmethod size ((node node))
