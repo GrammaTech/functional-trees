@@ -9,7 +9,7 @@
         :iterate)
   (:import-from :fset :@ :less)
   (:import-from :functional-trees/functional-trees
-                :copy :finger :make-tree
+                :node :copy :finger :make-tree
                 :make-random-tree
                 :remove-nodes-randomly
                 :swap-random-nodes
@@ -38,6 +38,46 @@
   (:export test))
 (in-package :ft/test)
 (in-readtable :curry-compose-reader-macros)
+
+(defclass node-with-fields (node)
+  ((a :reader node-a
+      :initarg :a
+      :documentation "Example of a node field")
+   (b :reader node-b
+      :initarg :b
+      :documentation "Example of a node field"))
+  (:documentation "Example class with two fields, a and b,
+that are made available (in addition to children) as links
+to subtrees."))
+
+(defmethod traverse-nodes ((n node-with-fields) fn)
+  (traverse-nodes (node-a n) fn)
+  (traverse-nodes (node-b n) fn)
+  (call-next-method))
+
+(defmethod traverse-nodes-with-rpaths* ((n node-with-fields) fn rpath)
+  (traverse-nodes-with-rpaths* (node-a n) fn (cons :a rpath))
+  (traverse-nodes-with-rpaths* (node-b n) fn (cons :b rpath))
+  (call-next-method))
+
+(defmethod lookup ((node node-with-fields) (i (eql :a))) (node-a node))
+(defmethod lookup ((node node-with-fields) (i (eql :b))) (node-b node))
+
+(defmethod update-tree* ((n node-with-fields) fn)
+  (setf n (call-next-method))
+  (with-slots (a b) n
+    (let ((new-a (update-tree* a fn))
+          (new-b (update-tree* b fn)))
+      (if (and (eql a new-a) (eql b new-b))
+          n
+          (copy n :a new-a :b :new-b)))))
+
+(defmethod copy ((n node-with-fields) &key (a (node-a n)) (b (node-b n))
+                                        (children (children n))
+                                        (data (data node)) (name (name node))
+                                        (transform (transform node)))
+  (make-instance (class-of n) :a a :b b :children children
+                 :data data :name name :transform transform))
 
 (defroot test)
 (defsuite ft-tests "Functional tree tests")

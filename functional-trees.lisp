@@ -119,9 +119,13 @@ a node."))
           (unless (typep node 'node)
             (error "Path ~a not valid for tree rooted at ~a: ~a" (path f) (node f) node))
           (let ((children (children node)))
-            (unless (and (<= 0 i) (< i (length children)))
-              (error "~a not a valid child index for ~a" i node))
-            (setf node (elt children i))))
+            (etypecase i
+              (fixnum ;; make this an explicit range
+               (unless (and (<= 0 i) (< i (length children)))
+                 (error "~a not a valid child index for ~a" i node))
+               (setf node (elt children i)))
+              (symbol
+               (setf node (@ node i))))))
     ;; This assignment is functionally ok, since it is assigned
     ;; only once when the cache is filled
     (setf (slot-value f 'cache) node)))
@@ -292,13 +296,15 @@ construction, then walks it filling in the PATH attributes."
   "Apply FN at every node below ROOT, in preorder, left to right
    If FN returns NIL, stop traversal below this point.  Returns NIL."))
 
-(defmethod traverse-nodes ((root node) fn)
-  (labels ((%traverse (node)
-             (when (and (typep node 'node)
-                        (funcall fn node))
-               (mapc #'%traverse (children node)))))
-    (%traverse root)
-    nil))
+(defmethod traverse-nodes :around ((node node) fn)
+  (when (funcall fn node)
+    (call-next-method)))
+
+(defmethod traverse-nodes ((node node) fn)
+  (dolist (c (children node))
+    (traverse-nodes c fn)))
+
+(defmethod traverse-nodes ((node t) (fn t)) t)
 
 (defgeneric traverse-nodes-with-rpaths (root fn)
   (:documentation
@@ -307,15 +313,23 @@ construction, then walks it filling in the PATH attributes."
    path from ROOT to the node.  If FN returns NIL, stop traversal
    below this point.  Returns NIL."))
 
-(defmethod traverse-nodes-with-rpaths ((root node) fn)
-  (labels ((%traverse (node rpath)
-             (when (and (typep node 'node)
-                        (funcall fn node rpath))
-               (iter (for i from 0)
-                     (for c in (children node))
-                     (%traverse c (cons i rpath))))))
-    (%traverse root nil)
-    nil))
+(defmethod traverse-nodes-with-rpaths ((node node) fn)
+  (traverse-nodes-with-rpaths* node fn nil))
+
+(defgeneric traverse-nodes-with-rpaths* (root fn rpath)
+  (:documentation "Internal method to implement traverse-nodes-with-rpaths"))  
+
+(defmethod traverse-nodes-with-rpaths* :around ((node node) fn rpath)
+  (when (funcall fn node rpath)
+    (call-next-method)))
+
+(defmethod traverse-nodes-with-rpaths* ((node node) fn rpath)
+  (iter (for i from 0)
+        (for c in (children node))
+        (traverse-nodes-with-rpaths* c fn (cons i rpath)))
+  nil)
+
+(defmethod traverse-nodes-with-rpaths* ((node t) (fn t) (rpath t)) nil)
 
 ;;; To traverse fields aside from CHILDREN, write methods
 ;;; for the particular class for these functions that explicitly
@@ -502,22 +516,29 @@ are compared with each other using fset:compare"
   (:method (node1 node2) (equal node1 node2)))
 
 (defun update-tree (node fn)
+  (copy (update-tree* node fn) :transform node))
+
+(defgeneric update-tree* (node fn)
+  (:documentation
   "Traverse tree rooted at NODE, in postorder, calling
 FN at each node.  If FN returns a different tree, replace
 the node at that point, and copy ancestors (preserving their
-names.)"
-  (labels ((%traverse (n)
-             (if (typep n 'node)
-               ;; First, traverse the children
-               (let* ((c (children n))
-                      (new-c (mapcar #'%traverse c)))
-                 (unless (every #'eql c new-c)
-                   (let ((new-n (copy n :children new-c)))
-                     (assert (eql (name n) (name new-n)))
-                     (setf n (copy n :children new-c))))
-                 (funcall fn n))
-               n)))
-    (copy (%traverse node) :transform node)))
+names.)"))
+
+(defmethod update-tree* ((n node) fn)
+  (let* ((children (children n))
+         (new-children (mapcar (lambda (c) (update-tree* c fn)) children)))
+    (if (every #'eql children new-children)
+        n
+        (let ((new-n (copy n :children new-children)))
+          (assert (eql (name n) (name new-n)))
+          (copy n :children new-children)))))
+
+(defmethod update-tree* ((n t) (fn t)) n)
+
+(defmethod update-tree* :around ((node node) fn)
+  (let ((n (call-next-method)))
+    (funcall fn n)))
 
 (defun update-tree-at-data (node data)
   "Cause nodes with DATA to be copied (and all ancestors)"

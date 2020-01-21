@@ -2,6 +2,7 @@
   (:nicknames :ft/fset)
   (:use cl :alexandria :iterate :functional-trees :fset)
   (:shadowing-import-from :fset
+                          :@
                           :compose :unionf :appendf :with :removef
 			  ;; Shadowed type/constructor names
 			  #:set #:map
