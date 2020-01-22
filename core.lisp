@@ -264,8 +264,26 @@ construction, then walks it filling in the PATH attributes."
     :transform transform
     :children (mapcar #'make-node (cdr vals))))
 
+(defgeneric to-alist (node)
+  (:documentation "Convert tree rooted at NODE into an association list.")
+  (:method ((node node))
+    (append
+     (nest
+      (mapcar (lambda (slot) (cons (make-keyword slot) (slot-value node slot))))
+      (remove-if (rcurry #'member '(name transform finger children)))
+      (mapcar #'slot-definition-name (class-slots (class-of node))))
+     (list (cons :children (mapcar #'to-alist (children node)))))))
+
+(defgeneric from-alist (class alist)
+  (:documentation "Convert from ALIST to an object of class CLASS.")
+  (:method ((class symbol) alist)
+    (from-alist (find-class class) alist))
+  (:method ((class standard-class) (alist list))
+    (apply #'make-instance class
+           (apply #'append (alist-plist alist)))))
+
 ;; TODO: refactor this for better extensibility on subclasses
-(defgeneric to-list (node-with-data)
+(defgeneric to-list (node)
   (:documentation "Convert tree rooted at NODE to list form.")
   (:method ((finger finger))
     (to-list (cache finger)))
