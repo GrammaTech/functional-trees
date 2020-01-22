@@ -63,7 +63,7 @@ to this node, or the node that led to this node.")
    (children :reader children
              :type list
              :initarg :children
-             :initform (required-argument :children)
+             :initform nil
              :documentation "The list of children of the node,
 which may be more nodes, or other values."))
   (:documentation "A node in a tree."))
