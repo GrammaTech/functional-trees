@@ -41,8 +41,7 @@ finger objects"))
   (:documentation "Like the COPY function in SEL"))
 
 (defclass node ()
-  ((data :reader data :initarg :data
-         :initform (required-argument :data)
+  ((data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")
    ;; TODO: consider replacing name with the unique ID
    ;; given to objects in the Fset package
