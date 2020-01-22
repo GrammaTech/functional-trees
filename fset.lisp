@@ -35,10 +35,9 @@
 (defmethod lookup ((node node) (i integer))
   ;; Replace this with (@ (children node) i)?
   (unless (typep i '(integer 0))
-        (error "Not a valid path index: ~a" i))
+    (error "Not a valid path index: ~a" i))
   (let* ((c (children node)))
-    (iter (unless c (error "Path index too large: ~a (must be < ~a)"
-                           (car path) (- (car path) i)))
+    (iter (unless c (error "Path index too large"))
           (while (> i 0))
           (pop c)
           (decf i))
@@ -113,7 +112,7 @@ On a functional tree the nodes of the tree are mapped.")
     (when more (error "`ft:map' does not support mapping multiple trees."))
     (labels ((map- (function subtree)
                (if (typep subtree 'node)
-                   (make-instance 'node
+                   (make-instance 'node-with-data
                      :data (funcall function (data subtree))
                      :children (mapcar function (children subtree)))
                    (funcall function subtree))))
