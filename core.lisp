@@ -7,6 +7,7 @@
            transforms transform-finger transform-finger-to
            transform-path var local-path
            value node node-with-data update-tree-at-data
+           data
            path-transform-of
            remove-nodes-if
            swap-nodes
@@ -90,6 +91,9 @@ which may be more nodes, or other values."))
    (mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
    (remove 'name)
    (mapcar #'slot-definition-name (class-slots (class-of node)))))
+
+(defmethod (setf children) (new (node node))
+  (copy node :children new))
 
 ;;; TODO: make the INCF here thread safe on SBCL, using atomic
 ;;; increment. 
@@ -224,7 +228,8 @@ that FINGER is pointed through."))
       (%transform node))))
 
 ;;; This is an example of tree construction
-;;; 
+;;; TODO: Remove make-* functions and replace them all with a single
+;;;       from-list function.
 (defun make-tree (list-form &key name transform)
   "Produce a tree from a list-form.  Uses MAKE-NODE for actual
 construction, then walks it filling in the PATH attributes."
@@ -269,7 +274,10 @@ construction, then walks it filling in the PATH attributes."
   (:method ((node node))
     (append
      (nest
-      (mapcar (lambda (slot) (cons (make-keyword slot) (slot-value node slot))))
+      (apply #'append)
+      (mapcar (lambda (slot)
+                (when-let ((val (slot-value node slot)))
+                  (list (cons (make-keyword slot) val)))))
       (remove-if (rcurry #'member '(name transform finger children)))
       (mapcar #'slot-definition-name (class-slots (class-of node))))
      (list (cons :children (mapcar #'to-alist (children node)))))))
@@ -285,28 +293,9 @@ construction, then walks it filling in the PATH attributes."
 ;; TODO: refactor this for better extensibility on subclasses
 (defgeneric to-list (node)
   (:documentation "Convert tree rooted at NODE to list form.")
-  (:method ((finger finger))
-    (to-list (cache finger)))
-  (:method ((node node-with-data))
-    (let ((tail (cons (data node) (to-list* node))))
-      (let ((class (class-name (class-of node))))
-        (if (eql class 'node)
-            tail
-            (cons class tail)))))
-  (:method ((node node))
-    (let ((tail (to-list* node)))
-      (let ((class (class-name (class-of node))))
-        (if (eql class 'node)
-            tail
-            (cons class tail)))))
+  (:method ((finger finger)) (to-list (cache finger)))
+  (:method ((node node)) (to-alist node))
   (:method (node) node))
-
-(defgeneric to-list* (node)
-  (:method-combination append)
-  (:documentation "Internal generic function used to assemble
-the list describing the contents of a NODE"))
-
-(defmethod to-list* append ((node node)) (mapcar #'to-list (children node)))
 
 ;;; Printing methods
 
