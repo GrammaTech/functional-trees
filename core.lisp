@@ -1,12 +1,12 @@
 (defpackage :functional-trees/core
   (:nicknames :ft/core)
   (:use cl :alexandria :iterate)
-  (:export data children predecessor
+  (:export children predecessor
            transform root finger path residue
            path-transform from to
            transforms transform-finger transform-finger-to
            transform-path var local-path
-           value node update-tree-at-data
+           value node node-with-data update-tree-at-data
            path-transform-of
            remove-nodes-if
            swap-nodes
@@ -16,6 +16,8 @@
            name
            copy update-tree update-tree*)
   (:import-from :fset :compare)
+  (:import-from :uiop/utility :nest)
+  (:import-from :closer-mop :slot-definition-name :class-slots)
   (:documentation "Prototype implementation of functional trees w.
 finger objects"))
 
@@ -41,9 +43,7 @@ finger objects"))
   (:documentation "Like the COPY function in SEL"))
 
 (defclass node ()
-  ((data :reader data :initarg :data :initform nil
-         :documentation "Arbitrary data")
-   ;; TODO: consider replacing name with the unique ID
+  (;; TODO: consider replacing name with the unique ID
    ;; given to objects in the Fset package
    (name :reader name :initarg :name :initform nil
          :documentation "The NAME of a node is an EQL-unique
@@ -68,6 +68,10 @@ to this node, or the node that led to this node.")
 which may be more nodes, or other values."))
   (:documentation "A node in a tree."))
 
+(defclass node-with-data (node)
+  ((data :reader data :initarg :data :initform nil
+         :documentation "Arbitrary data")))
+
 (defmethod transform :around ((n node))
   ;; Compute the PT lazily, when TRANSFORM is a node
   (let ((tr (call-next-method)))
@@ -79,9 +83,13 @@ which may be more nodes, or other values."))
 ;;; classes and their superclasses, perhaps using the initialization
 ;;; infrastructure in CL for objects.
 
-(defmethod copy ((node node) &key (data (data node)) (name (name node)) (transform (transform node))
-                                    (children (children node)))
-  (make-instance 'node :data data :name name :transform transform :children children))
+(defmethod copy ((node node) &rest keys)
+  (nest
+   (apply #'make-instance (class-name (class-of node)))
+   (apply #'append keys)
+   (mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
+   (remove 'name)
+   (mapcar #'slot-definition-name (class-slots (class-of node)))))
 
 ;;; TODO: make the INCF here thread safe on SBCL, using atomic
 ;;; increment. 
@@ -125,7 +133,7 @@ a node."))
                  (error "~a not a valid child index for ~a" i node))
                (setf node (elt children i)))
               (symbol
-               (setf node (@ node i))))))
+               (setf node (slot-value node i))))))
     ;; This assignment is functionally ok, since it is assigned
     ;; only once when the cache is filled
     (setf (slot-value f 'cache) node)))
@@ -249,19 +257,26 @@ construction, then walks it filling in the PATH attributes."
 (defmethod make-node* ((class standard-class) vals &rest args)
   (apply #'make-node* (class-name class) vals args))
 
-(defmethod make-node* ((class (eql 'node)) vals &key name transform)
-  (make-instance 'node :name name
-                 :data (car vals)
-                 :transform transform
-                 :children (mapcar #'make-node (cdr vals))))
+(defmethod make-node* ((class (eql 'node-with-data)) vals &key name transform)
+  (make-instance 'node-with-data
+    :name name
+    :data (car vals)
+    :transform transform
+    :children (mapcar #'make-node (cdr vals))))
 
 ;; TODO: refactor this for better extensibility on subclasses
-(defgeneric to-list (node)
+(defgeneric to-list (node-with-data)
   (:documentation "Convert tree rooted at NODE to list form.")
   (:method ((finger finger))
     (to-list (cache finger)))
-  (:method ((node node))
+  (:method ((node node-with-data))
     (let ((tail (cons (data node) (to-list* node))))
+      (let ((class (class-name (class-of node))))
+        (if (eql class 'node)
+            tail
+            (cons class tail)))))
+  (:method ((node node))
+    (let ((tail (to-list* node)))
       (let ((class (class-name (class-of node))))
         (if (eql class 'node)
             tail
@@ -566,9 +581,9 @@ names.)"))
   (let ((n (call-next-method)))
     (funcall fn n)))
 
-(defun update-tree-at-data (node data)
+(defun update-tree-at-data (node-with-data data)
   "Cause nodes with DATA to be copied (and all ancestors)"
-  (update-tree node (lambda (n) (if (eql (data n) data) (copy n) n))))
+  (update-tree node-with-data (lambda (n) (if (eql (data n) data) (copy n) n))))
 
 (defun remove-nodes-if (node fn)
   "Remove nodes/leaves for which FN is true"
@@ -650,7 +665,7 @@ bucket getting at least 1.  Return as a list."
           (random-permute (append (iter (repeat (random leaf-bound))
                                         (collecting (make-random-leaf)))
                                   children)))
-    (make-instance 'node :data (make-random-data)
+    (make-instance 'node-with-data :data (make-random-data)
                    :children children)))
 
 (defun make-random-leaf () (random 100))

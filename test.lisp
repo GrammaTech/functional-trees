@@ -7,7 +7,7 @@
         :software-evolution-library/stefil-plus
         :iterate)
   (:import-from :functional-trees/core
-                :node :copy :finger :make-tree
+                :node :node-with-data :copy :finger :make-tree
                 :make-random-tree
                 :remove-nodes-randomly
                 :swap-random-nodes
@@ -36,7 +36,7 @@
 (in-package :ft/test)
 (in-readtable :curry-compose-reader-macros)
 
-(defclass node-with-fields (node)
+(defclass node-with-fields (node-with-data)
   ((a :reader node-a
       :initarg :a
       :documentation "Example of a node field")
