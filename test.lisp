@@ -642,3 +642,11 @@ diagnostic information on error or failure."
                  (convert 'alist)
                  (convert 'node-with-data)
                  '(1 2 3 4 (5 6 7 8) (9 10))))))
+
+(deftest map-works ()
+  (let ((it (convert 'node-with-data '(0 1 2 3 4 5)))
+        (after '(1 2 3 4 5 6)))
+    (is (equalp (map 'list #'1+ it) after))
+    (let ((node-result (map 'node #'1+ it)))
+      (is (typep node-result 'node))
+      (is (equalp (convert 'list node-result) after)))))

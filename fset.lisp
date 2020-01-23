@@ -179,10 +179,18 @@
 
 
 ;;; FSET sequence operations (+ two) for functional tree.
-(defgeneric fset-default-node-key (node-type element)
-  (:documentation "Default key to use to process ELEMENT as possible NODE-TYPE.")
-  (:method ((node-type t) (element t)) element)
-  (:method ((node-type (eql 'node-with-data)) (element node-with-data)) (data element)))
+(defgeneric fset-default-node-accessor (node-type)
+  ;; Instead maybe just have a function that returns the slot name to
+  ;; use to access and store data.  This could be used in slot-value
+  ;; and copy respectively.
+  (:documentation "Default key to get and set data from and into NODE-TYPE.")
+  (:method ((node-type (eql 'node-with-data))) 'data))
+
+(defun fset-default-accessor-for (type)
+  (lambda (item)
+    (if (typep item type)
+        (slot-value item (fset-default-node-accessor type))
+        item)))
 
 (defgeneric map (result-type function first &rest more)
   (:documentation
@@ -198,15 +206,25 @@ On a functional tree the nodes of the tree are mapped.")
       (push (funcall function element) result)))
   (:method (result-type function (first node) &rest more)
     (when more (error "`ft:map' does not support mapping multiple trees."))
-    (labels ((map- (function subtree)
-               (if (typep subtree 'node)
-                   (copy (funcall function subtree)
-                         :children (mapcar function (children subtree)))
-                   (funcall function subtree))))
-      (let ((result (map- function first)))
-        (case result-type
-          (node result)
-          (otherwise (coerce (convert 'list result) result-type)))))))
+    (let* ((key (fset-default-node-accessor (type-of first)))
+           (function (coerce function 'function)))
+      (labels ((getter (item)
+                 (funcall function (slot-value item key)))
+               (setter (item new)
+                 (setf (slot-value item key) new))
+               (map- (subtree)
+                 (if (typep subtree 'node)
+                     ;; We need a symmetric key here, to pull
+                     ;; information out of the node and then to pack
+                     ;; information back into the node.
+                     (let ((it (copy subtree :children (mapcar #'map- (children subtree)))))
+                       (setter it (getter subtree))
+                       it)
+                     (funcall function subtree))))
+        (let ((result (map- first)))
+          (if (subtypep (type-of result) result-type)
+              result
+              (coerce (convert 'list result) result-type)))))))
 
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
@@ -252,14 +270,14 @@ If secondary return value of PREDICATE is non-nil force substitution
 
 (defmethod position (item (node node) &key
                                         (test #'equalp)
-                                        (key (curry #'fset-default-node-key (type-of node)) key-p)
+                                        (key (fset-default-accessor-for (type-of node)) key-p)
                                         &allow-other-keys)
   (apply #'position-if (curry (coerce test 'function) item) node
          (when key-p (list :key key))))
 
 (defmethod position-if (predicate (node node)
                         &key from-end end start test-not test
-                          (key (curry #'fset-default-node-key (type-of node))))
+                          (key (fset-default-accessor-for (type-of node))))
   (assert (notany #'identity from-end end start test-not test)
           (from-end end start test-not test)
           "TODO: implement support for ~a key in `position-if'"
@@ -283,17 +301,17 @@ If secondary return value of PREDICATE is non-nil force substitution
     nil))
 
 (defmethod position-if-not (predicate (node node)
-                            &key (key (curry #'fset-default-node-key (type-of node)) key-p)
+                            &key (key (fset-default-accessor-for (type-of node)) key-p)
                               &allow-other-keys)
   (apply #'position-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod remove (item (node node) &key (test #'equalp)
-                                      (key (curry #'fset-default-node-key (type-of node)) key-p)
+                                      (key (fset-default-accessor-for (type-of node)) key-p)
                                       &allow-other-keys)
   (apply #'remove-if (curry (coerce test 'function) item) node (when key-p (list :key key))))
 
 (defmethod remove-if (predicate (node node)
-                      &key (key (curry #'fset-default-node-key (type-of node)))
+                      &key (key (fset-default-accessor-for (type-of node)))
                         &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
@@ -321,20 +339,20 @@ If secondary return value of PREDICATE is non-nil force substitution
     (car (remove- (coerce predicate 'function) node))))
 
 (defmethod remove-if-not (predicate (node node)
-                          &key (key (curry #'fset-default-node-key (type-of node)) key-p)
+                          &key (key (fset-default-accessor-for (type-of node)) key-p)
                             &allow-other-keys)
   (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute
     (newitem olditem (node node) &key (test #'equalp)
-                                   (key (curry #'fset-default-node-key (type-of node)) key-p)
+                                   (key (fset-default-accessor-for (type-of node)) key-p)
                                    &allow-other-keys)
   (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
          :test test (when key-p (list :key key))))
 
 (defmethod substitute-if (newitem predicate (node node)
                           &key (copy nil copyp)
-                            (key (curry #'fset-default-node-key (type-of node)) key-p)
+                            (key (fset-default-accessor-for (type-of node)) key-p)
                             &allow-other-keys)
   (when copyp (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
@@ -345,12 +363,12 @@ If secondary return value of PREDICATE is non-nil force substitution
          node (when key-p (list :key key))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
-                              &key (key (curry #'fset-default-node-key (type-of node)) key-p)
+                              &key (key (fset-default-accessor-for (type-of node)) key-p)
                                 &allow-other-keys)
   (apply #'substitute-if newitem (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute-with (function (node node)
-                            &key (key (curry #'fset-default-node-key (type-of node)))
+                            &key (key (fset-default-accessor-for (type-of node)))
                               &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
