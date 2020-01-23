@@ -1,10 +1,12 @@
 (defpackage :functional-trees/fset
   (:nicknames :ft/fset)
   (:use cl :alexandria :iterate :functional-trees/core :fset)
+  (:import-from :uiop/utility :nest)
+  (:import-from :closer-mop :slot-definition-name :class-slots)
   (:shadow :map)
   (:shadowing-import-from :fset
                           :@
-                          :compose :unionf :appendf :with :removef
+                          :unionf :appendf :with :removef
 			  ;; Shadowed type/constructor names
 			  :set
 			  ;; Shadowed set operations
@@ -20,6 +22,7 @@
 			  :some :every :notany :notevery)
   (:shadowing-import-from
    :cl :set :union :intersection :set-difference :complement)
+  (:shadowing-import-from :alexandria :compose)
   (:export :map :substitute-with)
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
@@ -95,7 +98,81 @@
   (1+ (reduce #'+ (mapcar #'size (children node)))))
 
 
-;;; Relevant FSET operations (+ two) for functional tree.
+;;; Printing methods (rely on conversion functions).
+(defmethod print-object ((obj node) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a" (convert 'list obj)))))
+
+(defmethod print-object ((obj finger) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a~@[ ~a~]"
+                (node obj) (path obj) (residue obj)))))
+
+(defmethod print-object ((obj path-transform) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a"
+                (transforms obj) (from obj)))))
+
+
+;;; FSET conversion operations
+(defmethod convert ((to-type (eql 'list)) (node node-with-data)
+                    &key (value-fn #'data) &allow-other-keys)
+  "Convert NODE of type node-with-data to a list using `data' as the value-fn."
+  (call-next-method to-type node :value-fn value-fn))
+
+(defmethod convert ((to-type (eql 'list)) (node node)
+                    &key (value-fn nil value-fn-p) &allow-other-keys)
+  "Convert NODE of type node to a list."
+  (declare (optimize (speed 3)))
+  (when value-fn-p (setf value-fn (coerce value-fn 'function)))
+  (labels ((convert- (node)
+             (declare (type function value-fn))
+             (if (typep node 'node)
+                 (cons (if value-fn-p (funcall value-fn node) node)
+                       (mapcar #'convert- (children node)))
+                 node)))
+    (convert- node)))
+
+(defmethod convert ((to-type (eql 'list)) (finger finger)
+                    &key &allow-other-keys)
+  (let ((cached (ft/core::cache finger)))
+    (if (typep cached 'node)
+        (convert to-type cached)
+        cached)))
+
+(defmethod convert ((to-type (eql 'alist)) (node node)
+                    &key (value-fn nil value-fn-p) &allow-other-keys)
+  (convert
+   'list node :value-fn
+   (if value-fn-p value-fn
+       (let ((slots
+              (nest
+               (remove-if (rcurry #'member '(name transform finger children)))
+               (mapcar #'slot-definition-name (class-slots (class-of node))))))
+         (lambda (node)
+           (apply #'append
+                  (mapcar (lambda (slot)
+                            (when-let ((val (slot-value node slot)))
+                              (list (cons (make-keyword slot) val))))
+                          slots)))))))
+
+(defmethod convert ((to-type (eql 'node-with-data)) (sequence list) &key &allow-other-keys)
+  (labels ((make-node (list-form)
+             (if (consp list-form)
+                 (make-instance 'node-with-data
+                   :data (car list-form)
+                   :children (mapcar #'make-node (cdr list-form)))
+                 list-form)))
+    (populate-fingers (make-node sequence))))
+
+
+;;; FSET sequence operations (+ two) for functional tree.
 (defgeneric map (result-type function first &rest more)
   (:documentation
    "If FIRST is a Lisp sequence, this simply calls `cl:map'.
@@ -119,7 +196,7 @@ On a functional tree the nodes of the tree are mapped.")
       (let ((result (map- function first)))
         (case result-type
           (node result)
-          (otherwise (coerce (to-list result) result-type)))))))
+          (otherwise (coerce (convert 'list result) result-type)))))))
 
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
@@ -143,33 +220,43 @@ If secondary return value of PREDICATE is non-nil force substitution
       (convert 'seq (nreverse result)))))
 
 (defmethod reduce (fn (node node) &rest rest &key &allow-other-keys)
-  (apply #'reduce fn (flatten (to-list node)) rest))
+  (apply #'reduce fn (flatten (convert 'list node)) rest))
 
 (defmethod find (item (node node) &rest rest &key &allow-other-keys)
-  (apply #'find item (flatten (to-list node)) rest))
+  (apply #'find item (flatten (convert 'list node)) rest))
 
 (defmethod find-if (predicate (node node) &rest rest &key &allow-other-keys)
-  (apply #'find-if predicate (flatten (to-list node)) rest))
+  (apply #'find-if predicate (flatten (convert 'list node)) rest))
 
 (defmethod find-if-not (predicate (node node) &rest rest &key &allow-other-keys)
-  (apply #'find-if-not predicate (flatten (to-list node)) rest))
+  (apply #'find-if-not predicate (flatten (convert 'list node)) rest))
 
 (defmethod count (item (node node) &rest rest &key &allow-other-keys)
-  (apply #'count item (flatten (to-list node)) rest))
+  (apply #'count item (flatten (convert 'list node)) rest))
 
 (defmethod count-if (predicate (node node) &rest rest &key &allow-other-keys)
-  (apply #'count-if predicate (flatten (to-list node)) rest))
+  (apply #'count-if predicate (flatten (convert 'list node)) rest))
 
 (defmethod count-if-not (predicate (node node) &rest rest &key &allow-other-keys)
-  (apply #'count-if-not predicate (flatten (to-list node)) rest))
+  (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
 
-(defmethod position (item (node node) &key (test #'equalp) &allow-other-keys)
-  (position-if (curry (coerce test 'function) item) node))
+(defmethod position (item (node node) &key (test #'equalp) (key nil key-p) &allow-other-keys)
+  (apply #'position-if (curry (coerce test 'function) item) node
+         (when key-p (list :key key))))
 
-(defmethod position-if (predicate (node node) &key &allow-other-keys)
+(defmethod position-if (predicate (node node)
+                        &key from-end end start test-not test (key nil key-p))
+  (assert (notany #'identity from-end end start test-not test)
+          (from-end end start test-not test)
+          "TODO: implement support for ~a key in `position-if'"
+          (cdr (find-if #'car
+                        (mapcar #'cons
+                                (list from-end end start test-not test)
+                                '(from-end end start test-not test)))))
+  (when key-p (setf key (coerce key 'function)))
   (labels ((position- (predicate node path)
              (if (typep node 'node)
-                 (if (funcall predicate (data node))
+                 (if (funcall predicate (if key (funcall key node) node))
                      (return-from position-if (nreverse path))
                      (mapcar (lambda (child index)
                                (position- predicate child (cons index path)))

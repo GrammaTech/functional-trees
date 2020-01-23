@@ -1,23 +1,13 @@
 (defpackage :functional-trees/test
   (:nicknames :ft/test)
-  (:use :cl :functional-trees
+  (:use :cl
+        :functional-trees/all
         :alexandria
         :named-readtables
         :curry-compose-reader-macros
         :software-evolution-library/stefil-plus
         :iterate)
-  (:import-from :functional-trees/core
-                :node :node-with-data :copy :finger :make-tree
-                :make-random-tree
-                :remove-nodes-randomly
-                :swap-random-nodes
-                :path-of-node
-                :path :path-p :node-valid
-                :nodes-disjoint
-                :lexicographic-<
-                :compare-nodes
-                :node-can-implant
-                :path-transform-compress-mapping)
+  (:import-from :uiop/utility :nest)
   (:shadowing-import-from :functional-trees/all
                           :map :set :partition :alist :size
                           :range :compose :unionf :appendf :with :removef
@@ -69,10 +59,32 @@ to subtrees."))
           n
           (copy n :a new-a :b new-b)))))
 
-(defmethod to-list* append ((n node-with-fields))
-  (with-slots (a b) n
-  `(,@(when a `(:a ,(to-list a)))
-    ,@(when b `(:b ,(to-list b))))))
+(defmethod convert ((to-type (eql 'list)) (node node-with-fields)
+                    &key (value-fn (lambda (node)
+                                     (apply #'append
+                                            (mapcar (lambda (slot name)
+                                                      (let ((value (slot-value node slot)))
+                                                        (when value
+                                                          (list name
+                                                                (if (typep value 'node)
+                                                                    (convert to-type value)
+                                                                    value)))))
+                                                    '(data a b)
+                                                    '(:data :a :b)))))
+                      &allow-other-keys)
+  (call-next-method to-type node :value-fn value-fn))
+
+(defmethod convert ((to-type (eql 'node-with-fields)) (sequence list) &key &allow-other-keys)
+  (labels ((make-node (vals)
+             (if (consp vals)
+                 (make-instance 'node-with-fields
+                   :data (car vals)
+                   :a (make-node (getf (cdr vals) :a))
+                   :b (make-node (getf (cdr vals) :b))
+                   :children (mapcar #'make-node
+                                     (plist-drop-keys '(:a :b) (cdr vals))))
+                 vals)))
+    (populate-fingers (make-node sequence))))
 
 (defmethod copy ((n node-with-fields) &key (a (node-a n)) (b (node-b n))
                                         (children (children n))
@@ -80,16 +92,6 @@ to subtrees."))
                                         (transform (transform n)))
   (make-instance (class-of n) :a a :b b :children children
                  :data data :name name :transform transform))
-
-(defmethod make-node* ((n (eql 'node-with-fields)) vals &key name transform)
-  (make-instance 'node-with-fields
-                 :name name
-                 :transform transform
-                 :data (car vals)
-                 :a (make-node (getf (cdr vals) :a))
-                 :b (make-node (getf (cdr vals) :b))
-                 :children (mapcar #'make-node
-                                   (plist-drop-keys '(:a :b) (cdr vals)))))
 
 (defun plist-drop-keys (keys plist)
   (iter (for e on plist by #'cddr)
@@ -117,17 +119,17 @@ to subtrees."))
   (is (not (lexicographic-< '(a) '(a)))))
 
 (deftest make-node.1 ()
-  (is (not (make-node nil)))
-  (is (typep (make-node '(:a)) 'node))
-  (is (null (transform (make-node '(:b (:c))))))
-  (is (equal (to-list (make-node '(:a))) '(:a))))
+  (is (not (convert 'node-with-data nil)))
+  (is (typep (convert 'node-with-data '(:a)) 'node))
+  (is (null (transform (convert 'node-with-data '(:b (:c))))))
+  (is (equal (convert 'list (convert 'node-with-data '(:a))) '(:a))))
 
 (deftest finger.1 ()
   (let* ((init-list '(:a "ab" (:b) "xy" (:c (:d) #\Z (:e "!"))))
-         (node (make-node init-list)))
-    (is (equal (to-list node) init-list))
+         (node (convert 'node-with-data init-list)))
+    (is (equal (convert 'list node) init-list))
     (flet ((%f (path)
-             (to-list (make-instance 'finger :node node
+             (convert 'list (make-instance 'finger :node node
                                      :path path :residue nil))))
       (is (equal (%f nil) init-list))
       (is (equal (%f '(0)) (cadr init-list)))
@@ -138,150 +140,156 @@ to subtrees."))
 (deftest transform-path.1 ()
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:b) (:d) (:c (:x))))
-         (node1 (make-node l1))
+         (node1 (convert 'node-with-data l1))
          (pt (make-instance 'path-transform
                             :from node1
                             :transforms '(((1) (2) :live))))
-         (node2 (make-node l2 :transform pt)))
+         (node2 (convert 'node-with-data l2)))
+    (setf (slot-value node2 'transform) pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
       (is (null (path f1)))
-      (is (equal (to-list f1) l1))
+      (is (equal (convert 'list f1) l1))
       (let ((f2 (transform-finger-to f1 pt node2)))
         (is (null (path f2)))
         (is (null (residue f2)))
-        (is (equal (to-list f2) l2))))
+        (is (equal (convert 'list f2) l2))))
 
     (let ((f3 (make-instance 'finger :node node1 :path '(0))))
       (is (equal (path f3) '(0)))
-      (is (equal (to-list f3) (cadr l1)))
+      (is (equal (convert 'list f3) (cadr l1)))
       (let ((f4 (transform-finger-to f3 pt node2)))
         (is (equal (path f4) '(0)))
         (is (null (residue f4)))
-        (is (equal (to-list f4) (cadr l2)))))
+        (is (equal (convert 'list f4) (cadr l2)))))
 
     (let ((f5 (make-instance 'finger :node node1 :path '(1))))
       (is (equal (path f5) '(1)))
-      (is (equal (to-list f5) (third l1)))
+      (is (equal (convert 'list f5) (third l1)))
       (let ((f6 (transform-finger-to f5 pt node2)))
         (is (equal (path f6) '(2)))
         (is (null (residue f6)))
-        (is (equal (to-list f6) (fourth l2)))))
+        (is (equal (convert 'list f6) (fourth l2)))))
 
     ))
 
 (deftest transform-path.2 ()
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:c (:x))))
-         (node1 (make-node l1))
+         (node1 (convert 'node-with-data l1))
          (pt (make-instance 'path-transform
                             :from node1
                             :transforms '(((0) nil :dead)
                                           ((1) (0) :live))))
-         (node2 (make-node l2 :transform pt)))
+         (node2 (convert 'node-with-data l2)))
+    (setf (slot-value node2 'transform) pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
       (is (null (path f1)))
-      (is (equal (to-list f1) l1))
+      (is (equal (convert 'list f1) l1))
       (let ((f2 (transform-finger-to f1 pt node2)))
         (is (null (path f2)))
         (is (null (residue f2)))
-        (is (equal (to-list f2) l2))))
+        (is (equal (convert 'list f2) l2))))
 
     (let ((f3 (make-instance 'finger :node node1 :path '(0))))
       (is (equal (path f3) '(0)))
-      (is (equal (to-list f3) (cadr l1)))
+      (is (equal (convert 'list f3) (cadr l1)))
       (let ((f4 (transform-finger-to f3 pt node2)))
         (is (null (path f4)))
         (is (equal (residue f4) '(0)))
-        (is (equal (to-list f4) l2))))
+        (is (equal (convert 'list f4) l2))))
 
     (let ((f5 (make-instance 'finger :node node1 :path '(1))))
       (is (equal (path f5) '(1)))
-      (is (equal (to-list f5) (third l1)))
+      (is (equal (convert 'list f5) (third l1)))
       (let ((f6 (transform-finger-to f5 pt node2)))
         (is (equal (path f6) '(0)))
         (is (null (residue f6)))
-        (is (equal (to-list f6) (second l2)))))
+        (is (equal (convert 'list f6) (second l2)))))
     ))
 
 
 (deftest transform-path.3 ()
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:b) (:d) (:c (:z) (:x) (:y))))
-         (node1 (make-node l1))
+         (node1 (convert 'node-with-data l1))
          (pt (make-instance 'path-transform
                             :from node1
                             :transforms '(((1 0) (2 1) :live)
                                           ((1) (2) :live))))
-         (node2 (make-node l2 :transform pt)))
+         (node2 (convert 'node-with-data l2)))
+    (setf (slot-value node2 'transform) pt)
+
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
       (is (null (path f1)))
-      (is (equal (to-list f1) l1))
+      (is (equal (convert 'list f1) l1))
       (let ((f2 (transform-finger-to f1 pt node2)))
         (is (null (path f2)))
         (is (null (residue f2)))
-        (is (equal (to-list f2) l2))))
+        (is (equal (convert 'list f2) l2))))
 
     (let ((f3 (make-instance 'finger :node node1 :path '(0))))
       (is (equal (path f3) '(0)))
-      (is (equal (to-list f3) (cadr l1)))
+      (is (equal (convert 'list f3) (cadr l1)))
       (let ((f4 (transform-finger-to f3 pt node2)))
         (is (equal (path f4) '(0)))
         (is (null (residue f4)))
-        (is (equal (to-list f4) (cadr l2)))))
+        (is (equal (convert 'list f4) (cadr l2)))))
 
     (let ((f5 (make-instance 'finger :node node1 :path '(1 0))))
       (is (equal (path f5) '(1 0)))
-      (is (equal (to-list f5) (second (third l1))))
+      (is (equal (convert 'list f5) (second (third l1))))
       (let ((f6 (transform-finger-to f5 pt node2)))
         (is (equal (path f6) '(2 1)))
         (is (null (residue f6)))
-        (is (equal (to-list f6) (third (fourth l2))))))
+        (is (equal (convert 'list f6) (third (fourth l2))))))
     ))
 
 ;;; Tests of path-transform-of, update-tree
 
 (deftest update-tree.1 ()
-    (let* ((n1 (make-node '(:a (:b) (:c) (:d))))
+    (let* ((n1 (convert 'node-with-data '(:a (:b) (:c) (:d))))
            (n2 (update-tree-at-data n1 :c)))
       (is (not (eql n1 n2)))
-      (is (equal (to-list n1) (to-list n2)))))
+      (is (equal (convert 'list n1) (convert 'list n2)))))
 
 (deftest update-tree.2 ()
-    (let* ((n1 (make-node '(:a (:b) (:c) (:d))))
+    (let* ((n1 (convert 'node-with-data '(:a (:b) (:c) (:d))))
            (n2 (update-tree-at-data n1 :c)))
       (is (not (eql n1 n2)))
-      (is (equal (to-list n1) (to-list n2)))))
+      (is (equal (convert 'list n1) (convert 'list n2)))))
 
 (deftest update-tree.3 ()
-    (let* ((n1 (make-node '(:a (:b) (:c) (:d))))
-           (n2 (remove-nodes-if n1 (lambda (n) (eql (data n) :c)))))
+    (let* ((n1 (convert 'node-with-data '(:a (:b) (:c) (:d))))
+           (n2 (remove-if
+                (lambda (n)
+                  (etypecase n
+                    (node-with-data (eql (data n) :c))
+                    (symbol (eql n :c)))) n1)))
       (is (not (eql n1 n2)))
-      (is (equal (to-list n2) '(:a (:b) (:d))))
-      ))
-
+      (is (equal (convert 'list n2) '(:a (:b) (:d))))))
 
 (deftest update-tree.4 ()
-    (let* ((n1 (make-node '(:a (:b) (:c) (:d))))
+    (let* ((n1 (convert 'node-with-data '(:a (:b) (:c) (:d))))
            (n2 (@ n1 '(1)))
            (n3 (@ n1 '(2)))
            (n4 (swap-nodes n1 n2 n3)))
       (is (not (eql n1 n4)))
-      (is (equal (to-list n4) '(:a (:b) (:d) (:c))))
+      (is (equal (convert 'list n4) '(:a (:b) (:d) (:c))))
       ))
 
 (deftest @.error ()
-  (is (handler-case (progn (@ (make-node '(:a)) '(:bad)) nil)
+  (is (handler-case (progn (@ (convert 'node-with-data '(:a)) '(:bad)) nil)
         (error () t)))
-  (is (handler-case (progn (@ (make-node '(:a)) '(-1)) nil)
+  (is (handler-case (progn (@ (convert 'node-with-data '(:a)) '(-1)) nil)
         (error () t)))
-  (is (handler-case (progn (@ (make-node '(:a (:b))) '(1)) nil)
+  (is (handler-case (progn (@ (convert 'node-with-data '(:a (:b))) '(1)) nil)
         (error () t))))
 
 (deftest path-of-node.1 ()
-  (let ((n1 (make-node '(:a)))
-        (n2 (make-node '(:a (:b) (:b (:c) (:d) (:e)) (:d)))))
+  (let ((n1 (convert 'node-with-data '(:a)))
+        (n2 (convert 'node-with-data '(:a (:b) (:b (:c) (:d) (:e)) (:d)))))
     (is (handler-case (progn (path-of-node n2 n1) nil)
           (error () t)))
     (is (equal (path-of-node n2 (second (children n2))) '(1)))
@@ -290,7 +298,7 @@ to subtrees."))
                '(1 2)))))
 
 (deftest node-can-implant.1 ()
-  (let* ((n1 (make-node '(:a (:b) (:b (:c) (:d) (:e)) (:d))))
+  (let* ((n1 (convert 'node-with-data '(:a (:b) (:b (:c) (:d) (:e)) (:d))))
          (n2 (second (children n1)))
          (n3 (third (children n1))))
     (is (node-can-implant n1 n1 n1))
@@ -315,25 +323,25 @@ to subtrees."))
   (is (not (typep '(-1 1) 'path))))
 
 (deftest node-valid.1 ()
-  (is (node-valid (make-node '(:a))))
-  (is (node-valid (make-node '(:a (:a) (:b)))))
+  (is (node-valid (convert 'node-with-data '(:a))))
+  (is (node-valid (convert 'node-with-data '(:a (:a) (:b)))))
   (is (not (node-valid
-            (let ((n (make-node '(:a))))
-              (make-node `(:b ,n ,n)))))))
+            (let ((n (convert 'node-with-data '(:a))))
+              (convert 'node-with-data `(:b ,n ,n)))))))
 
 (deftest nodes-disjoint.1 ()
-  (is (nodes-disjoint (make-node '(:a)) (make-node '(:b))))
-  (is (nodes-disjoint (make-node '(:a)) (make-node '(:a))))
-  (is (nodes-disjoint (make-node '(:a (:b))) (make-node '(:a (:b)))))
-  (let ((n (make-node '(:a))))
+  (is (nodes-disjoint (convert 'node-with-data '(:a)) (convert 'node-with-data '(:b))))
+  (is (nodes-disjoint (convert 'node-with-data '(:a)) (convert 'node-with-data '(:a))))
+  (is (nodes-disjoint (convert 'node-with-data '(:a (:b))) (convert 'node-with-data '(:a (:b)))))
+  (let ((n (convert 'node-with-data '(:a))))
     (is (not (nodes-disjoint n n))))
-  (let ((n (make-node '(:a))))
-    (is (not (nodes-disjoint (make-node `(:b ,n))
-                             (make-node `(:c ,n))))))
-  (let* ((n (make-node '(:a)))
+  (let ((n (convert 'node-with-data '(:a))))
+    (is (not (nodes-disjoint (convert 'node-with-data `(:b ,n))
+                             (convert 'node-with-data `(:c ,n))))))
+  (let* ((n (convert 'node-with-data '(:a)))
          (n2 (copy n :data :b)))
-    (is (not (nodes-disjoint (make-node `(:c ,n))
-                             (make-node `(:d ,n2)))))))
+    (is (not (nodes-disjoint (convert 'node-with-data `(:c ,n))
+                             (convert 'node-with-data `(:d ,n2)))))))
 
 ;;; Note that COMPARE-NODES is comparing by name, not by data
 (deftest compare-nodes.1 ()
@@ -341,38 +349,38 @@ to subtrees."))
   (is (compare-nodes 1 1))
   (is (compare-nodes '(1) '(1)))
   (is (not (compare-nodes 1 2)))
-  (let ((n (make-node '(:a))))
+  (let ((n (convert 'node-with-data '(:a))))
     (is (compare-nodes n n))
     (is (compare-nodes n (copy n :data :b)))
-    (is (not (compare-nodes n (make-node '(:a)))))
-    (is (not (compare-nodes n (make-node '(:a (:b))))))
-    (is (not (compare-nodes n (copy n :children (list (make-node '(:b))))))))
-  (let ((n (make-node '(:a (:b)))))
+    (is (not (compare-nodes n (convert 'node-with-data '(:a)))))
+    (is (not (compare-nodes n (convert 'node-with-data '(:a (:b))))))
+    (is (not (compare-nodes n (copy n :children (list (convert 'node-with-data '(:b))))))))
+  (let ((n (convert 'node-with-data '(:a (:b)))))
     (is (compare-nodes n
                        (copy n
                              :children
                              (list (copy (car (children n))
                                          :data :c)))))
     (is (not (compare-nodes n
-                            (copy n :children (list (make-node '(:c)))))))))
+                            (copy n :children (list (convert 'node-with-data '(:c)))))))))
 
 
 (deftest print.1 ()
   (let ((*print-readably* nil)
-        (n1 (make-node '(:a)))
-        (t1 (make-tree '(:a))))
-    (is (stringp (with-output-to-string (s) (prin1 (make-node '(:a)) s))))
+        (n1 (convert 'node-with-data '(:a)))
+        (t1 (convert 'node-with-data '(:a))))
+    (is (stringp (with-output-to-string (s) (prin1 (convert 'node-with-data '(:a)) s))))
     (is (stringp (with-output-to-string (s) (prin1 (path-transform-of n1 n1) s))))
     (is (stringp (with-output-to-string (s) (prin1 (finger t1) s))))))
 
 (deftest print.2 ()
   (let ((*print-readably* t)
-        (n1 (make-node '(:a)))
-        (t1 (make-tree '(:a))))
+        (n1 (convert 'node-with-data '(:a)))
+        (t1 (convert 'node-with-data '(:a))))
     (flet ((%e (v)
              (handler-case (progn (prin1 v) nil)
                (error () t))))
-    (is (%e (make-node '(:a))))
+    (is (%e (convert 'node-with-data '(:a))))
     (is (%e (path-transform-of n1 n1)))
     (is (%e (finger t1))))))
 
@@ -384,42 +392,50 @@ paths to the right nodes.  Return NIL on success or
 diagnostic information on error or failure."
   (iter (repeat reps)
         (let* ((n1 (make-random-tree size))
-               (n2 (funcall mutate-fn n1))
-               (pt (path-transform-of n1 n2))
-               (names nil))
-          (handler-case
-              (progn
-                (traverse-nodes n2 (lambda (n) (push (name n) names)))
-                ;; (format t "NAMES = ~a~%" names)
-                (traverse-nodes-with-rpaths
-                 n1
-                 (lambda (n rpath)
-                   (when (member (name n) names)
-                     (let* ((f (make-instance 'finger
-                                              :node n1 :path (reverse rpath)))
-                            (n3 (@ n2 f)))
-                       ;; (format t "n = ~a~% n3 = ~a~%" n n3)
-                       (when (typep n3 'node)
-                         (unless (eql (name n) (name n3))
-                           (return-from random-test (list n1 n2 n3 n (name n) (name n3)))))))
-                   t)))
-            (error (e)
-              (return-from random-test
-                (list n1 n2 pt e))))))
+               (n2 (funcall mutate-fn n1)))
+          ;; FIXME: It is possible to delete the root returning a tree
+          ;;        for n2 that is just nil.
+          (when (and n1 n2)
+            (let ((pt (path-transform-of n1 n2))
+                  (names nil))
+              (handler-case
+                  (progn
+                    (traverse-nodes n2 (lambda (n) (push (name n) names)))
+                    ;; (format t "NAMES = ~a~%" names)
+                    (traverse-nodes-with-rpaths
+                     n1
+                     (lambda (n rpath)
+                       (when (member (name n) names)
+                         (let* ((f (make-instance 'finger
+                                     :node n1 :path (reverse rpath)))
+                                (n3 (@ n2 f)))
+                           ;; (format t "n = ~a~% n3 = ~a~%" n n3)
+                           (when (typep n3 'node)
+                             (unless (eql (name n) (name n3))
+                               (return-from random-test (list n1 n2 n3 n (name n) (name n3)))))))
+                       t)))
+                (error (e)
+                  (return-from random-test
+                    (list n1 n2 pt e))))))))
   nil)
+
+(defun remove-nodes-randomly (root p)
+  "Remove nodes from tree with probability p"
+  (assert (typep p '(real 0)))
+  (remove-if (lambda (n) (declare (ignore n)) (<= (random 1.0) p)) root))
 
 (deftest swap.1 ()
   (let* ((l1 '(:i 17 17 (:d 26) (:m (:b 54 84))))
-         (n1 (make-node l1))
+         (n1 (convert 'node-with-data l1))
          (n2 (@ n1 '(2)))
          (n3 (@ n1 '(3 0)))
          (n4 (swap-nodes n1 n2 n3)))
     (is (equal (transform n1) nil))
     (is (typep (transform n4) 'path-transform))
-    (is (equal (to-list n1) l1))
-    (is (equal (to-list n2) '(:d 26)))
-    (is (equal (to-list n3) '(:b 54 84)))
-    (is (equal (to-list n4) '(:i 17 17 (:b 54 84) (:m (:d 26)))))
+    (is (equal (convert 'list n1) l1))
+    (is (equal (convert 'list n2) '(:d 26)))
+    (is (equal (convert 'list n3) '(:b 54 84)))
+    (is (equal (convert 'list n4) '(:i 17 17 (:b 54 84) (:m (:d 26)))))
     (let ((f1 (make-instance 'finger :node n1 :path '(2))))
       ;; (format t "(@ n4 f1) ==> ~a~%" (@ n4 f1))
       ;; (format t "n2 ==> ~a~%" n2)
@@ -476,116 +492,125 @@ diagnostic information on error or failure."
 (deftest node-with-fields.1 ()
   (let ((n (make-instance 'node-with-fields :a 1 :b 2 :data :foo
                           :children '(3))))
-    (is (equal (to-list n) '(node-with-fields :foo :a 1 :b 2 3)))
+    (is (equal (convert 'list n) '((:data :foo :a 1 :b 2) 3)))
     (is (equal (@ n :a) 1))
     (is (equal (@ n :b) 2))
     (is (equal (@ n 0) 3))))
 
 (deftest node-with-fields.2 ()
-  (let ((n (make-node '(node-with-fields))))
+  (let ((n (convert 'node-with-fields '(1))))
     (is (equal (node-a n) nil))
     (is (equal (node-b n) nil))
     (is (equal (children n) nil))))
 
 (deftest node-with-fields.3 ()
-  (let ((n (make-node '(node-with-fields :foo :a 1 :b 2 3 4 5))))
+  (let ((n (convert 'node-with-fields '(:foo :a 1 :b 2 3 4 5))))
     (is (equal (node-a n) 1))
     (is (equal (node-b n) 2))
-    (is (equal (children n) '(3 4 5)))))
+    (is (equalp (children n) '(3 4 5)))))
 
 (deftest node-with-fields.4 ()
-  (let* ((n (make-node '(node-with-fields :n1
-                         :a (:n2 1)
-                         :b (:n3 2))))
-         (n4 (update-tree-at-data n :n2))
-         (n5 (make-node '(:n5 5)))
-         (n6 (update-tree n (lambda (x) (if (eql (data x) :n3) n5 x)))))
-    (is (equal (to-list n) '(node-with-fields :n1 :a (:n2 1) :b (:n3 2))))
-    (is (equal (to-list n4) '(node-with-fields :n1 :a (:n2 1) :b (:n3 2))))
-    (is (equal (to-list n6) '(node-with-fields :n1 :a (:n2 1) :b (:n5 5))))))
+  (let* ((n (convert 'node-with-fields '(:foo
+                         :a (:bar :a :n2 :b 1)
+                         :b (:baz :a :n3 :b 2))))
+         (n4 (update-tree-at-data n :bar))
+         (n5 (convert 'node-with-fields '(:qux :n5 5)))
+         (n6 (update-tree n (lambda (x)
+                              (if (and (typep x 'node) (eql (node-a x) :n3)) n5 x)))))
+    (is (equal (convert 'list n) '((:data :foo
+                                    :a ((:data :bar :a :n2 :b 1))
+                                    :b ((:data :baz :a :n3 :b 2))))))
+    (is (equal (convert 'list n4) '((:data :foo
+                                     :a ((:data :bar :a :n2 :b 1))
+                                     :b ((:data :baz :a :n3 :b 2))))))
+    (is (equal (convert 'list n6) '((:data :foo :a
+                                     ((:data :bar :a :n2 :b 1)) :b
+                                     ((:data :qux) :n5 5)))))))
 
 (defsuite ft-fset-tests "Functional tree FSET tests")
 
 (deftest reduce-tree ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (reduce #'+ (iota 10)) (reduce #'+ tree)))))
 
 (deftest find-tree ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (find 4 tree) 4))
     (is (not (find 10 tree)))))
 
 (deftest find-if-tree ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (find-if «and [#'zerop {mod _ 3}] {< 4 }» tree) 6))
     (is (not (find-if (constantly nil) tree)))))
 
 (deftest count-tree ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (count 3 tree) 1))))
 
 (deftest count-if-tree ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (count-if [#'zerop {mod _ 3}] tree) 3))
     (is (zerop (count-if (constantly nil) tree)))))
 
+;;; TODO: Pickup here, how will keys work.
+
 (deftest position-tree ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-    (is (equalp (position 4 tree) '(2)))
-    (is (equalp (position 11 tree) '(4 0 0)))
-    (is (not (position 12 tree)))))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
+    (is (equalp (position 4 tree :key #'data) '(2)))
+    (is (equalp (position 11 tree :key #'data) '(4 0 0)))
+    (is (not (position 12 tree :key #'data)))))
 
 (deftest position-if-tree ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-    (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree)) 6))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
+    (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree :key #'data)) 6))
     (is (not (position-if (constantly nil) tree)))))
 
 (deftest remove-tree ()
-  (is (= (length (to-list (remove 24 (make-tree (iota 100)))))
+  (is (= (length (convert 'list (remove 24 (convert 'node-with-data (iota 100)) :key #'data)))
          99)))
 
 (deftest remove-tree-if ()
   ;; NOTE: Counterintuitively, because the "0" node is the parent of
   ;; the rest of the tree.
-  (is (zerop (length (to-list (remove-if #'evenp (make-tree (iota 100)))))))
-  (is (= 50 (length (to-list (remove-if #'oddp (make-tree (iota 100))))))))
+  (is (zerop (length (convert 'list (remove-if #'evenp (convert 'node-with-data (iota 100)))))))
+  (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data (iota 100))))))))
 
 (deftest substitute-test ()
-  (let ((no-twenty (substitute 40 20 (make-tree (iota 100)))))
+  (let ((no-twenty (substitute 40 20 (convert 'node-with-data (iota 100)))))
     (is (= 0 (count 20 no-twenty)))
     (is (= 2 (count 40 no-twenty)))))
 
 (deftest substitute-if-test ()
-  (let ((no-odd (substitute-if :odd #'oddp (make-tree (iota 100)))))
+  (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data (iota 100)))))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd)))))
 
 (deftest with-test ()
-  (let ((two-fives (with (make-tree (iota 10)) '(2) 5)))
+  (let ((two-fives (with (convert 'node-with-data (iota 10)) '(2) 5)))
     (is (= 2 (count 5 two-fives)))
     (is (zerop (count 3 two-fives))))
   ;; Should replace (5 6 7 8) with :TOUCHED.
-  (is (= 6 (length (flatten (to-list
-                             (with (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))
+  (is (= 6 (length (flatten (convert 'list
+                             (with (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))
                                    '(3) :touched))))))
   ;; Should replace 6 with :TOUCHED.
-  (is (= 9 (length (flatten (to-list
-                             (with (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))
+  (is (= 9 (length (flatten (convert 'list
+                             (with (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))
                                    '(3 0) :touched)))))))
 
 (deftest less-test ()
-  (let ((no-threes (less (make-tree (iota 10)) '(2))))
+  (let ((no-threes (less (convert 'node-with-data (iota 10)) '(2))))
     (is (zerop (count 3 no-threes)))
-    (is (= 9 (length (to-list no-threes))))))
+    (is (= 9 (length (convert 'list no-threes))))))
 
 (deftest @-test ()
-  (let ((tree (make-tree '(1 2 3 4 (5 6 7 8) (((9)))))))
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (let ((it (copy tree)))
       (setf (@ it '(3 0)) :deleted)
       (is (zerop (count 6 it))))))
 
 (deftest more-less-tests ()
-  (let ((it (make-tree '(defun euclids-gcd (a b)
+  (let ((it (convert 'node-with-data '(defun euclids-gcd (a b)
                          (if (= a 0)
                              b)
                          (do ()
@@ -593,14 +618,21 @@ diagnostic information on error or failure."
                            (if (> a b)
                                (setf a (- a b))
                                (setf b (- b a))))))))
-    (is (= 1 (count 'defun (flatten (to-list (less it (position '= it)))))))))
+    (is (= 1 (count 'defun (flatten (convert 'list (less it (position '= it)))))))))
 
 (deftest splice-test ()
-  (let ((it (make-tree '(0 1 2 3 4))))
-    (is (equalp (to-list (splice it '(1) '(:a :b :c)))
+  (let ((it (convert 'node-with-data '(0 1 2 3 4))))
+    (is (equalp (convert 'list (splice it '(1) '(:a :b :c)))
                 '(0 1 :a :b :c 2 3 4)))))
 
 (deftest insert-test ()
-  (let ((it (make-tree '(0 1 2 3 4))))
-    (is (equalp (to-list (insert it '(1) ':a))
+  (let ((it (convert 'node-with-data '(0 1 2 3 4))))
+    (is (equalp (convert 'list (insert it '(1) ':a))
                 '(0 1 :a 2 3 4)))))
+
+(deftest conversion-to-node-with-data ()
+  (is (= 3 (nest (count :data)
+                 (flatten)
+                 (convert 'alist)
+                 (convert 'node-with-data)
+                 '(1 2 3 4 (5 6 7 8) (9 10))))))

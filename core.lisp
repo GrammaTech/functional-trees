@@ -4,7 +4,7 @@
   (:export children predecessor
            transform root finger path residue
            path-transform from to
-           transforms transform-finger transform-finger-to
+           transforms transform-finger populate-fingers transform-finger-to
            transform-path var local-path
            value node node-with-data update-tree-at-data
            data
@@ -89,7 +89,6 @@ which may be more nodes, or other values."))
    (apply #'make-instance (class-name (class-of node)))
    (apply #'append keys)
    (mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
-   (remove 'name)
    (mapcar #'slot-definition-name (class-slots (class-of node)))))
 
 (defmethod (setf children) (new (node node))
@@ -227,97 +226,18 @@ that FINGER is pointed through."))
                      transform x))))))
       (%transform node))))
 
-;;; This is an example of tree construction
-;;; TODO: Remove make-* functions and replace them all with a single
-;;;       from-list function.
-(defun make-tree (list-form &key name transform)
-  "Produce a tree from a list-form.  Uses MAKE-NODE for actual
-construction, then walks it filling in the PATH attributes."
-  (let ((root (make-node list-form :name name :transform transform)))
-    ;; Walk tree, creating fingers back to root
-    (traverse-nodes-with-rpaths
-     root
-     (lambda (n rpath)
-       ;; This is the only place this slot should be assigned,
-       ;; which is why there's no writer method
-       (unless (finger n)
-         (setf (slot-value n 'finger)
-               (make-instance 'finger :node root :path (reverse rpath))))
-       n))
-    root))
-
-(defun make-node (list-form &rest args &key name transform)
-  (declare (ignorable name transform))
-  (if (consp list-form)
-      (if (or (typep (car list-form) 'standard-class)
-              (and (symbolp (car list-form))
-                   (find-class (car list-form) nil)))
-          (apply #'make-node* (car list-form) (cdr list-form) args)
-          (apply #'make-node* 'node list-form args))
-      list-form))
-
-(defgeneric make-node* (class vals &key &allow-other-keys)
-  (:documentation "Generate a node with appropriate values"))
-
-(defmethod make-node* ((class standard-class) vals &rest args)
-  (apply #'make-node* (class-name class) vals args))
-
-(defmethod make-node* ((class (eql 'node-with-data)) vals &key name transform)
-  (make-instance 'node-with-data
-    :name name
-    :data (car vals)
-    :transform transform
-    :children (mapcar #'make-node (cdr vals))))
-
-(defgeneric to-alist (node)
-  (:documentation "Convert tree rooted at NODE into an association list.")
-  (:method ((node node))
-    (append
-     (nest
-      (apply #'append)
-      (mapcar (lambda (slot)
-                (when-let ((val (slot-value node slot)))
-                  (list (cons (make-keyword slot) val)))))
-      (remove-if (rcurry #'member '(name transform finger children)))
-      (mapcar #'slot-definition-name (class-slots (class-of node))))
-     (list (cons :children (mapcar #'to-alist (children node)))))))
-
-(defgeneric from-alist (class alist)
-  (:documentation "Convert from ALIST to an object of class CLASS.")
-  (:method ((class symbol) alist)
-    (from-alist (find-class class) alist))
-  (:method ((class standard-class) (alist list))
-    (apply #'make-instance class
-           (apply #'append (alist-plist alist)))))
-
-;; TODO: refactor this for better extensibility on subclasses
-(defgeneric to-list (node)
-  (:documentation "Convert tree rooted at NODE to list form.")
-  (:method ((finger finger)) (to-list (cache finger)))
-  (:method ((node node)) (to-alist node))
-  (:method (node) node))
-
-;;; Printing methods
-
-(defmethod print-object ((obj node) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a" (to-list obj)))))
-
-(defmethod print-object ((obj finger) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a~@[ ~a~]"
-                (node obj) (path obj) (residue obj)))))
-
-(defmethod print-object ((obj path-transform) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a"
-                (transforms obj) (from obj)))))
+(defun populate-fingers (root)
+  "Walk tree, creating fingers back to root."
+  (traverse-nodes-with-rpaths
+   root
+   (lambda (n rpath)
+     ;; This is the only place this slot should be
+     ;; assigned, which is why there's no writer method.
+     (unless (finger n)
+       (setf (slot-value n 'finger)
+             (make-instance 'finger :node root :path (reverse rpath))))
+     n))
+  root)
 
 ;;; This expensive function is used in testing
 ;;; Computes the path leading from ROOT to NODE, or
@@ -360,6 +280,8 @@ construction, then walks it filling in the PATH attributes."
    Also pass to FN a list of indexes that is the reverse of the
    path from ROOT to the node.  If FN returns NIL, stop traversal
    below this point.  Returns NIL."))
+
+(defmethod traverse-nodes-with-rpaths ((node null) fn) nil)
 
 (defmethod traverse-nodes-with-rpaths ((node node) fn)
   (traverse-nodes-with-rpaths* node fn nil))
@@ -591,25 +513,6 @@ names.)"))
 (defun update-tree-at-data (node-with-data data)
   "Cause nodes with DATA to be copied (and all ancestors)"
   (update-tree node-with-data (lambda (n) (if (eql (data n) data) (copy n) n))))
-
-(defun remove-nodes-if (node fn)
-  "Remove nodes/leaves for which FN is true"
-  ;; FIXME: Doesn't apply FN to the root.
-  ;; (length (to-list (remove-if #'evenp (make-tree (iota 100))))) => 51 not 0.
-  ;; FIXME: Doesn't apply to non-children fields
-  (update-tree
-   node
-   (lambda (n)
-     (let* ((c (children n))
-            (new-c (remove-if fn c)))
-       (if (every #'eql c new-c)
-           n
-           (copy n :children new-c))))))
-
-(defun remove-nodes-randomly (root p)
-  "Remove nodes from tree with probability p"
-  (assert (typep p '(real 0)))
-  (remove-nodes-if root (lambda (n) (declare (ignore n)) (<= (random 1.0) p))))
 
 ;; This fails if NODE1 is an ancestor of NODE2, or
 ;; vice versa
