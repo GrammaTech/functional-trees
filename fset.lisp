@@ -207,19 +207,15 @@ On a functional tree the nodes of the tree are mapped.")
   (:method (result-type function (first node) &rest more)
     (when more (error "`ft:map' does not support mapping multiple trees."))
     (let* ((key (fset-default-node-accessor (type-of first)))
+           (keyword (make-keyword key))
            (function (coerce function 'function)))
       (labels ((getter (item)
                  (funcall function (slot-value item key)))
-               (setter (item new)
-                 (setf (slot-value item key) new))
                (map- (subtree)
                  (if (typep subtree 'node)
-                     ;; We need a symmetric key here, to pull
-                     ;; information out of the node and then to pack
-                     ;; information back into the node.
-                     (let ((it (copy subtree :children (mapcar #'map- (children subtree)))))
-                       (setter it (getter subtree))
-                       it)
+                     (copy subtree
+                           keyword (getter subtree)
+                           :children (mapcar #'map- (children subtree)))
                      (funcall function subtree))))
         (let ((result (map- first)))
           (if (subtypep (type-of result) result-type)
