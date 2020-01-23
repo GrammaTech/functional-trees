@@ -194,9 +194,8 @@ On a functional tree the nodes of the tree are mapped.")
     (when more (error "`ft:map' does not support mapping multiple trees."))
     (labels ((map- (function subtree)
                (if (typep subtree 'node)
-                   (make-instance 'node-with-data
-                     :data (funcall function (data subtree))
-                     :children (mapcar function (children subtree)))
+                   (copy (funcall function subtree)
+                         :children (mapcar function (children subtree)))
                    (funcall function subtree))))
       (let ((result (map- function first)))
         (case result-type
