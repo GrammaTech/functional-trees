@@ -558,38 +558,34 @@ diagnostic information on error or failure."
 
 (deftest position-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-    (is (equalp (position 4 tree :key #'data) '(2)))
-    (is (equalp (position 11 tree :key #'data) '(4 0 0)))
-    (is (not (position 12 tree :key #'data)))))
+    (is (equalp (position 4 tree) '(2)))
+    (is (equalp (position 11 tree) '(4 0 0)))
+    (is (not (position 12 tree)))))
 
 (deftest position-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-    (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree :key #'data)) 6))
+    (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree)) 6))
     (is (not (position-if (constantly nil) tree)))))
 
 (deftest remove-tree ()
-  (is (= (length (convert 'list (remove 24 (convert 'node-with-data (iota 100))
-                                        :key ‹typecase (node #'data) (t #'identity)›)))
+  (is (= (length (convert 'list (remove 24 (convert 'node-with-data (iota 100)))))
          99)))
 
 (deftest remove-tree-if ()
   ;; NOTE: Counterintuitively, because the "0" node is the parent of
   ;; the rest of the tree.
-  (is (zerop (length (convert 'list (remove-if #'evenp (convert 'node-with-data (iota 100))
-                                               :key ‹typecase (node #'data) (t #'identity)›)))))
-  (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data (iota 100))
-                                              :key ‹typecase (node #'data) (t #'identity)›))))))
+  (is (zerop (length (convert 'list (remove-if #'evenp (convert 'node-with-data (iota 100)))))))
+  (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data (iota 100))))))))
 
 (deftest substitute-test ()
   (let ((no-twenty (substitute 40 20 (convert 'node-with-data (iota 100)))))
-    (is (= 0 (count 20 no-twenty :key ‹typecase (node #'data) (t #'identity)›)))
-    (is (= 2 (count 40 no-twenty :key ‹typecase (node #'data) (t #'identity)›)))))
+    (is (= 0 (count 20 no-twenty)))
+    (is (= 2 (count 40 no-twenty)))))
 
 (deftest substitute-if-test ()
-  (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data (iota 100))
-                               :key ‹typecase (node #'data) (t #'identity)›)))
-    (is (= 0 (count-if «and #'numberp #'oddp» no-odd :key ‹typecase (node #'data) (t #'identity)›)))
-    (is (= 50 (count :odd no-odd  :key ‹typecase (node #'data) (t #'identity)›)))))
+  (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data (iota 100)))))
+    (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
+    (is (= 50 (count :odd no-odd)))))
 
 (deftest with-test ()
   (let ((two-fives (with (convert 'node-with-data (iota 10)) '(2) 5)))
@@ -628,7 +624,7 @@ diagnostic information on error or failure."
                    (flatten)
                    (convert 'list)
                    (less it)
-                   (position '= it :key ‹typecase (node #'data) (t #'identity)›))))))
+                   (position '= it))))))
 
 (deftest splice-test ()
   (let ((it (convert 'node-with-data '(0 1 2 3 4))))

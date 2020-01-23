@@ -23,7 +23,7 @@
   (:shadowing-import-from
    :cl :set :union :intersection :set-difference :complement)
   (:shadowing-import-from :alexandria :compose)
-  (:export :map :substitute-with)
+  (:export :fset-default-node-key :map :substitute-with)
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
 
@@ -173,6 +173,11 @@
 
 
 ;;; FSET sequence operations (+ two) for functional tree.
+(defgeneric fset-default-node-key (node-type element)
+  (:documentation "Default key to use to process ELEMENT as possible NODE-TYPE.")
+  (:method ((node-type t) (element t)) element)
+  (:method ((node-type (eql 'node-with-data)) (element node-with-data)) (data element)))
+
 (defgeneric map (result-type function first &rest more)
   (:documentation
    "If FIRST is a Lisp sequence, this simply calls `cl:map'.
@@ -240,12 +245,16 @@ If secondary return value of PREDICATE is non-nil force substitution
 (defmethod count-if-not (predicate (node node) &rest rest &key &allow-other-keys)
   (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
 
-(defmethod position (item (node node) &key (test #'equalp) (key nil key-p) &allow-other-keys)
+(defmethod position (item (node node) &key
+                                        (test #'equalp)
+                                        (key (curry #'fset-default-node-key (type-of node)) key-p)
+                                        &allow-other-keys)
   (apply #'position-if (curry (coerce test 'function) item) node
          (when key-p (list :key key))))
 
 (defmethod position-if (predicate (node node)
-                        &key from-end end start test-not test (key nil key-p))
+                        &key from-end end start test-not test
+                          (key (curry #'fset-default-node-key (type-of node))))
   (assert (notany #'identity from-end end start test-not test)
           (from-end end start test-not test)
           "TODO: implement support for ~a key in `position-if'"
@@ -253,31 +262,38 @@ If secondary return value of PREDICATE is non-nil force substitution
                         (mapcar #'cons
                                 (list from-end end start test-not test)
                                 '(from-end end start test-not test)))))
-  (when key-p (setf key (coerce key 'function)))
-  (labels ((position- (predicate node path)
+  (when key (setf key (coerce key 'function)))
+  (labels ((check (item) (funcall predicate (if key (funcall key item) item)))
+           (position- (predicate node path)
              (if (typep node 'node)
-                 (if (funcall predicate (if key (funcall key node) node))
+                 (if (check node)
                      (return-from position-if (nreverse path))
                      (mapcar (lambda (child index)
                                (position- predicate child (cons index path)))
                              (children node)
                              (iota (length (children node)))))
-                 (when (funcall predicate node)
+                 (when (check node)
                    (return-from position-if (nreverse path))))))
     (position- (coerce predicate 'function) node nil)
     nil))
 
-(defmethod position-if-not (predicate (node node) &key (key nil key-p) &allow-other-keys)
+(defmethod position-if-not (predicate (node node)
+                            &key (key (curry #'fset-default-node-key (type-of node)) key-p)
+                              &allow-other-keys)
   (apply #'position-if (complement predicate) node (when key-p (list :key key))))
 
-(defmethod remove (item (node node) &key (test #'equalp) (key nil key-p) &allow-other-keys)
+(defmethod remove (item (node node) &key (test #'equalp)
+                                      (key (curry #'fset-default-node-key (type-of node)) key-p)
+                                      &allow-other-keys)
   (apply #'remove-if (curry (coerce test 'function) item) node (when key-p (list :key key))))
 
-(defmethod remove-if (predicate (node node) &key (key nil key-p) &allow-other-keys)
-  (when key-p (setf key (coerce key 'function)))
+(defmethod remove-if (predicate (node node)
+                      &key (key (curry #'fset-default-node-key (type-of node)))
+                        &allow-other-keys)
+  (when key (setf key (coerce key 'function)))
   (labels
       ((check (node)
-         (funcall predicate (if key-p (funcall (the function key) node) node)))
+         (funcall predicate (if key (funcall (the function key) node) node)))
        (remove- (predicate node)
          (if (typep node 'node)
              (if (check node)
@@ -299,15 +315,22 @@ If secondary return value of PREDICATE is non-nil force substitution
                  (values (list node) nil)))))
     (car (remove- (coerce predicate 'function) node))))
 
-(defmethod remove-if-not (predicate (node node) &key (key nil key-p) &allow-other-keys)
+(defmethod remove-if-not (predicate (node node)
+                          &key (key (curry #'fset-default-node-key (type-of node)) key-p)
+                            &allow-other-keys)
   (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute
-    (newitem olditem (node node) &key (test #'equalp) (key nil key-p) &allow-other-keys)
+    (newitem olditem (node node) &key (test #'equalp)
+                                   (key (curry #'fset-default-node-key (type-of node)) key-p)
+                                   &allow-other-keys)
   (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
-         (when key-p (list :key key))))
+         :test test (when key-p (list :key key))))
 
-(defmethod substitute-if (newitem predicate (node node) &key (copy nil copyp) (key nil key-p) &allow-other-keys)
+(defmethod substitute-if (newitem predicate (node node)
+                          &key (copy nil copyp)
+                            (key (curry #'fset-default-node-key (type-of node)) key-p)
+                            &allow-other-keys)
   (when copyp (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
   (apply #'substitute-with
@@ -316,14 +339,18 @@ If secondary return value of PREDICATE is non-nil force substitution
              (values (if copyp (funcall copy newitem) newitem) t)))
          node (when key-p (list :key key))))
 
-(defmethod substitute-if-not (newitem predicate (node node) &key (key nil key-p) &allow-other-keys)
+(defmethod substitute-if-not (newitem predicate (node node)
+                              &key (key (curry #'fset-default-node-key (type-of node)) key-p)
+                                &allow-other-keys)
   (apply #'substitute-if newitem (complement predicate) node (when key-p (list :key key))))
 
-(defmethod substitute-with (function (node node) &key (key nil key-p) &allow-other-keys)
-  (when key-p (setf key (coerce key 'function)))
+(defmethod substitute-with (function (node node)
+                            &key (key (curry #'fset-default-node-key (type-of node)))
+                              &allow-other-keys)
+  (when key (setf key (coerce key 'function)))
   (labels
       ((check (node)
-         (funcall function (if key-p (funcall (the function key) node) node)))
+         (funcall function (if key (funcall (the function key) node) node)))
        (substitute- (predicate node)
          (if (typep node 'node)
              (multiple-value-bind (value force) (check node)
