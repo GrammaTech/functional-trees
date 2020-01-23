@@ -121,6 +121,12 @@
 
 
 ;;; FSET conversion operations
+(defmethod convert ((to-type (eql 'list)) (sequence sequence) &key &allow-other-keys)
+  sequence)
+
+(defmethod convert ((to-type (eql 'list)) (string string) &key &allow-other-keys)
+  string)
+
 (defmethod convert ((to-type (eql 'list)) (node node-with-data)
                     &key (value-fn #'data) &allow-other-keys)
   "Convert NODE of type node-with-data to a list using `data' as the value-fn."
