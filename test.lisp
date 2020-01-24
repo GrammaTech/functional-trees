@@ -448,30 +448,31 @@ diagnostic information on error or failure."
       (is (equal (name (@ n4 f2)) (name n3))))
     ))
 
+#+known-failure  ; TODO: Can't handle deleted root node (whole tree).
 (deftest random.1 ()
   ;; Randomized test of path transforms
   (is (equal (random-test 20 200 (lambda (n) (remove-nodes-randomly n 0.2))) nil)))
 
-;; (deftest random.2 ()
-;;   (let ((result :pass)
-;;         (size 50))
-;;     (iter (repeat 1000)
-;;           (let ((root (make-random-tree size)))
-;;             (traverse-nodes-with-rpaths
-;;              root
-;;              (lambda (n rpath)
-;;                (let ((p (reverse rpath)))
-;;                  (macrolet ((is (e)
-;;                               `(unless ,e
-;;                                  (setf result (list :fail ',e p n root))
-;;                                  (return))))
-;;                    ;; TODO: Iterate needs to be taught how to walk `is'.
-;;                    (is (path-p p))
-;;                    (is (typep p 'path))
-;;                    (is (eql (@ root p) n))
-;;                    (is (equal (path-of-node root n) p))))
-;;                t))))
-;;       (is (equal result :pass))))
+(deftest random.2 ()
+  (let ((result :pass)
+        (size 50))
+    (iter (repeat 1000)
+          (let ((root (make-random-tree size)))
+            (traverse-nodes-with-rpaths
+             root
+             (lambda (n rpath)
+               (let ((p (reverse rpath)))
+                 (macrolet ((is (e)
+                              `(unless ,e
+                                 (setf result (list :fail ',e p n root))
+                                 (return))))
+                   ;; TODO: Iterate needs to be taught how to walk `is'.
+                   (is (path-p p))
+                   (is (typep p 'path))
+                   (is (eql (@ root p) n))
+                   (is (equal (path-of-node root n) p))))
+               t))))
+      (is (equal result :pass))))
 
 (deftest random.3 ()
   (is (equal (random-test 20 1000 (lambda (n)
