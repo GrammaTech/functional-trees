@@ -5,6 +5,7 @@
            transform root finger path residue
            path-transform from to
            transforms transform-finger populate-fingers transform-finger-to
+           successor predecessor
            transform-path var local-path
            value node node-with-data update-tree-at-data
            data
@@ -173,6 +174,14 @@ tree to another."))
 
 (defgeneric transform-finger-to (f p to)
   (:documentation "Converts a finger from one tree to another."))
+
+(defgeneric successor (tree node)
+  (:documentation "Return the successor of NODE in TREE.")
+  (:method ((tree node) (node t)) (error "TODO: Implement `successor'.")))
+
+(defgeneric predecessor (tree node)
+  (:documentation "Return the predecessor of NODE in TREE.")
+  (:method ((tree node) (node t)) (error "TODO: Implement `predecessor'.")))
 
 ;;; Around method to verify pre, post conditions
 (defmethod transform-finger-to :around ((f finger) (p path-transform) (to node))

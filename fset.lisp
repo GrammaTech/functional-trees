@@ -23,7 +23,7 @@
   (:shadowing-import-from
    :cl :set :union :intersection :set-difference :complement)
   (:shadowing-import-from :alexandria :compose)
-  (:export :fset-default-node-key :map :substitute-with)
+  (:export :fset-default-node-accessor :map :substitute-with :swap)
   (:documentation "FSET Integration for functional-trees."))
 (in-package :functional-trees/fset)
 
@@ -61,7 +61,11 @@
                                  (subseq (children node) (1+ index))))))))
     (with- tree path)))
 
-(defmethod less (tree path &optional (arg2 nil arg2p))
+(defmethod with ((tree node) (location node) &optional (value nil valuep))
+  (fset::check-three-arguments valuep 'with 'node)
+  (with tree (ft/core::path-of-node tree location) value))
+
+(defmethod less ((tree node) path &optional (arg2 nil arg2p))
   (declare (ignore arg2))
   (fset::check-two-arguments arg2p 'less 'node)
   (labels ((less- (node path)
@@ -73,6 +77,11 @@
                                (list (less- (nth index (children node)) (cdr path))))
                              (subseq (children node) (1+ index)))))))
     (less- tree path)))
+
+(defmethod less ((tree node) (location node) &optional (arg2 nil arg2p))
+  (declare (ignore arg2))
+  (fset::check-two-arguments arg2p 'less 'node)
+  (less tree (ft/core::path-of-node tree location)))
 
 (defmethod splice ((tree node) (path list) (values t))
   (insert tree path (list values)))
@@ -90,8 +99,18 @@
                              (subseq (children node) index))))))
     (splice- tree path)))
 
+(defmethod splice ((tree node) (location node) value)
+  (splice tree (ft/core::path-of-node tree location) value))
+
 (defmethod insert ((tree node) (path list) value)
   (splice tree path (list value)))
+
+(defgeneric swap (tree location-1 location-2)
+  (:documentation "Swap the contents of LOCATION-1 and LOCATION-2 in TREE.")
+  (:method ((tree node) (location-1 list) (location-2 list))
+    (let ((value-1 (@ tree location-1))
+          (value-2 (@ tree location-2)))
+      (with (with tree location-1 value-2) location-2 value-1))))
 
 (defmethod size ((other t)) 0)
 (defmethod size ((node node))
@@ -204,13 +223,17 @@ On a functional tree the nodes of the tree are mapped.")
     (when more (error "`ft:map' does not support mapping multiple trees."))
     (do-seq (element first :value (coerce (nreverse result) result-type))
       (push (funcall function element) result)))
-  (:method (result-type function (first node) &rest more)
-    (when more (error "`ft:map' does not support mapping multiple trees."))
-    (let* ((key (fset-default-node-accessor (type-of first)))
-           (keyword (make-keyword key))
+  (:method (result-type function (first node) &rest keyword-args)
+    (when (and keyword-args (not (keywordp (car keyword-args))))
+      (error "`ft:map' over nodes uses keyword arguments, not multiple trees."))
+    (let* ((accessor (fset-default-node-accessor (type-of first)))
+           (key (getf keyword-args :key))
+           (keyword (make-keyword accessor))
            (function (coerce function 'function)))
       (labels ((getter (item)
-                 (funcall function (slot-value item key)))
+                 (funcall function (if key
+                                       (funcall key item)
+                                       (slot-value item accessor))))
                (map- (subtree)
                  (if (typep subtree 'node)
                      (copy subtree
