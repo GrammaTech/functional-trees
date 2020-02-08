@@ -16,16 +16,20 @@
 			  :substitute :substitute-if :substitute-if-not
 			  :some :every :notany :notevery
                           ;; Additional stuff
-                          :identity-ordering-mixin :serial-number)
+                          :identity-ordering-mixin :serial-number
+                          :compare :convert)
   (:shadowing-import-from
    :cl :set :union :intersection :set-difference :complement)
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop :slot-definition-name :class-slots)
   (:export :copy
-           :node :transform :child-slots :finger
+           :node :transform :child-slots :data-slot :finger
+           :path :transform-finger-to :residue
            :children
-           :populate-fingers)
+           :populate-fingers
+           :traverse-nodes
+           :node-equalp)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -74,6 +78,9 @@ to this node, or the node that led to this node.")
    (child-slots :reader child-slots
                 :initform nil
                 :allocation :class)
+   (data-slot :reader data-slot
+              :initform nil
+              :allocation :class)
    (finger :reader finger
            :initform nil
            :type (or null node finger)
@@ -269,6 +276,7 @@ that FINGER is pointed through."))
 ;;; a set of rewrites (with var objects).  Also, conversion of the
 ;;; transform set to a trie.
 
+;;; TODO: Ensure works with nodes w/arbitrary children.
 (defgeneric traverse-nodes (root fn)
   (:documentation 
   "Apply FN at every node below ROOT, in preorder, left to right
@@ -485,122 +493,15 @@ are compared with each other using fset:compare"
                     (push (list old new) stack)))))
     (stable-sort (revappend stack result) #'> :key #'(lambda (x) (length (car x))))))
 
-(defgeneric compare-nodes (node1 node2)
+(defgeneric node-equalp (node1 node2)
   (:documentation "Check that two nodes are the same tree")
   (:method ((node1 node) (node2 node))
     (and (eql (serial-number node1) (serial-number node2))
          (let ((c1 (children node1))
                (c2 (children node2)))
            (and (eql (length c1) (length c2))
-                (every #'compare-nodes c1 c2)))))
+                (every #'node-equalp c1 c2)))))
   (:method (node1 node2) (equal node1 node2)))
-
-(defun update-tree (node fn)
-  (copy (update-tree* node fn) :transform node))
-
-(defgeneric update-tree* (node fn)
-  (:documentation
-  "Traverse tree rooted at NODE, in postorder, calling
-FN at each node.  If FN returns a different tree, replace
-the node at that point, and copy ancestors (preserving their
-serial-numbers.)"))
-
-(defmethod update-tree* ((n node) fn)
-  (let* ((children (children n))
-         (new-children (mapcar (lambda (c) (update-tree* c fn)) children)))
-    (if (every #'eql children new-children)
-        n
-        (let ((new-n (copy n :children new-children)))
-          (assert (eql (serial-number n) (serial-number new-n)))
-          (copy n :children new-children)))))
-
-(defmethod update-tree* ((n t) (fn t)) n)
-
-(defmethod update-tree* :around ((node node) fn)
-  (let ((n (call-next-method)))
-    (funcall fn n)))
-
-(defun update-tree-at-data (node-with-data data)
-  "Cause nodes with DATA to be copied (and all ancestors)"
-  (update-tree node-with-data (lambda (n) (if (eql (data n) data) (copy n) n))))
-
-;; This fails if NODE1 is an ancestor of NODE2, or
-;; vice versa
-(defun swap-nodes (root node1 node2)
-  (update-tree
-   root
-   (lambda (n)
-     (cond
-       ((eql (serial-number n) (serial-number node1)) node2)
-       ((eql (serial-number n) (serial-number node2)) node1)
-       (t n)))))
-
-(defun swap-random-nodes (root)
-  (let ((node1 (random-node root))
-        (node2 (random-node root)))
-    (if (or (is-ancestor-of node1 node2)
-            (is-ancestor-of node2 node1))
-        root
-        (swap-nodes root node1 node2))))
-
-(defun random-node (root)
-  (let ((nodes nil))
-    (traverse-nodes root (lambda (n) (push n nodes)))
-    (elt nodes (random (length nodes)))))
-
-(defun is-ancestor-of (node1 node2)
-  (traverse-nodes node1 (lambda (n) (when (eql n node2)
-                                      (return-from is-ancestor-of t))
-                                t))
-  nil)
-
-(defun random-partition (n m)
-  "Partition N into M buckets, randomly, with each
-bucket getting at least 1.  Return as a list."
-  (assert (typep n '(integer 1)))
-  (assert (typep m '(integer 1)))
-  (assert (<= m n))
-  (let ((buckets (make-array (list m) :initial-element 1))
-        (reps (- n m)))
-    (iter (repeat reps)
-          (incf (aref buckets (random m))))
-    (coerce buckets 'list)))
-
-(defun make-random-tree (size)
-  "Construct a random tree of SIZE nodes."
-  (declare (type fixnum size))
-  (let ((leaf-bound 3)
-        (child-bound 4)
-        children)
-    (cond
-      ((< size 1)
-       (error "SIZE should be a positive number: ~a" size))
-      ((= size 1))
-      (t ;; (> size 1)
-       (let* ((n-children (1+ (random (min child-bound (1- size)))))
-              (child-sizes (random-partition (1- size) n-children)))
-         (setf children (mapcar #'make-random-tree child-sizes)))))
-    ;; Add random set of leaf values
-    (setf children
-          (random-permute (append (iter (repeat (random leaf-bound))
-                                        (collecting (make-random-leaf)))
-                                  children)))
-    (make-instance 'node-with-data :data (make-random-data)
-                   :children children)))
-
-(defun make-random-leaf () (random 100))
-
-(defun make-random-data ()
-  (let ((vals #(:a :b :c :d :e :f :g :h :i :j :k :l :m)))
-    (elt vals (random (length vals)))))
-
-(defun random-permute (seq)
-  (let* ((seq (coerce seq 'vector))
-         (len (length seq)))
-    (iter (for i from (1- len) downto 1)
-          (let ((r (random (1+ i))))
-            (rotatef (aref seq i) (aref seq r))))
-    (coerce seq 'list)))
 
 
 ;;;; FSet interoperability.
@@ -721,20 +622,12 @@ bucket getting at least 1.  Return as a list."
                 (transforms obj) (from obj)))))
 
 
-;;; FSET conversion operations
-(defmethod convert ((to-type (eql 'list)) (sequence sequence) &key &allow-other-keys)
-  sequence)
+;;;; FSET conversion operations
 
-(defmethod convert ((to-type (eql 'list)) (string string) &key &allow-other-keys)
-  string)
-
-(defmethod convert ((to-type (eql 'list)) (node node-with-data)
-                    &key (value-fn #'data) &allow-other-keys)
-  "Convert NODE of type node-with-data to a list using `data' as the value-fn."
-  (call-next-method to-type node :value-fn value-fn))
-
+;;; TODO: Should use gmap.
 (defmethod convert ((to-type (eql 'list)) (node node)
-                    &key (value-fn nil value-fn-p) &allow-other-keys)
+                    &key (value-fn (lambda (n) (slot-value n (data-slot n))) value-fn-p)
+                      &allow-other-keys)
   "Convert NODE of type node to a list."
   (declare (optimize (speed 3)))
   (when value-fn-p (setf value-fn (coerce value-fn 'function)))
@@ -769,7 +662,7 @@ bucket getting at least 1.  Return as a list."
                               (list (cons (make-keyword slot) val))))
                           slots)))))))
 
-(defmethod convert ((to-type (eql 'node-with-data)) (sequence list) &key &allow-other-keys)
+(defmethod convert ((to-type (eql 'node)) (sequence list) &key &allow-other-keys)
   (labels ((make-node (list-form)
              (if (consp list-form)
                  (make-instance 'node-with-data
