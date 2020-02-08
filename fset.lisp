@@ -1,6 +1,6 @@
 (defpackage :functional-trees/fset
   (:nicknames :ft/fset)
-  (:use cl :alexandria :iterate :functional-trees/core :fset)
+  (:use :cl :alexandria :fset)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop :slot-definition-name :class-slots)
   (:shadow :map)
@@ -40,10 +40,8 @@
   (unless (typep i '(integer 0))
     (error "Not a valid path index: ~a" i))
   (let* ((c (children node)))
-    (iter (unless c (error "Path index too large"))
-          (while (> i 0))
-          (pop c)
-          (decf i))
+    (loop :unless c (error "Path index too large")
+       :while (> i 0) :do (progn (pop c) (decf i)))
     (car c)))
 
 (defmethod with ((tree node) path &optional (value nil valuep))
@@ -105,12 +103,19 @@
 (defmethod insert ((tree node) (path list) value)
   (splice tree path (list value)))
 
+(defmethod insert (tree (path node) value)
+  (splice tree (ft/core::path-of-node tree path) (list value)))
+
 (defgeneric swap (tree location-1 location-2)
   (:documentation "Swap the contents of LOCATION-1 and LOCATION-2 in TREE.")
   (:method ((tree node) (location-1 list) (location-2 list))
     (let ((value-1 (@ tree location-1))
           (value-2 (@ tree location-2)))
-      (with (with tree location-1 value-2) location-2 value-1))))
+      (with (with tree location-1 value-2) location-2 value-1)))
+  (:method ((tree node) (location-1 node) location-2)
+    (swap tree (ft/core::path-of-node tree location-1) location-2))
+  (:method ((tree node) location-1 (location-2 node))
+    (swap tree location-1 (ft/core::path-of-node tree location-2))))
 
 (defmethod size ((other t)) 0)
 (defmethod size ((node node))

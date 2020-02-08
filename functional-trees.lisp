@@ -1,6 +1,6 @@
-(defpackage :functional-trees/core
-  (:nicknames :ft/core)
-  (:use cl :alexandria :iterate)
+(defpackage :functional-trees
+  (:nicknames :ft :functional-trees/functional-trees)
+  (:use :common-lisp :alexandria :iterate)
   (:export children predecessor
            transform root finger path residue
            path-transform from to
@@ -20,10 +20,9 @@
   (:import-from :fset :compare)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop :slot-definition-name :class-slots)
-  (:documentation "Prototype implementation of functional trees w.
-finger objects"))
-
-(in-package :functional-trees/core)
+  (:documentation
+   "Prototype implementation of functional trees w. finger objects"))
+(in-package :functional-trees)
 
 (deftype path ()
   `(and list (satisfies path-p)))
