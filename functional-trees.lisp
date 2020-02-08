@@ -1,28 +1,37 @@
 (defpackage :functional-trees
   (:nicknames :ft :functional-trees/functional-trees)
   (:use :common-lisp :alexandria :iterate)
-  (:export children predecessor
-           transform root finger path residue
-           path-transform from to
-           transforms transform-finger populate-fingers transform-finger-to
-           successor predecessor
-           transform-path var local-path
-           value node node-with-data update-tree-at-data
-           data
-           path-transform-of
-           remove-nodes-if
-           swap-nodes
-           make-node make-node* to-list to-list*
-           traverse-nodes
-           traverse-nodes-with-rpaths
-           name
-           copy update-tree update-tree*)
-  (:import-from :fset :compare)
+  (:shadowing-import-from :fset
+                          :@ :do-seq :seq
+                          :unionf :appendf :with :removef
+			  ;; Shadowed set operations
+			  :union :intersection :set-difference :complement
+			  ;; Shadowed sequence operations
+			  :first :last :subseq :reverse :sort :stable-sort
+			  :reduce
+			  :find :find-if :find-if-not
+			  :count :count-if :count-if-not
+			  :position :position-if :position-if-not
+			  :remove :remove-if :remove-if-not
+			  :substitute :substitute-if :substitute-if-not
+			  :some :every :notany :notevery
+                          ;; Additional stuff
+                          :identity-ordering-mixin :serial-number)
+  (:shadowing-import-from
+   :cl :set :union :intersection :set-difference :complement)
+  (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop :slot-definition-name :class-slots)
+  (:export :copy
+           :node :transform :child-slots :finger
+           :children
+           :populate-fingers)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
+
+
+;;;; Core functional tree definitions.
 
 (deftype path ()
   `(and list (satisfies path-p)))
@@ -30,18 +39,16 @@
 (defun path-p (list)
   (every (lambda (x)
            (typecase x
-             ((integer 0) t)
-             (symbol t)
-             ((cons (integer 0)
+             ((integer 0) t)            ; Index into `children'.
+             (symbol t)                 ; Name of scalar child-slot.
+             ((cons (integer 0)         ; Non-scalar child-slot w/index.
                     (cons integer null))
               (<= (first x) (second x)))
              (t nil)))
          list))
 
-(defvar *node-name-counter* 0 "Counter used to initialize the NAME slot of nodes.")
-
 (defgeneric copy (obj &key &allow-other-keys)
-  (:documentation "Like the COPY function in SEL")
+  (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
   (:method ((obj t) &key &allow-other-keys) obj)
   ;; (:method ((obj alist) &key &allow-other-keys) (copy-alist obj))
   (:method ((obj array) &key &allow-other-keys) (copy-array obj))
@@ -57,35 +64,27 @@
   ;; (:method ((obj structure) &key &allow-other-keys) (copy-structure obj))
   (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
 
-(defclass node ()
-  (;; TODO: consider replacing name with the unique ID
-   ;; given to objects in the Fset package
-   (name :reader name :initarg :name :initform nil
-         :documentation "The NAME of a node is an EQL-unique
-value used in place of EQ-ness to determine when two nodes
-are 'the same'.  No two nodes in the same tree should have the
-same name.")
-   (transform :reader transform
+(defclass node (identity-ordering-mixin)
+  ((transform :reader transform
               :initarg :transform
               :initform nil
               :type (or null node path-transform)
               :documentation "If non-nil, is either a PATH-TRANSFORM object
 to this node, or the node that led to this node.")
+   (child-slots :reader child-slots
+                :initform nil
+                :allocation :class)
    (finger :reader finger
            :initform nil
            :type (or null node finger)
-           :documentation "A finger back to the root of the (a?) tree.")
-   (children :reader children
-             :type list
-             :initarg :children
-             :initform nil
-             :documentation "The list of children of the node,
-which may be more nodes, or other values."))
+           :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
-(defclass node-with-data (node)
-  ((data :reader data :initarg :data :initform nil
-         :documentation "Arbitrary data")))
+(defgeneric children (node)
+  (:documentation "Return all children of NODE.")
+  (:method ((node node))
+    (apply #'append
+           (mapcar (lambda (slot) (slot-value node slot)) (child-slots node)))))
 
 (defmethod transform :around ((n node))
   ;; Compute the PT lazily, when TRANSFORM is a node
@@ -94,25 +93,15 @@ which may be more nodes, or other values."))
         (setf (slot-value n 'transform) (path-transform-of tr n))
         tr)))
 
-;;; There should be a way to chain together methods for COPY for
+;;; NOTE: There should be a way to chain together methods for COPY for
 ;;; classes and their superclasses, perhaps using the initialization
 ;;; infrastructure in CL for objects.
-
 (defmethod copy ((node node) &rest keys)
   (nest
    (apply #'make-instance (class-name (class-of node)))
    (apply #'append keys)
    (mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
    (mapcar #'slot-definition-name (class-slots (class-of node)))))
-
-(defmethod (setf children) (new (node node))
-  (copy node :children new))
-
-;;; TODO: make the INCF here thread safe on SBCL, using atomic
-;;; increment. 
-(defmethod initialize-instance :after ((node node) &key &allow-other-keys)
-  (unless (name node)
-    (setf (slot-value node 'name) (incf *node-name-counter*))))
 
 (defclass finger ()
   ((node :reader node :initarg :node
@@ -121,7 +110,7 @@ which may be more nodes, or other values."))
          :documentation "The node to which this finger pertains,
 considered as the root of a tree.")
    (path :reader path :initarg :path
-         :type list
+         :type path
          :initform (required-argument :path)
          :documentation "A list of nonnegative integer values
 giving a path from node down to another node.")
@@ -261,9 +250,9 @@ that FINGER is pointed through."))
      n))
   root)
 
-;;; This expensive function is used in testing
-;;; Computes the path leading from ROOT to NODE, or
-;;; signals an error if it cannot be found.
+;;; This expensive function is used in testing and in FSet
+;;; compatibility functions.  It computes the path leading from ROOT
+;;; to NODE, or signals an error if it cannot be found.
 (defun path-of-node (root node)
   (labels ((%search (path n)
              (when (eql n node)
@@ -275,7 +264,6 @@ that FINGER is pointed through."))
                       (%search (cons i path) c))))))
     (%search nil root)
     (error "Cannot find ~a in ~a" node root)))
-
 
 ;;; To add: algorithm for extracting a  path transform from
 ;;; a set of rewrites (with var objects).  Also, conversion of the
@@ -330,32 +318,32 @@ that FINGER is pointed through."))
 
 
 (defgeneric node-valid (node)
-  (:documentation "True if the tree rooted at NODE have EQL unique names,
+  (:documentation "True if the tree rooted at NODE have EQL unique serial-numbers,
 and no node occurs on two different paths in the tree"))
 
 (defmethod node-valid ((node node))
-  (let ((name-table (make-hash-table)))
+  (let ((serial-number-table (make-hash-table)))
     (traverse-nodes node (lambda (n)
-                           (let ((name (name n)))
-                             (when (gethash name name-table)
+                           (let ((serial-number (serial-number n)))
+                             (when (gethash serial-number serial-number-table)
                                (return-from node-valid nil))
-                             (setf (gethash name name-table) n))))
+                             (setf (gethash serial-number serial-number-table) n))))
     t))
 
 (defun store-nodes (node table)
-  (traverse-nodes node (lambda (n) (setf (gethash (name n) table) n))))
+  (traverse-nodes node (lambda (n) (setf (gethash (serial-number n) table) n))))
 
 (defgeneric nodes-disjoint (node1 node2)
   (:documentation "Return true if NODE1 and NODE2 do not share
-any name"))
+any serial-number"))
 
 (defmethod nodes-disjoint ((node1 node) (node2 node))
-  (let ((name-table (make-hash-table)))
-    ;; Populate name table
-    (store-nodes node1 name-table)
+  (let ((serial-number-table (make-hash-table)))
+    ;; Populate serial-number table
+    (store-nodes node1 serial-number-table)
     ;; Now check for collisions
     (traverse-nodes node2 (lambda (n)
-                            (when (gethash (name n) name-table)
+                            (when (gethash (serial-number n) serial-number-table)
                               (return-from nodes-disjoint nil))
                             t))
     t))
@@ -365,19 +353,19 @@ any name"))
 below ROOT and produce a valid tree."))
 
 (defmethod node-can-implant ((root node) (at-node node) (new-node node))
-  (let ((name-table (make-hash-table)))
-    ;; Populate name table
+  (let ((serial-number-table (make-hash-table)))
+    ;; Populate serial-number table
     (traverse-nodes
      root
      (lambda (n)
-       ;; Do not store names at or below at-node
+       ;; Do not store serial-numbers at or below at-node
        (unless (eql n at-node)
-         (setf (gethash (name n) name-table) n))))
+         (setf (gethash (serial-number n) serial-number-table) n))))
     ;; Check for collisions
     (traverse-nodes
      new-node
      (lambda (n)
-       (when (gethash (name n) name-table)
+       (when (gethash (serial-number n) serial-number-table)
          (return-from node-can-implant nil))
        t))
     t))
@@ -433,13 +421,13 @@ are compared with each other using fset:compare"
     (traverse-nodes-with-rpaths
      from
      (lambda (n rpath)
-       (setf (gethash (name n) table) (make-pto-data :from n :from-path (reverse rpath)))))
+       (setf (gethash (serial-number n) table) (make-pto-data :from n :from-path (reverse rpath)))))
     #+debug (format t "Table (1): ~a~%" table)
     ;; Now find nodes that are shared
     (traverse-nodes-with-rpaths
      to
      (lambda (n rpath)
-       (let* ((entry (gethash (name n) table)))
+       (let* ((entry (gethash (serial-number n) table)))
          (or (not entry)
              (progn
                (setf (pto-data-to entry) n
@@ -500,7 +488,7 @@ are compared with each other using fset:compare"
 (defgeneric compare-nodes (node1 node2)
   (:documentation "Check that two nodes are the same tree")
   (:method ((node1 node) (node2 node))
-    (and (eql (name node1) (name node2))
+    (and (eql (serial-number node1) (serial-number node2))
          (let ((c1 (children node1))
                (c2 (children node2)))
            (and (eql (length c1) (length c2))
@@ -515,7 +503,7 @@ are compared with each other using fset:compare"
   "Traverse tree rooted at NODE, in postorder, calling
 FN at each node.  If FN returns a different tree, replace
 the node at that point, and copy ancestors (preserving their
-names.)"))
+serial-numbers.)"))
 
 (defmethod update-tree* ((n node) fn)
   (let* ((children (children n))
@@ -523,7 +511,7 @@ names.)"))
     (if (every #'eql children new-children)
         n
         (let ((new-n (copy n :children new-children)))
-          (assert (eql (name n) (name new-n)))
+          (assert (eql (serial-number n) (serial-number new-n)))
           (copy n :children new-children)))))
 
 (defmethod update-tree* ((n t) (fn t)) n)
@@ -543,8 +531,8 @@ names.)"))
    root
    (lambda (n)
      (cond
-       ((eql (name n) (name node1)) node2)
-       ((eql (name n) (name node2)) node1)
+       ((eql (serial-number n) (serial-number node1)) node2)
+       ((eql (serial-number n) (serial-number node2)) node1)
        (t n)))))
 
 (defun swap-random-nodes (root)
@@ -614,3 +602,364 @@ bucket getting at least 1.  Return as a list."
             (rotatef (aref seq i) (aref seq r))))
     (coerce seq 'list)))
 
+
+;;;; FSet interoperability.
+
+;;; Define `lookup' methods to work with FSet's `@' macro.
+(defmethod lookup ((node t) (path null)) node)
+(defmethod lookup ((node node) (path cons))
+  (lookup (lookup node (car path)) (cdr path)))
+(defmethod lookup ((node node) (finger finger))
+    (let ((new-finger (transform-finger finger node)))
+      (values (lookup node (path new-finger)) (residue new-finger))))
+(defmethod lookup ((node node) (i integer))
+  ;; Replace this with (@ (children node) i)?
+  (unless (typep i '(integer 0))
+    (error "Not a valid path index: ~a" i))
+  (let* ((c (children node)))
+    (iter (unless c (error "Path index too large"))
+          (while (> i 0)) (pop c) (decf i))
+    (car c)))
+
+(defmethod with ((tree node) path &optional (value nil valuep))
+  "Adds VALUE (value2) at PATH (value1) in TREE."
+  (fset::check-three-arguments valuep 'with 'node)
+  ;; Walk down the path creating new trees on the way up.
+  (labels ((with- (node path)
+             (if (emptyp path)
+                 value
+                 (let ((index (car path)))
+                   (copy node
+                         :children
+                         (append (subseq (children node) 0 index)
+                                 (list (with- (nth index (children node)) (cdr path)))
+                                 (subseq (children node) (1+ index))))))))
+    (with- tree path)))
+
+(defmethod with ((tree node) (location node) &optional (value nil valuep))
+  (fset::check-three-arguments valuep 'with 'node)
+  (with tree (path-of-node tree location) value))
+
+(defmethod less ((tree node) path &optional (arg2 nil arg2p))
+  (declare (ignore arg2))
+  (fset::check-two-arguments arg2p 'less 'node)
+  (labels ((less- (node path)
+             (let ((index (car path)))
+               (copy node
+                     :children
+                     (append (subseq (children node) 0 index)
+                             (unless (emptyp (cdr path))
+                               (list (less- (nth index (children node)) (cdr path))))
+                             (subseq (children node) (1+ index)))))))
+    (less- tree path)))
+
+(defmethod less ((tree node) (location node) &optional (arg2 nil arg2p))
+  (declare (ignore arg2))
+  (fset::check-two-arguments arg2p 'less 'node)
+  (less tree (path-of-node tree location)))
+
+(defmethod splice ((tree node) (path list) (values t))
+  (insert tree path (list values)))
+(defmethod splice ((tree node) (path list) (values list))
+  ;; Walk down the path creating new trees on the way up.
+  (labels ((splice- (node path)
+             (let ((index (car path)))
+               (copy node
+                     :children
+                     (append (subseq (children node) 0 index)
+                             (if (emptyp (cdr path))
+                                 values
+                                 (list (splice- (nth index (children node))
+                                                (cdr path))))
+                             (subseq (children node) index))))))
+    (splice- tree path)))
+
+(defmethod splice ((tree node) (location node) value)
+  (splice tree (path-of-node tree location) value))
+
+(defmethod insert ((tree node) (path list) value)
+  (splice tree path (list value)))
+
+(defmethod insert (tree (path node) value)
+  (splice tree (path-of-node tree path) (list value)))
+
+(defgeneric swap (tree location-1 location-2)
+  (:documentation "Swap the contents of LOCATION-1 and LOCATION-2 in TREE.")
+  (:method ((tree node) (location-1 list) (location-2 list))
+    (let ((value-1 (@ tree location-1))
+          (value-2 (@ tree location-2)))
+      (with (with tree location-1 value-2) location-2 value-1)))
+  (:method ((tree node) (location-1 node) location-2)
+    (swap tree (path-of-node tree location-1) location-2))
+  (:method ((tree node) location-1 (location-2 node))
+    (swap tree location-1 (path-of-node tree location-2))))
+
+(defmethod size ((other t)) 0)
+(defmethod size ((node node))
+  (1+ (reduce #'+ (mapcar #'size (children node)))))
+
+
+;;; Printing methods (rely on conversion functions).
+(defmethod print-object ((obj node) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a" (convert 'list obj)))))
+
+(defmethod print-object ((obj finger) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a~@[ ~a~]"
+                (node obj) (path obj) (residue obj)))))
+
+(defmethod print-object ((obj path-transform) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a"
+                (transforms obj) (from obj)))))
+
+
+;;; FSET conversion operations
+(defmethod convert ((to-type (eql 'list)) (sequence sequence) &key &allow-other-keys)
+  sequence)
+
+(defmethod convert ((to-type (eql 'list)) (string string) &key &allow-other-keys)
+  string)
+
+(defmethod convert ((to-type (eql 'list)) (node node-with-data)
+                    &key (value-fn #'data) &allow-other-keys)
+  "Convert NODE of type node-with-data to a list using `data' as the value-fn."
+  (call-next-method to-type node :value-fn value-fn))
+
+(defmethod convert ((to-type (eql 'list)) (node node)
+                    &key (value-fn nil value-fn-p) &allow-other-keys)
+  "Convert NODE of type node to a list."
+  (declare (optimize (speed 3)))
+  (when value-fn-p (setf value-fn (coerce value-fn 'function)))
+  (labels ((convert- (node)
+             (declare (type function value-fn))
+             (if (typep node 'node)
+                 (cons (if value-fn-p (funcall value-fn node) node)
+                       (mapcar #'convert- (children node)))
+                 node)))
+    (convert- node)))
+
+(defmethod convert ((to-type (eql 'list)) (finger finger)
+                    &key &allow-other-keys)
+  (let ((cached (cache finger)))
+    (if (typep cached 'node)
+        (convert to-type cached)
+        cached)))
+
+(defmethod convert ((to-type (eql 'alist)) (node node)
+                    &key (value-fn nil value-fn-p) &allow-other-keys)
+  (convert
+   'list node :value-fn
+   (if value-fn-p value-fn
+       (let ((slots
+              (nest
+               (remove-if (rcurry #'member '(serial-number transform finger children)))
+               (mapcar #'slot-definition-name (class-slots (class-of node))))))
+         (lambda (node)
+           (apply #'append
+                  (mapcar (lambda (slot)
+                            (when-let ((val (slot-value node slot)))
+                              (list (cons (make-keyword slot) val))))
+                          slots)))))))
+
+(defmethod convert ((to-type (eql 'node-with-data)) (sequence list) &key &allow-other-keys)
+  (labels ((make-node (list-form)
+             (if (consp list-form)
+                 (make-instance 'node-with-data
+                   :data (car list-form)
+                   :children (mapcar #'make-node (cdr list-form)))
+                 list-form)))
+    (populate-fingers (make-node sequence))))
+
+
+;;; FSET sequence operations (+ two) for functional tree.
+(defgeneric fset-default-node-accessor (node-type)
+  ;; Instead maybe just have a function that returns the slot name to
+  ;; use to access and store data.  This could be used in slot-value
+  ;; and copy respectively.
+  (:documentation "Default key to get and set data from and into NODE-TYPE.")
+  (:method ((node-type (eql 'node-with-data))) 'data))
+
+(defun fset-default-accessor-for (type)
+  (lambda (item)
+    (if (typep item type)
+        (slot-value item (fset-default-node-accessor type))
+        item)))
+
+(defgeneric substitute-with (predicate sequence &key &allow-other-keys)
+  (:documentation
+   "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.
+If secondary return value of PREDICATE is non-nil force substitution
+  with primary value even if it is nil.")
+  (:method (predicate (sequence sequence) &key &allow-other-keys )
+    (let ((predicate (coerce predicate 'function)))
+      (map (type-of sequence)
+           (lambda (element)
+             (multiple-value-bind (value force)
+                 (funcall predicate element)
+               (if force value (or value element))))
+           sequence)))
+  (:method (predicate (seq seq) &key &allow-other-keys &aux result)
+    (let ((predicate (coerce predicate 'function)))
+      (do-seq (element seq)
+        (multiple-value-bind (value force)
+            (funcall predicate element)
+          (push (if force value (or value element)) result)))
+      (convert 'seq (nreverse result)))))
+
+(defmethod reduce (fn (node node) &rest rest &key &allow-other-keys)
+  (apply #'reduce fn (flatten (convert 'list node)) rest))
+
+(defmethod find (item (node node) &rest rest &key &allow-other-keys)
+  (apply #'find item (flatten (convert 'list node)) rest))
+
+(defmethod find-if (predicate (node node) &rest rest &key &allow-other-keys)
+  (apply #'find-if predicate (flatten (convert 'list node)) rest))
+
+(defmethod find-if-not (predicate (node node) &rest rest &key &allow-other-keys)
+  (apply #'find-if-not predicate (flatten (convert 'list node)) rest))
+
+(defmethod count (item (node node) &rest rest &key &allow-other-keys)
+  (apply #'count item (flatten (convert 'list node)) rest))
+
+(defmethod count-if (predicate (node node) &rest rest &key &allow-other-keys)
+  (apply #'count-if predicate (flatten (convert 'list node)) rest))
+
+(defmethod count-if-not (predicate (node node) &rest rest &key &allow-other-keys)
+  (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
+
+(defmethod position (item (node node) &key
+                                        (test #'equalp)
+                                        (key (fset-default-accessor-for (type-of node)) key-p)
+                                        &allow-other-keys)
+  (apply #'position-if (curry (coerce test 'function) item) node
+         (when key-p (list :key key))))
+
+(defmethod position-if (predicate (node node)
+                        &key from-end end start test-not test
+                          (key (fset-default-accessor-for (type-of node))))
+  (assert (notany #'identity from-end end start test-not test)
+          (from-end end start test-not test)
+          "TODO: implement support for ~a key in `position-if'"
+          (cdr (find-if #'car
+                        (mapcar #'cons
+                                (list from-end end start test-not test)
+                                '(from-end end start test-not test)))))
+  (when key (setf key (coerce key 'function)))
+  (labels ((check (item) (funcall predicate (if key (funcall key item) item)))
+           (position- (predicate node path)
+             (if (typep node 'node)
+                 (if (check node)
+                     (return-from position-if (nreverse path))
+                     (mapcar (lambda (child index)
+                               (position- predicate child (cons index path)))
+                             (children node)
+                             (iota (length (children node)))))
+                 (when (check node)
+                   (return-from position-if (nreverse path))))))
+    (position- (coerce predicate 'function) node nil)
+    nil))
+
+(defmethod position-if-not (predicate (node node)
+                            &key (key (fset-default-accessor-for (type-of node)) key-p)
+                              &allow-other-keys)
+  (apply #'position-if (complement predicate) node (when key-p (list :key key))))
+
+(defmethod remove (item (node node) &key (test #'equalp)
+                                      (key (fset-default-accessor-for (type-of node)) key-p)
+                                      &allow-other-keys)
+  (apply #'remove-if (curry (coerce test 'function) item) node (when key-p (list :key key))))
+
+(defmethod remove-if (predicate (node node)
+                      &key (key (fset-default-accessor-for (type-of node)))
+                        &allow-other-keys)
+  (when key (setf key (coerce key 'function)))
+  (labels
+      ((check (node)
+         (funcall predicate (if key (funcall (the function key) node) node)))
+       (remove- (predicate node)
+         (if (typep node 'node)
+             (if (check node)
+                 (values nil t)
+                 (let* ((modifiedp nil)
+                        (new-children
+                         (mappend
+                          (lambda (child)
+                            (multiple-value-bind (new was-modified-p)
+                                (remove- predicate child)
+                              (when was-modified-p (setf modifiedp t))
+                              new))
+                          (children node))))
+                   (if (not modifiedp)
+                       (values (list node) nil)
+                       (values (list (copy node :children new-children)) t))))
+             (if (check node)
+                 (values nil t)
+                 (values (list node) nil)))))
+    (car (remove- (coerce predicate 'function) node))))
+
+(defmethod remove-if-not (predicate (node node)
+                          &key (key (fset-default-accessor-for (type-of node)) key-p)
+                            &allow-other-keys)
+  (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
+
+(defmethod substitute
+    (newitem olditem (node node) &key (test #'equalp)
+                                   (key (fset-default-accessor-for (type-of node)) key-p)
+                                   &allow-other-keys)
+  (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
+         :test test (when key-p (list :key key))))
+
+(defmethod substitute-if (newitem predicate (node node)
+                          &key (copy nil copyp)
+                            (key (fset-default-accessor-for (type-of node)) key-p)
+                            &allow-other-keys)
+  (when copyp (setf copy (coerce copy 'function)))
+  (setf predicate (coerce predicate 'function))
+  (apply #'substitute-with
+         (lambda (item)
+           (when (funcall predicate item)
+             (values (if copyp (funcall copy newitem) newitem) t)))
+         node (when key-p (list :key key))))
+
+(defmethod substitute-if-not (newitem predicate (node node)
+                              &key (key (fset-default-accessor-for (type-of node)) key-p)
+                                &allow-other-keys)
+  (apply #'substitute-if newitem (complement predicate) node (when key-p (list :key key))))
+
+(defmethod substitute-with (function (node node)
+                            &key (key (fset-default-accessor-for (type-of node)))
+                              &allow-other-keys)
+  (when key (setf key (coerce key 'function)))
+  (labels
+      ((check (node)
+         (funcall function (if key (funcall (the function key) node) node)))
+       (substitute- (predicate node)
+         (if (typep node 'node)
+             (multiple-value-bind (value force) (check node)
+               (if (or force value)
+                   (values (list value) t)
+                   (let* ((modifiedp nil)
+                          (new-children
+                           (mappend
+                            (lambda (child)
+                              (multiple-value-bind (new was-modified-p)
+                                  (substitute- predicate child)
+                                (when was-modified-p (setf modifiedp t))
+                                new))
+                            (children node))))
+                     (if (not modifiedp)
+                         (values (list node) nil)
+                         (values (list (copy node :children new-children)) t)))))
+             (multiple-value-bind (value force) (check node)
+               (if (or force value)
+                   (values (list value) t)
+                   (values (list node) nil))))))
+    (car (substitute- (coerce function 'function) node))))

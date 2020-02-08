@@ -1,18 +1,14 @@
 (defpackage :functional-trees/test
   (:nicknames :ft/test)
-  (:use :cl
-        :functional-trees/all
+  (:use :common-lisp
+        :functional-trees
         :alexandria
         :named-readtables
         :curry-compose-reader-macros
-        :software-evolution-library/stefil-plus
+        :stefil
         :iterate)
   (:import-from :uiop/utility :nest)
-  (:import-from :functional-trees/core
-                :lexicographic-< :path-of-node :node-can-implant
-                :path-p :node-valid :nodes-disjoint :compare-nodes
-                :make-random-tree :swap-random-nodes :path-transform-compress-mapping)
-  (:shadowing-import-from :functional-trees/all
+  (:shadowing-import-from :fset
                           :map :set :partition :alist :size
                           :range :compose :unionf :appendf :with :removef
 			  ;; Shadowed set operations
@@ -29,6 +25,20 @@
   (:export test))
 (in-package :ft/test)
 (in-readtable :curry-compose-reader-macros)
+
+(defclass node-with-data (node)
+  ((children :reader children
+             :type list
+             :initarg :children
+             :initform nil
+             :documentation "The list of children of the node,
+which may be more nodes, or other values.")
+   (child-slots :initform '(children) :allocation :class)
+   (data :reader data :initarg :data :initform nil
+         :documentation "Arbitrary data")))
+
+(defmethod (setf children) (new (node node-with-data))
+  (copy node :children new))
 
 (defclass node-with-fields (node-with-data)
   ((a :reader node-a
