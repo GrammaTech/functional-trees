@@ -1,6 +1,6 @@
 (defpackage :functional-trees
   (:nicknames :ft :functional-trees/functional-trees)
-  (:use :common-lisp :alexandria :iterate)
+  (:use :common-lisp :alexandria :iterate :gmap)
   (:shadowing-import-from :fset
                           :@ :do-seq :seq
                           :unionf :appendf :with :removef
@@ -87,11 +87,29 @@ to this node, or the node that led to this node.")
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
+;;; TODO: Define an "after-finalize" method (or somesuch mop shit) on
+;;; the node class (and all subclasses) to define setf methods on
+;;; slots which copy the node and only setf the result.
+
+(defun class-slot-value (class slot)
+  "Return the value of SLOT stored on CLASS."
+  #-sbcl
+  (slot-value (make-instance class) slot)
+  #+sbcl
+  (if-let ((pair (assoc slot (sb-pcl::class-slot-cells class))))
+    (cdr pair)
+    (error "No class slot named ~S found on ~S" slot class)))
+
 (defgeneric children (node)
   (:documentation "Return all children of NODE.")
   (:method ((node node))
     (apply #'append
            (mapcar (lambda (slot) (slot-value node slot)) (child-slots node)))))
+
+(defgeneric data (node)
+  (:documentation "Return the data of NODE.")
+  (:method ((node node))
+    (slot-value node (data-slot node))))
 
 (defmethod transform :around ((n node))
   ;; Compute the PT lazily, when TRANSFORM is a node
@@ -601,40 +619,49 @@ are compared with each other using fset:compare"
 
 
 ;;; Printing methods (rely on conversion functions).
-(defmethod print-object ((obj node) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a" (convert 'list obj)))))
+;;
+;; FIXME: One of these infinite loops.
+;;
+;; (defmethod print-object ((obj node) stream)
+;;   (if *print-readably*
+;;       (call-next-method)
+;;       (print-unreadable-object (obj stream :type t)
+;;         (format stream "~a" (convert 'list obj)))))
 
-(defmethod print-object ((obj finger) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a~@[ ~a~]"
-                (node obj) (path obj) (residue obj)))))
+;; (defmethod print-object ((obj finger) stream)
+;;   (if *print-readably*
+;;       (call-next-method)
+;;       (print-unreadable-object (obj stream :type t)
+;;         (format stream "~a ~a~@[ ~a~]"
+;;                 (node obj) (path obj) (residue obj)))))
 
-(defmethod print-object ((obj path-transform) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a"
-                (transforms obj) (from obj)))))
+;; (defmethod print-object ((obj path-transform) stream)
+;;   (if *print-readably*
+;;       (call-next-method)
+;;       (print-unreadable-object (obj stream :type t)
+;;         (format stream "~a ~a"
+;;                 (transforms obj) (from obj)))))
 
 
 ;;;; FSET conversion operations
 
-;;; TODO: Should use gmap.
+;;; FIXME: All indications are this doesn't work yet.
+(def-gmap-arg-type :node (node)
+  "Yields the nodes of NODE in preorder."
+  `((,node)
+    #'endp
+    #'(lambda (nodes) (append (children (car nodes)) (cdr nodes)))
+    #'cddr))
+
 (defmethod convert ((to-type (eql 'list)) (node node)
-                    &key (value-fn (lambda (n) (slot-value n (data-slot n))) value-fn-p)
-                      &allow-other-keys)
+                    &key (value-fn #'data) &allow-other-keys)
   "Convert NODE of type node to a list."
   (declare (optimize (speed 3)))
-  (when value-fn-p (setf value-fn (coerce value-fn 'function)))
+  (setf value-fn (coerce value-fn 'function))
   (labels ((convert- (node)
              (declare (type function value-fn))
              (if (typep node 'node)
-                 (cons (if value-fn-p (funcall value-fn node) node)
+                 (cons (funcall value-fn node)
                        (mapcar #'convert- (children node)))
                  node)))
     (convert- node)))
@@ -662,30 +689,8 @@ are compared with each other using fset:compare"
                               (list (cons (make-keyword slot) val))))
                           slots)))))))
 
-(defmethod convert ((to-type (eql 'node)) (sequence list) &key &allow-other-keys)
-  (labels ((make-node (list-form)
-             (if (consp list-form)
-                 (make-instance 'node-with-data
-                   :data (car list-form)
-                   :children (mapcar #'make-node (cdr list-form)))
-                 list-form)))
-    (populate-fingers (make-node sequence))))
-
 
 ;;; FSET sequence operations (+ two) for functional tree.
-(defgeneric fset-default-node-accessor (node-type)
-  ;; Instead maybe just have a function that returns the slot name to
-  ;; use to access and store data.  This could be used in slot-value
-  ;; and copy respectively.
-  (:documentation "Default key to get and set data from and into NODE-TYPE.")
-  (:method ((node-type (eql 'node-with-data))) 'data))
-
-(defun fset-default-accessor-for (type)
-  (lambda (item)
-    (if (typep item type)
-        (slot-value item (fset-default-node-accessor type))
-        item)))
-
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
    "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.

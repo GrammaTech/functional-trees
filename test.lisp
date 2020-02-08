@@ -2,6 +2,7 @@
   (:nicknames :ft/test)
   (:use :common-lisp
         :functional-trees
+        :gmap
         :alexandria
         :named-readtables
         :curry-compose-reader-macros
@@ -37,11 +38,19 @@
              :documentation "The list of children of the node,
 which may be more nodes, or other values.")
    (child-slots :initform '(children) :allocation :class)
+   (data-slot :initform 'data :allocation :class)
    (data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")))
 
-(defmethod (setf children) (new (node node-with-data))
-  (copy node :children new))
+(defmethod convert ((to-type (eql 'node-with-data)) (sequence list)
+                    &key &allow-other-keys)
+  (labels ((make-node (list-form)
+             (if (consp list-form)
+                 (make-instance 'node-with-data
+                   :data (car list-form)
+                   :children (mapcar #'make-node (cdr list-form)))
+                 list-form)))
+    (populate-fingers (make-node sequence))))
 
 (defclass node-with-fields (node-with-data)
   ((a :reader node-a
@@ -214,7 +223,7 @@ bucket getting at least 1.  Return as a list."
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:b) (:d) (:c (:x))))
          (node1 (convert 'node-with-data l1))
-         (pt (make-instance 'path-transform
+         (pt (make-instance 'ft::path-transform
                             :from node1
                             :transforms '(((1) (2) :live))))
          (node2 (convert 'node-with-data l2)))
@@ -250,7 +259,7 @@ bucket getting at least 1.  Return as a list."
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:c (:x))))
          (node1 (convert 'node-with-data l1))
-         (pt (make-instance 'path-transform
+         (pt (make-instance 'ft::path-transform
                             :from node1
                             :transforms '(((0) nil :dead)
                                           ((1) (0) :live))))
@@ -287,7 +296,7 @@ bucket getting at least 1.  Return as a list."
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:b) (:d) (:c (:z) (:x) (:y))))
          (node1 (convert 'node-with-data l1))
-         (pt (make-instance 'path-transform
+         (pt (make-instance 'ft::path-transform
                             :from node1
                             :transforms '(((1 0) (2 1) :live)
                                           ((1) (2) :live))))
@@ -319,7 +328,7 @@ bucket getting at least 1.  Return as a list."
         (is (equal (convert 'list f6) (third (fourth l2))))))
     ))
 
-;;; Tests of path-transform-of, update-tree
+;;; Tests of ft::path-transform-of, update-tree
 
 (deftest update-tree.1 ()
     (let* ((n1 (convert 'node-with-data '(:a (:b) (:c) (:d))))
