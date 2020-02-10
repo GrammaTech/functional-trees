@@ -59,6 +59,7 @@ their usage much more concise.
 
 ## Tasks
 - [ ] Eliminate hard-coded children.
+- [X] Define replacements for `cl:subst` and friends.
 - [ ] Integrate with FSet.
 - [ ] Integrate with GMap.
 - [ ] Tests provide coverage and are passing.

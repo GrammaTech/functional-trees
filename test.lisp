@@ -9,6 +9,8 @@
         :software-evolution-library/stefil-plus
         :iterate)
   (:import-from :uiop/utility :nest)
+  (:shadowing-import-from :functional-trees
+                          :subst :subst-if :subst-if-not)
   (:shadowing-import-from :fset
                           :@ :convert :less :splice :insert :lookup :alist
                           :map :set :partition :alist :size

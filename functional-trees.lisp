@@ -18,6 +18,7 @@
                           ;; Additional stuff
                           :identity-ordering-mixin :serial-number
                           :compare :convert)
+  (:shadow :subst :subst-if :subst-if-not)
   (:shadowing-import-from
    :cl :set :union :intersection :set-difference :complement)
   (:shadowing-import-from :alexandria :compose)
@@ -825,6 +826,32 @@ If secondary return value of PREDICATE is non-nil force substitution
                                 &allow-other-keys)
   (apply #'substitute-if newitem
          (complement predicate) node (when key-p (list :key key))))
+
+(defgeneric subst (new old tree &key key test test-not)
+  (:documentation "If TREE is a cons, this simply calls `cl:subst'.
+Also works on a functional tree node.")
+  (:method (new old (tree cons)
+            &key (key nil key-p) (test nil test-p) (test-not nil test-not-p))
+    (apply #'cl:subst new old tree
+           `(,@(when key-p (list :key key))
+               ,@(when test-p (list :test test))
+               ,@(when test-not-p (list :test-not test-not)))))
+  (:method (new old (tree node) &rest rest &key &allow-other-keys)
+    (apply #'substitute new old tree rest)))
+
+(defgeneric subst-if (new test tree &key key)
+  (:documentation "If TREE is a cons, this simply calls `cl:subst-if'.
+Also works on a functional tree node.")
+  (:method (new test (tree cons) &key (key nil key-p))
+    (apply #'cl:subst-if new test tree (when key-p (list :key key))))
+  (:method (new test (tree node) &rest rest &key &allow-other-keys)
+    (apply #'substitute-if new test tree rest)))
+
+(defgeneric subst-if-not (new test tree &key key)
+  (:documentation "If TREE is a cons, this simply calls `cl:subst-if'.
+Also works on a functional tree node.")
+  (:method (new test tree &key (key nil key-p))
+    (apply #'subst-if new (complement test) tree (when key-p (list :key key)))))
 
 (defmethod substitute-with (function (node node)
                             &key (key #'data) &allow-other-keys)
