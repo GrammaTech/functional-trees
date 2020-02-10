@@ -54,18 +54,11 @@
 (defgeneric copy (obj &key &allow-other-keys)
   (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
   (:method ((obj t) &key &allow-other-keys) obj)
-  ;; (:method ((obj alist) &key &allow-other-keys) (copy-alist obj))
   (:method ((obj array) &key &allow-other-keys) (copy-array obj))
-  ;; (:method ((obj file) &key &allow-other-keys) (copy-file obj))
   (:method ((obj hash-table) &key &allow-other-keys) (copy-hash-table obj))
   (:method ((obj list) &key &allow-other-keys) (copy-list obj))
-  ;; (:method ((obj lock) &key &allow-other-keys) (copy-lock obj))
-  ;; (:method ((obj named-readtable) &key &allow-other-keys) (copy-named-readtable obj))
-  ;; (:method ((obj pprint-dispatch) &key &allow-other-keys) (copy-pprint-dispatch obj))
   (:method ((obj readtable) &key &allow-other-keys) (copy-readtable obj))
   (:method ((obj sequence) &key &allow-other-keys) (copy-seq obj))
-  ;; (:method ((obj stream) &key &allow-other-keys) (copy-stream obj))
-  ;; (:method ((obj structure) &key &allow-other-keys) (copy-structure obj))
   (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
 
 (defclass node (identity-ordering-mixin)
@@ -87,25 +80,12 @@ to this node, or the node that led to this node.")
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
-;;; TODO: Define an "after-finalize" method (or somesuch mop shit) on
-;;; the node class (and all subclasses) to define setf methods on
-;;; slots which copy the node and only setf the result.
-
 ;;; NOTE: We might want to propos a patch to FSet to allow setting
 ;;; serial-number with an initialization argument.
 (defmethod initialize-instance :after
   ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
   (when serial-number-p
     (setf (slot-value node 'serial-number) serial-number)))
-
-(defun class-slot-value (class slot)
-  "Return the value of SLOT stored on CLASS."
-  #-sbcl
-  (slot-value (make-instance class) slot)
-  #+sbcl
-  (if-let ((pair (assoc slot (sb-pcl::class-slot-cells class))))
-    (cdr pair)
-    (error "No class slot named ~S found on ~S" slot class)))
 
 (defgeneric children (node)
   (:documentation "Return all children of NODE.")
@@ -150,9 +130,10 @@ giving a path from node down to another node.")
    (residue :reader residue :initarg :residue
             :initform nil ;; (required-argument :residue)
             :type list
-            :documentation "If this finger was created from another finger
-by a path-transform, some part of the path may not have been translated.
-If so, this field is the part that could not be handled.  Otherwise, it is NIL.")
+            :documentation "If this finger was created from another
+finger by a path-transform, some part of the path may not have been
+translated.  If so, this field is the part that could not be handled.
+Otherwise, it is NIL.")
    (cache :accessor :node :accessor cache
          :documentation "Internal slot used to cache the lookup of
 a node."))
@@ -164,7 +145,8 @@ a node."))
          (path (path f)))
     (iter (for i in path)
           (unless (typep node 'node)
-            (error "Path ~a not valid for tree rooted at ~a: ~a" (path f) (node f) node))
+            (error "Path ~a not valid for tree rooted at ~a: ~a"
+                   (path f) (node f) node))
           (let ((children (children node)))
             (etypecase i
               (fixnum ;; make this an explicit range
@@ -242,8 +224,10 @@ tree to another."))
                     (append new-segment (subseq new-initial-segment len)
                             (subseq path (length segment)))
                     (ecase status
-                      (:live (append new-segment (subseq path (length segment))))
-                      (:dead (values new-segment (subseq path (length new-segment)))))))))
+                      (:live (append new-segment
+                                     (subseq path (length segment))))
+                      (:dead (values new-segment
+                                     (subseq path (length new-segment)))))))))
           (finally (return path)))))
 
 (defgeneric transform-finger (finger node &key error-p)
@@ -352,8 +336,8 @@ that FINGER is pointed through."))
 
 
 (defgeneric node-valid (node)
-  (:documentation "True if the tree rooted at NODE have EQL unique serial-numbers,
-and no node occurs on two different paths in the tree"))
+  (:documentation "True if the tree rooted at NODE have EQL unique
+serial-numbers, and no node occurs on two different paths in the tree"))
 
 (defmethod node-valid ((node node))
   (let ((serial-number-table (make-hash-table)))
@@ -361,7 +345,8 @@ and no node occurs on two different paths in the tree"))
                            (let ((serial-number (serial-number n)))
                              (when (gethash serial-number serial-number-table)
                                (return-from node-valid nil))
-                             (setf (gethash serial-number serial-number-table) n))))
+                             (setf (gethash serial-number serial-number-table)
+                                   n))))
     t))
 
 (defun store-nodes (node table)
@@ -376,10 +361,11 @@ any serial-number"))
     ;; Populate serial-number table
     (store-nodes node1 serial-number-table)
     ;; Now check for collisions
-    (traverse-nodes node2 (lambda (n)
-                            (when (gethash (serial-number n) serial-number-table)
-                              (return-from nodes-disjoint nil))
-                            t))
+    (traverse-nodes
+     node2 (lambda (n)
+             (when (gethash (serial-number n) serial-number-table)
+               (return-from nodes-disjoint nil))
+             t))
     t))
 
 (defgeneric node-can-implant (root at-node new-node)
@@ -455,7 +441,8 @@ are compared with each other using fset:compare"
     (traverse-nodes-with-rpaths
      from
      (lambda (n rpath)
-       (setf (gethash (serial-number n) table) (make-pto-data :from n :from-path (reverse rpath)))))
+       (setf (gethash (serial-number n) table)
+             (make-pto-data :from n :from-path (reverse rpath)))))
     #+debug (format t "Table (1): ~a~%" table)
     ;; Now find nodes that are shared
     (traverse-nodes-with-rpaths
@@ -552,16 +539,17 @@ are compared with each other using fset:compare"
   "Adds VALUE (value2) at PATH (value1) in TREE."
   (fset::check-three-arguments valuep 'with 'node)
   ;; Walk down the path creating new trees on the way up.
-  (labels ((with- (node path)
+  (labels ((-with (node path)
              (if (emptyp path)
                  value
                  (let ((index (car path)))
                    (copy node
                          :children
                          (append (subseq (children node) 0 index)
-                                 (list (with- (nth index (children node)) (cdr path)))
+                                 (list (-with (nth index (children node))
+                                              (cdr path)))
                                  (subseq (children node) (1+ index))))))))
-    (with- tree path)))
+    (-with tree path)))
 
 (defmethod with ((tree node) (location node) &optional (value nil valuep))
   (fset::check-three-arguments valuep 'with 'node)
@@ -576,7 +564,8 @@ are compared with each other using fset:compare"
                      :children
                      (append (subseq (children node) 0 index)
                              (unless (emptyp (cdr path))
-                               (list (less- (nth index (children node)) (cdr path))))
+                               (list (less- (nth index (children node))
+                                            (cdr path))))
                              (subseq (children node) (1+ index)))))))
     (less- tree path)))
 
@@ -688,7 +677,8 @@ are compared with each other using fset:compare"
    (if value-fn-p value-fn
        (let ((slots
               (nest
-               (remove-if (rcurry #'member '(serial-number transform finger children)))
+               (remove-if
+                (rcurry #'member '(serial-number transform finger children)))
                (mapcar #'slot-definition-name (class-slots (class-of node))))))
          (lambda (node)
            (apply #'append
@@ -738,7 +728,8 @@ If secondary return value of PREDICATE is non-nil force substitution
 (defmethod count-if (predicate (node node) &rest rest &key &allow-other-keys)
   (apply #'count-if predicate (flatten (convert 'list node)) rest))
 
-(defmethod count-if-not (predicate (node node) &rest rest &key &allow-other-keys)
+(defmethod count-if-not (predicate (node node)
+                         &rest rest &key &allow-other-keys)
   (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
 
 (defmethod position (item (node node) &key (test #'equalp) (key #'data key-p)
@@ -772,18 +763,16 @@ If secondary return value of PREDICATE is non-nil force substitution
     nil))
 
 (defmethod position-if-not (predicate (node node)
-                            &key (key #'data key-p)
-                              &allow-other-keys)
-  (apply #'position-if (complement predicate) node (when key-p (list :key key))))
+                            &key (key #'data key-p) &allow-other-keys)
+  (apply #'position-if (complement predicate) node
+         (when key-p (list :key key))))
 
-(defmethod remove (item (node node) &key (test #'equalp)
-                                      (key #'data key-p)
-                                      &allow-other-keys)
-  (apply #'remove-if (curry (coerce test 'function) item) node (when key-p (list :key key))))
+(defmethod remove (item (node node)
+                   &key (test #'equalp) (key #'data key-p) &allow-other-keys)
+  (apply #'remove-if (curry (coerce test 'function) item) node
+         (when key-p (list :key key))))
 
-(defmethod remove-if (predicate (node node)
-                      &key (key #'data)
-                        &allow-other-keys)
+(defmethod remove-if (predicate (node node) &key (key #'data) &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
       ((check (node)
@@ -815,15 +804,13 @@ If secondary return value of PREDICATE is non-nil force substitution
   (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute
-    (newitem olditem (node node) &key (test #'equalp)
-                                   (key #'data key-p)
+    (newitem olditem (node node) &key (test #'equalp) (key #'data key-p)
                                    &allow-other-keys)
   (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
          :test test (when key-p (list :key key))))
 
 (defmethod substitute-if (newitem predicate (node node)
-                          &key (copy nil copyp)
-                            (key #'data key-p)
+                          &key (copy nil copyp) (key #'data key-p)
                             &allow-other-keys)
   (when copyp (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
@@ -836,11 +823,11 @@ If secondary return value of PREDICATE is non-nil force substitution
 (defmethod substitute-if-not (newitem predicate (node node)
                               &key (key #'data key-p)
                                 &allow-other-keys)
-  (apply #'substitute-if newitem (complement predicate) node (when key-p (list :key key))))
+  (apply #'substitute-if newitem
+         (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute-with (function (node node)
-                            &key (key #'data)
-                              &allow-other-keys)
+                            &key (key #'data) &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
       ((check (node)
@@ -861,7 +848,8 @@ If secondary return value of PREDICATE is non-nil force substitution
                             (children node))))
                      (if (not modifiedp)
                          (values (list node) nil)
-                         (values (list (copy node :children new-children)) t)))))
+                         (values (list (copy node :children new-children))
+                                 t)))))
              (multiple-value-bind (value force) (check node)
                (if (or force value)
                    (values (list value) t)

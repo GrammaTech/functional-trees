@@ -62,3 +62,6 @@ their usage much more concise.
 - [ ] Integrate with FSet.
 - [ ] Integrate with GMap.
 - [ ] Tests provide coverage and are passing.
+- [ ] Consider hooking into the class definition mechanisms with the
+      MOP to define copy-based setf setters for all fields on any
+      child of a node.

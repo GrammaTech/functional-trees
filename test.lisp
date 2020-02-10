@@ -456,9 +456,12 @@ bucket getting at least 1.  Return as a list."
               (convert 'node-with-data `(:b ,n ,n)))))))
 
 (deftest nodes-disjoint.1 ()
-  (is (ft::nodes-disjoint (convert 'node-with-data '(:a)) (convert 'node-with-data '(:b))))
-  (is (ft::nodes-disjoint (convert 'node-with-data '(:a)) (convert 'node-with-data '(:a))))
-  (is (ft::nodes-disjoint (convert 'node-with-data '(:a (:b))) (convert 'node-with-data '(:a (:b)))))
+  (is (ft::nodes-disjoint (convert 'node-with-data '(:a))
+                          (convert 'node-with-data '(:b))))
+  (is (ft::nodes-disjoint (convert 'node-with-data '(:a))
+                          (convert 'node-with-data '(:a))))
+  (is (ft::nodes-disjoint (convert 'node-with-data '(:a (:b)))
+                          (convert 'node-with-data '(:a (:b)))))
   (let ((n (convert 'node-with-data '(:a))))
     (is (not (ft::nodes-disjoint n n))))
   (let ((n (convert 'node-with-data '(:a))))
@@ -480,24 +483,28 @@ bucket getting at least 1.  Return as a list."
     (is (node-equalp n (copy n :data :b)))
     (is (not (node-equalp n (convert 'node-with-data '(:a)))))
     (is (not (node-equalp n (convert 'node-with-data '(:a (:b))))))
-    (is (not (node-equalp n (copy n :children (list (convert 'node-with-data '(:b))))))))
+    (is (not (node-equalp n (copy n :children
+                                  (list (convert 'node-with-data '(:b))))))))
   (let ((n (convert 'node-with-data '(:a (:b)))))
     (is (node-equalp n
                        (copy n
                              :children
                              (list (copy (car (children n))
                                          :data :c)))))
-    (is (not (node-equalp n
-                            (copy n :children (list (convert 'node-with-data '(:c)))))))))
+    (is (not (node-equalp n (copy n :children
+                                  (list (convert 'node-with-data '(:c)))))))))
 
 
 (deftest print.1 ()
   (let ((*print-readably* nil)
         (n1 (convert 'node-with-data '(:a)))
         (t1 (convert 'node-with-data '(:a))))
-    (is (stringp (with-output-to-string (s) (prin1 (convert 'node-with-data '(:a)) s))))
-    (is (stringp (with-output-to-string (s) (prin1 (ft::path-transform-of n1 n1) s))))
-    (is (stringp (with-output-to-string (s) (prin1 (finger t1) s))))))
+    (is (stringp (with-output-to-string (s)
+                   (prin1 (convert 'node-with-data '(:a)) s))))
+    (is (stringp (with-output-to-string (s)
+                   (prin1 (ft::path-transform-of n1 n1) s))))
+    (is (stringp (with-output-to-string (s)
+                   (prin1 (finger t1) s))))))
 
 (deftest print.2 ()
   (let ((*print-readably* t)
@@ -699,14 +706,17 @@ diagnostic information on error or failure."
     (is (not (position-if (constantly nil) tree)))))
 
 (deftest remove-tree ()
-  (is (= (length (convert 'list (remove 24 (convert 'node-with-data (iota 100)))))
+  (is (= (length (convert 'list (remove 24 (convert 'node-with-data
+                                                    (iota 100)))))
          99)))
 
 (deftest remove-tree-if ()
   ;; NOTE: Counterintuitively, because the "0" node is the parent of
   ;; the rest of the tree.
-  (is (zerop (length (convert 'list (remove-if #'evenp (convert 'node-with-data (iota 100)))))))
-  (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data (iota 100))))))))
+  (is (zerop (length (convert 'list (remove-if #'evenp (convert 'node-with-data
+                                                                (iota 100)))))))
+  (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data
+                                                              (iota 100))))))))
 
 (deftest substitute-test ()
   (let ((no-twenty (substitute 40 20 (convert 'node-with-data (iota 100)))))
@@ -714,7 +724,8 @@ diagnostic information on error or failure."
     (is (= 2 (count 40 no-twenty)))))
 
 (deftest substitute-if-test ()
-  (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data (iota 100)))))
+  (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data
+                                                    (iota 100)))))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd)))))
 
@@ -724,11 +735,13 @@ diagnostic information on error or failure."
     (is (zerop (count 3 two-fives))))
   ;; Should replace (5 6 7 8) with :TOUCHED.
   (is (= 6 (length (flatten (convert 'list
-                             (with (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))
+                             (with (convert 'node-with-data
+                                            '(1 2 3 4 (5 6 7 8) (((9)))))
                                    '(3) :touched))))))
   ;; Should replace 6 with :TOUCHED.
   (is (= 9 (length (flatten (convert 'list
-                             (with (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))
+                             (with (convert 'node-with-data
+                                            '(1 2 3 4 (5 6 7 8) (((9)))))
                                    '(3 0) :touched)))))))
 
 (deftest less-test ()
