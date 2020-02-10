@@ -30,7 +30,8 @@
            :children
            :populate-fingers
            :traverse-nodes
-           :node-equalp)
+           :node-equalp
+           :map-tree)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -882,3 +883,23 @@ Also works on a functional tree node.")
                    (values (list value) t)
                    (values (list node) nil))))))
     (car (substitute- (coerce function 'function) node))))
+
+(defgeneric map-tree (function tree)
+  (:documentation
+   "Map FUNCTION over TREE returning the result as a (potentially) new tree.")
+  (:method (function (object t))
+    (funcall function object))
+  (:method (function (object cons))
+    (cons (map-tree function (car object))
+          (map-tree function (cdr object))))
+  (:method (function (node node))
+    (nest
+     (multiple-value-bind (value stop) (funcall function node))
+     (if stop value)
+     (apply #'copy value)
+     (apply #'append)
+     (mapcar (lambda (slot)
+               (when-let ((it (slot-value node slot)))
+                 (list (make-keyword slot)
+                       (mapcar (curry #'map-tree function) it))))
+             (child-slots node)))))

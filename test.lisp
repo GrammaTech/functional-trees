@@ -788,3 +788,14 @@ diagnostic information on error or failure."
                  (convert 'alist)
                  (convert 'node-with-data)
                  '(1 2 3 4 (5 6 7 8) (9 10))))))
+
+(deftest map-tree-works ()
+  (is (equalp (nest (convert 'list)
+                    (map-tree
+                     (lambda (it)
+                       (if (eql (data it) :c)
+                           (convert 'node-with-data '(:foo))
+                           it)))
+                    (convert 'node-with-data)
+                    '(:a (:b) (:b (:c) (:d) (:e)) (:d)))
+              '(:a (:b) (:b (:foo) (:d) (:e)) (:d)))))

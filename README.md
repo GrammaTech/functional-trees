@@ -61,6 +61,7 @@ their usage much more concise.
 - [ ] Eliminate hard-coded children.
 - [X] Define replacements for `cl:subst` and friends.
 - [ ] Integrate with FSet.
+- [X] Define a map-tree function.
 - [ ] Integrate with GMap.
 - [ ] Tests provide coverage and are passing.
 - [ ] Consider hooking into the class definition mechanisms with the
