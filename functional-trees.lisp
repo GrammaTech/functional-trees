@@ -2,8 +2,8 @@
   (:nicknames :ft :functional-trees/functional-trees)
   (:use :common-lisp :alexandria :iterate :gmap)
   (:shadowing-import-from :fset
-                          :@ :do-seq :seq
-                          :unionf :appendf :with :removef
+                          :@ :do-seq :seq :lookup :alist
+                          :unionf :appendf :with :less :splice :insert :removef
 			  ;; Shadowed set operations
 			  :union :intersection :set-difference :complement
 			  ;; Shadowed sequence operations
@@ -91,6 +91,13 @@ to this node, or the node that led to this node.")
 ;;; the node class (and all subclasses) to define setf methods on
 ;;; slots which copy the node and only setf the result.
 
+;;; NOTE: We might want to propos a patch to FSet to allow setting
+;;; serial-number with an initialization argument.
+(defmethod initialize-instance :after
+  ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
+  (when serial-number-p
+    (setf (slot-value node 'serial-number) serial-number)))
+
 (defun class-slot-value (class slot)
   "Return the value of SLOT stored on CLASS."
   #-sbcl
@@ -108,6 +115,7 @@ to this node, or the node that led to this node.")
 
 (defgeneric data (node)
   (:documentation "Return the data of NODE.")
+  (:method ((non-node t)) non-node)
   (:method ((node node))
     (slot-value node (data-slot node))))
 
@@ -733,16 +741,14 @@ If secondary return value of PREDICATE is non-nil force substitution
 (defmethod count-if-not (predicate (node node) &rest rest &key &allow-other-keys)
   (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
 
-(defmethod position (item (node node) &key
-                                        (test #'equalp)
-                                        (key (fset-default-accessor-for (type-of node)) key-p)
+(defmethod position (item (node node) &key (test #'equalp) (key #'data key-p)
                                         &allow-other-keys)
   (apply #'position-if (curry (coerce test 'function) item) node
          (when key-p (list :key key))))
 
 (defmethod position-if (predicate (node node)
                         &key from-end end start test-not test
-                          (key (fset-default-accessor-for (type-of node))))
+                          (key #'data))
   (assert (notany #'identity from-end end start test-not test)
           (from-end end start test-not test)
           "TODO: implement support for ~a key in `position-if'"
@@ -766,17 +772,17 @@ If secondary return value of PREDICATE is non-nil force substitution
     nil))
 
 (defmethod position-if-not (predicate (node node)
-                            &key (key (fset-default-accessor-for (type-of node)) key-p)
+                            &key (key #'data key-p)
                               &allow-other-keys)
   (apply #'position-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod remove (item (node node) &key (test #'equalp)
-                                      (key (fset-default-accessor-for (type-of node)) key-p)
+                                      (key #'data key-p)
                                       &allow-other-keys)
   (apply #'remove-if (curry (coerce test 'function) item) node (when key-p (list :key key))))
 
 (defmethod remove-if (predicate (node node)
-                      &key (key (fset-default-accessor-for (type-of node)))
+                      &key (key #'data)
                         &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
@@ -804,20 +810,20 @@ If secondary return value of PREDICATE is non-nil force substitution
     (car (remove- (coerce predicate 'function) node))))
 
 (defmethod remove-if-not (predicate (node node)
-                          &key (key (fset-default-accessor-for (type-of node)) key-p)
+                          &key (key #'data key-p)
                             &allow-other-keys)
   (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute
     (newitem olditem (node node) &key (test #'equalp)
-                                   (key (fset-default-accessor-for (type-of node)) key-p)
+                                   (key #'data key-p)
                                    &allow-other-keys)
   (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
          :test test (when key-p (list :key key))))
 
 (defmethod substitute-if (newitem predicate (node node)
                           &key (copy nil copyp)
-                            (key (fset-default-accessor-for (type-of node)) key-p)
+                            (key #'data key-p)
                             &allow-other-keys)
   (when copyp (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
@@ -828,12 +834,12 @@ If secondary return value of PREDICATE is non-nil force substitution
          node (when key-p (list :key key))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
-                              &key (key (fset-default-accessor-for (type-of node)) key-p)
+                              &key (key #'data key-p)
                                 &allow-other-keys)
   (apply #'substitute-if newitem (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute-with (function (node node)
-                            &key (key (fset-default-accessor-for (type-of node)))
+                            &key (key #'data)
                               &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
