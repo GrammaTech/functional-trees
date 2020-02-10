@@ -60,10 +60,12 @@ their usage much more concise.
 ## Tasks
 - [ ] Eliminate hard-coded children.
 - [X] Define replacements for `cl:subst` and friends.
-- [ ] Integrate with FSet.
+- [X] Integrate with FSet.
 - [X] Define a map-tree function.
 - [ ] Integrate with GMap.
-- [ ] Tests provide coverage and are passing.
+- [ ] Ensure tests provide good coverage.
+- [ ] Replace `update-tree` and `traverse-nodes` with `map-tree`
+- [ ] Automatically define `convert` methods for subclasses of node.
 - [ ] Consider hooking into the class definition mechanisms with the
       MOP to define copy-based setf setters for all fields on any
       child of a node.

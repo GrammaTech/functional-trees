@@ -137,9 +137,12 @@ finger by a path-transform, some part of the path may not have been
 translated.  If so, this field is the part that could not be handled.
 Otherwise, it is NIL.")
    (cache :accessor :node :accessor cache
-         :documentation "Internal slot used to cache the lookup of
-a node."))
+         :documentation "Internal slot used to cache the lookup of a node."))
   (:documentation "A wrapper for a path to get to a node"))
+
+;;; The Path should hold
+;;; - a raw index into the children
+;;; - a cons of child-slot and index
 
 (defmethod slot-unbound ((class t) (f finger) (slot (eql 'cache)))
   ;; Fill in the NODE slot of finger F
@@ -149,14 +152,18 @@ a node."))
           (unless (typep node 'node)
             (error "Path ~a not valid for tree rooted at ~a: ~a"
                    (path f) (node f) node))
-          (let ((children (children node)))
-            (etypecase i
-              (fixnum ;; make this an explicit range
-               (unless (and (<= 0 i) (< i (length children)))
-                 (error "~a not a valid child index for ~a" i node))
-               (setf node (elt children i)))
-              (symbol
-               (setf node (slot-value node i))))))
+          (destructuring-bind (slot . index)
+              (etypecase i
+                (cons i)
+                (fixnum
+                 (unless (= 1 (length (child-slots node)))
+                   (error "numeric index ~a used with multiple child slots ~s"
+                          i (child-slots node)))
+                 (cons (first (child-slots node)) i)))
+            (let ((children (slot-value node slot)))
+              (unless (and (<= 0 index) (< index (length children)))
+                (error "~a not a valid child index for ~a" index node))
+              (setf node (elt children index)))))
     ;; This assignment is functionally ok, since it is assigned
     ;; only once when the cache is filled
     (setf (slot-value f 'cache) node)))
@@ -275,14 +282,18 @@ that FINGER is pointed through."))
 (defun path-of-node (root node)
   (labels ((%search (path n)
              (when (eql n node)
-               (return-from path-of-node (nreverse path)))
+               (return-from path-of-node
+                 (nreverse (if (= 1 (length (child-slots node)))
+                               (mapcar #'cdr path)
+                               path))))
              (typecase n
                (node
-                (iter (for i from 0)
-                      (for c in (children n))
-                      (%search (cons i path) c))))))
-    (%search nil root)
-    (error "Cannot find ~a in ~a" node root)))
+                (iter (for s in (child-slots node))
+                      (iter (for i from 0)
+                            (for c in (slot-value n s))
+                            (%search (cons (cons s i) path) c)))))))
+    (%search nil root))
+  (error "Cannot find ~a in ~a" node root))
 
 ;;; To add: algorithm for extracting a  path transform from
 ;;; a set of rewrites (with var objects).  Also, conversion of the
@@ -524,18 +535,17 @@ are compared with each other using fset:compare"
 ;;; Define `lookup' methods to work with FSet's `@' macro.
 (defmethod lookup ((node t) (path null)) node)
 (defmethod lookup ((node node) (path cons))
-  (lookup (lookup node (car path)) (cdr path)))
+  (etypecase path
+    (proper-list
+     (lookup (lookup node (car path)) (cdr path)))
+    (cons
+     (destructuring-bind (slot . i) path
+       (elt (slot-value node slot) i)))))
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
 (defmethod lookup ((node node) (i integer))
-  ;; Replace this with (@ (children node) i)?
-  (unless (typep i '(integer 0))
-    (error "Not a valid path index: ~a" i))
-  (let* ((c (children node)))
-    (iter (unless c (error "Path index too large"))
-          (while (> i 0)) (pop c) (decf i))
-    (car c)))
+  (elt (children node) i))
 
 (defmethod with ((tree node) path &optional (value nil valuep))
   "Adds VALUE (value2) at PATH (value1) in TREE."
@@ -545,6 +555,7 @@ are compared with each other using fset:compare"
              (if (emptyp path)
                  value
                  (let ((index (car path)))
+                   ;; FIXME: Ensure works with different children types.
                    (copy node
                          :children
                          (append (subseq (children node) 0 index)
@@ -562,6 +573,7 @@ are compared with each other using fset:compare"
   (fset::check-two-arguments arg2p 'less 'node)
   (labels ((less- (node path)
              (let ((index (car path)))
+               ;; FIXME: Ensure works with different children types.
                (copy node
                      :children
                      (append (subseq (children node) 0 index)
@@ -582,6 +594,7 @@ are compared with each other using fset:compare"
   ;; Walk down the path creating new trees on the way up.
   (labels ((splice- (node path)
              (let ((index (car path)))
+               ;; FIXME: Ensure works with different children types.
                (copy node
                      :children
                      (append (subseq (children node) 0 index)
@@ -661,6 +674,8 @@ are compared with each other using fset:compare"
              (declare (type function value-fn))
              (if (typep node 'node)
                  (cons (funcall value-fn node)
+                       ;; FIXME: Determine how we want list conversion
+                       ;; to work with children.
                        (mapcar #'convert- (children node)))
                  node)))
     (convert- node)))
@@ -755,6 +770,7 @@ If secondary return value of PREDICATE is non-nil force substitution
              (if (typep node 'node)
                  (if (check node)
                      (return-from position-if (nreverse path))
+                     ;; FIXME: Update to work with different children slots.
                      (mapcar (lambda (child index)
                                (position- predicate child (cons index path)))
                              (children node)
@@ -794,6 +810,7 @@ If secondary return value of PREDICATE is non-nil force substitution
                           (children node))))
                    (if (not modifiedp)
                        (values (list node) nil)
+                       ;; Fixme to work with multiple children slots.
                        (values (list (copy node :children new-children)) t))))
              (if (check node)
                  (values nil t)
@@ -876,6 +893,7 @@ Also works on a functional tree node.")
                             (children node))))
                      (if (not modifiedp)
                          (values (list node) nil)
+                         ;; FIXME: to work with multiple children slots.
                          (values (list (copy node :children new-children))
                                  t)))))
              (multiple-value-bind (value force) (check node)

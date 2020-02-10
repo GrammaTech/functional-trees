@@ -59,10 +59,12 @@ which may be more nodes, or other values.")
    (a :reader node-a
       :initarg :a
       :initform nil
+      :type '(list node-with-fields)
       :documentation "Example of a node field")
    (b :reader node-b
       :initarg :b
       :initform nil
+      :type '(list node-with-fields)
       :documentation "Example of a node field"))
   (:documentation "Example class with two fields, a and b,
 that are made available (in addition to children) as links
