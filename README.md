@@ -61,7 +61,7 @@ their usage much more concise.
 - [X] Eliminate hard-coded children.
 - [X] Address all FIXMEs
 - [ ] Address all #+broken
-- [ ] Find should return the subtree.
+- [X] Find should return the subtree.
 - [X] Define replacements for `cl:subst` and friends.
 - [X] Integrate with FSet.
 - [X] Define a map-tree function.

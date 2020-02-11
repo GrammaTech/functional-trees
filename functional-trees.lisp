@@ -567,7 +567,8 @@ are compared with each other using fset:compare"
      (lookup (lookup node (car path)) (cdr path)))
     (cons
      (destructuring-bind (slot . i) path
-       (elt (slot-value node slot) i)))))
+       ;; NOTE: Is there a better way to get from a keyword to a symbol?
+       (elt (slot-value node (intern (symbol-name slot))) i)))))
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
@@ -767,14 +768,36 @@ If secondary return value of PREDICATE is non-nil force substitution
 (defmethod reduce (fn (node node) &rest rest &key &allow-other-keys)
   (apply #'reduce fn (flatten (convert 'list node)) rest))
 
-(defmethod find (item (node node) &rest rest &key &allow-other-keys)
-  (apply #'find item (flatten (convert 'list node)) rest))
+(defmethod find (item (node node)
+                 &key (test #'equalp) (key #'data key-p) &allow-other-keys)
+  (apply #'find-if (curry (coerce test 'function) item) node
+         (when key-p (list :key key))))
 
-(defmethod find-if (predicate (node node) &rest rest &key &allow-other-keys)
-  (apply #'find-if predicate (flatten (convert 'list node)) rest))
+(defmethod find-if (predicate (node node)
+                    &key from-end end start test-not test
+                      (key #'data))
+  (assert (notany #'identity from-end end start test-not test)
+          (from-end end start test-not test)
+          "TODO: implement support for ~a key in `find-if'"
+          (cdr (find-if #'car
+                        (mapcar #'cons
+                                (list from-end end start test-not test)
+                                '(from-end end start test-not test)))))
+  (when key (setf key (coerce key 'function)))
+  (labels
+      ((check (item) (funcall predicate (if key (funcall key item) item)))
+       (find- (predicate node)
+         (nest (if (check node) (return-from find-if node))
+               (when (typep node 'node))
+               (mapc (lambda (slot)
+                       (mapc (curry #'find- predicate) (slot-value node slot)))
+                     (child-slots node)))))
+    (find- (coerce predicate 'function) node)
+    nil))
 
-(defmethod find-if-not (predicate (node node) &rest rest &key &allow-other-keys)
-  (apply #'find-if-not predicate (flatten (convert 'list node)) rest))
+(defmethod find-if-not
+    (predicate (node node) &key (key #'data key-p) &allow-other-keys)
+  (apply #'find-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod count (item (node node) &rest rest &key &allow-other-keys)
   (apply #'count item (flatten (convert 'list node)) rest))

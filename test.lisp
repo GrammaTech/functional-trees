@@ -653,6 +653,18 @@ diagnostic information on error or failure."
     (is (= (find-if «and [#'zerop {mod _ 3}] {< 4 }» tree) 6))
     (is (not (find-if (constantly nil) tree)))))
 
+(deftest find-returns-a-node ()
+  (let ((tree (convert 'node-with-fields '(:data :foo
+                                           :a ((:data :bar))
+                                           :b ((:data :baz))))))
+    (is (null (find :qux tree)))
+    (is (typep (find :foo tree) 'node-with-fields))
+    (is (equalp (find :foo tree) tree))
+    (is (typep (find :bar tree) 'node-with-fields))
+    (is (typep (find :baz tree) 'node-with-fields))
+    (is (equalp (find :baz tree)
+                (@ tree (position :baz tree))))))
+
 (deftest count-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (count 3 tree) 1))))
