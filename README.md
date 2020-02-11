@@ -19,12 +19,12 @@ allocated on the class itself.  See the following example.
 ```lisp
 (defclass if-then-else-node (node)
   ((child-slots :initform '(then else) :allocation :class)
-   (then :reader then :type '(list node))
-   (else :reader else :type '(list node)))
+   (then :reader then :type list)
+   (else :reader else :type list))
   (:documentation "An if-then-else subtree of a program AST."))
 ```
 
-Each child slot should hold a list of nodes.
+Each child slot should hold a *list* of nodes or non-node children.
 
 ### Default data access
 In some cases it may be useful to identify a slot which by default
@@ -59,12 +59,15 @@ their usage much more concise.
 
 ## Tasks
 - [ ] Eliminate hard-coded children.
+- [ ] Address all FIXMEs
+- [ ] Address all #+broken
+- [ ] Find should return the subtree.
 - [X] Define replacements for `cl:subst` and friends.
 - [X] Integrate with FSet.
 - [X] Define a map-tree function.
-- [ ] Integrate with GMap.
+- [X] Replace `update-tree` with `map-tree`
 - [ ] Ensure tests provide good coverage.
-- [ ] Replace `update-tree` and `traverse-nodes` with `map-tree`
+- [ ] Integrate with GMap.
 - [ ] Automatically define `convert` methods for subclasses of node.
 - [ ] Consider hooking into the class definition mechanisms with the
       MOP to define copy-based setf setters for all fields on any

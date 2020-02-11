@@ -29,9 +29,11 @@
            :path :transform-finger-to :residue
            :children
            :populate-fingers
+           :map-tree
            :traverse-nodes
+           :traverse-nodes-with-rpaths
            :node-equalp
-           :map-tree)
+           :swap)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -96,10 +98,13 @@ to this node, or the node that led to this node.")
            (mapcar (lambda (slot) (slot-value node slot)) (child-slots node)))))
 
 (defgeneric data (node)
-  (:documentation "Return the data of NODE.")
+  (:documentation "Return the data of NODE.
+If no `data-slot' is defined on NODE return itself.")
   (:method ((non-node t)) non-node)
   (:method ((node node))
-    (slot-value node (data-slot node))))
+    (if (data-slot node)
+        (slot-value node (data-slot node))
+        node)))
 
 (defmethod transform :around ((n node))
   ;; Compute the PT lazily, when TRANSFORM is a node
@@ -299,7 +304,28 @@ that FINGER is pointed through."))
 ;;; a set of rewrites (with var objects).  Also, conversion of the
 ;;; transform set to a trie.
 
-;;; TODO: Ensure works with nodes w/arbitrary children.
+(defgeneric map-tree (function tree)
+  (:documentation
+   "Map FUNCTION over TREE returning the result as a (potentially) new tree.")
+  (:method (function (object t))
+    (funcall function object))
+  (:method (function (object cons))
+    (cons (map-tree function (car object))
+          (map-tree function (cdr object))))
+  (:method (function (node node))
+    (copy (nest
+           (multiple-value-bind (value stop) (funcall function node))
+           (if stop value)
+           (apply #'copy value)
+           (apply #'append)
+           (mapcar (lambda (slot)
+                     (when-let ((it (slot-value node slot)))
+                       (list (make-keyword slot)
+                             (mapcar (curry #'map-tree function) it))))
+                   (child-slots node)))
+          ;; Set the transform field of the result to the old node.
+          :transform node)))
+
 (defgeneric traverse-nodes (root fn)
   (:documentation 
   "Apply FN at every node below ROOT, in preorder, left to right
@@ -562,7 +588,7 @@ are compared with each other using fset:compare"
                                  (list (-with (nth index (children node))
                                               (cdr path)))
                                  (subseq (children node) (1+ index))))))))
-    (-with tree path)))
+    (copy (-with tree path) :transform tree)))
 
 (defmethod with ((tree node) (location node) &optional (value nil valuep))
   (fset::check-three-arguments valuep 'with 'node)
@@ -629,30 +655,25 @@ are compared with each other using fset:compare"
 (defmethod size ((node node))
   (1+ (reduce #'+ (mapcar #'size (children node)))))
 
-
-;;; Printing methods (rely on conversion functions).
-;;
-;; FIXME: One of these infinite loops.
-;;
-;; (defmethod print-object ((obj node) stream)
-;;   (if *print-readably*
-;;       (call-next-method)
-;;       (print-unreadable-object (obj stream :type t)
-;;         (format stream "~a" (convert 'list obj)))))
+(defmethod print-object ((obj node) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a" (serial-number obj) (convert 'list obj)))))
 
-;; (defmethod print-object ((obj finger) stream)
-;;   (if *print-readably*
-;;       (call-next-method)
-;;       (print-unreadable-object (obj stream :type t)
-;;         (format stream "~a ~a~@[ ~a~]"
-;;                 (node obj) (path obj) (residue obj)))))
+(defmethod print-object ((obj finger) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a~@[ ~a~]"
+                (node obj) (path obj) (residue obj)))))
 
-;; (defmethod print-object ((obj path-transform) stream)
-;;   (if *print-readably*
-;;       (call-next-method)
-;;       (print-unreadable-object (obj stream :type t)
-;;         (format stream "~a ~a"
-;;                 (transforms obj) (from obj)))))
+(defmethod print-object ((obj path-transform) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a"
+                (transforms obj) (from obj)))))
 
 
 ;;;; FSET conversion operations
@@ -810,7 +831,7 @@ If secondary return value of PREDICATE is non-nil force substitution
                           (children node))))
                    (if (not modifiedp)
                        (values (list node) nil)
-                       ;; Fixme to work with multiple children slots.
+                       ;; FIXME: to work with multiple children slots.
                        (values (list (copy node :children new-children)) t))))
              (if (check node)
                  (values nil t)
@@ -901,23 +922,3 @@ Also works on a functional tree node.")
                    (values (list value) t)
                    (values (list node) nil))))))
     (car (substitute- (coerce function 'function) node))))
-
-(defgeneric map-tree (function tree)
-  (:documentation
-   "Map FUNCTION over TREE returning the result as a (potentially) new tree.")
-  (:method (function (object t))
-    (funcall function object))
-  (:method (function (object cons))
-    (cons (map-tree function (car object))
-          (map-tree function (cdr object))))
-  (:method (function (node node))
-    (nest
-     (multiple-value-bind (value stop) (funcall function node))
-     (if stop value)
-     (apply #'copy value)
-     (apply #'append)
-     (mapcar (lambda (slot)
-               (when-let ((it (slot-value node slot)))
-                 (list (make-keyword slot)
-                       (mapcar (curry #'map-tree function) it))))
-             (child-slots node)))))
