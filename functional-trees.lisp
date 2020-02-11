@@ -680,10 +680,13 @@ are compared with each other using fset:compare"
 ;;; NOTE: All indications are this doesn't work yet.
 (def-gmap-arg-type :node (node)
   "Yields the nodes of NODE in preorder."
-  `((,node)
-    #'endp
-    #'(lambda (nodes) (append (children (car nodes)) (cdr nodes)))
-    #'cddr))
+  `((list ,node)
+    #'endp                              ; Check end.
+    #'car                               ; Yield.
+    #'(lambda (state)                        ; Update.
+        (typecase (car state)
+          (node (append (children (car state)) (cdr state)))
+          (t (cdr state))))))
 
 (defmethod convert ((to-type (eql 'list)) (node node)
                     &key (value-fn #'data) &allow-other-keys)

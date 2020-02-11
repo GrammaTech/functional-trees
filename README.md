@@ -67,7 +67,7 @@ their usage much more concise.
 - [X] Define a map-tree function.
 - [X] Replace `update-tree` with `map-tree`
 - [X] Ensure tests provide good coverage.
-- [ ] Integrate with GMap.
+- [X] Integrate with GMap.
 - [ ] Automatically define `convert` methods for subclasses of node.
 - [ ] Consider hooking into the class definition mechanisms with the
       MOP to define copy-based setf setters for all fields on any

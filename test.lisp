@@ -857,3 +857,11 @@ diagnostic information on error or failure."
                     (convert 'node-with-data)
                     '(:a (:b) (:b (:c) (:d) (:e)) (:d)))
               '(:a (:b) (:b (:foo) (:d) (:e)) (:d)))))
+
+(deftest gmap-tree-works ()
+  (let* ((node (convert 'node-with-data '(:i 17 17 (:d 26) (:m (:b 54 84)))))
+         (list (gmap :list #'identity (:node node))))
+    (is (equalp node (car list)))
+    (is (find (@ node '(3 0)) list))
+    (is (find 26 list))
+    (is (= (length list) 9))))
