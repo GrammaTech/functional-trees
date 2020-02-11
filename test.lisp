@@ -668,6 +668,11 @@ diagnostic information on error or failure."
     (is (equalp (position 11 tree) '(4 0 0)))
     (is (not (position 12 tree)))))
 
+(deftest position-tree-w-named-children ()
+  (is (equalp (position 1 (convert 'node-with-fields
+                                   '(:data :foo :a (1) :b (2))))
+              '((:a . 0)))))
+
 (deftest position-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
     (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree)) 6))

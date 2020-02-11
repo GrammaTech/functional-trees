@@ -58,8 +58,8 @@ their usage much more concise.
 ```
 
 ## Tasks
-- [ ] Eliminate hard-coded children.
-- [ ] Address all FIXMEs
+- [X] Eliminate hard-coded children.
+- [X] Address all FIXMEs
 - [ ] Address all #+broken
 - [ ] Find should return the subtree.
 - [X] Define replacements for `cl:subst` and friends.

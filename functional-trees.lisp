@@ -573,21 +573,27 @@ are compared with each other using fset:compare"
 (defmethod lookup ((node node) (i integer))
   (elt (children node) i))
 
+;;; NOTE: The following `with', `less', and `splice' are all very
+;;;       formulaic.  Perhaps they could share implementation
+;;;       structure with independent `descend' methods.
+
 (defmethod with ((tree node) path &optional (value nil valuep))
   "Adds VALUE (value2) at PATH (value1) in TREE."
   (fset::check-three-arguments valuep 'with 'node)
   ;; Walk down the path creating new trees on the way up.
-  (labels ((-with (node path)
-             (if (emptyp path)
-                 value
-                 (let ((index (car path)))
-                   ;; FIXME: Ensure works with different children types.
-                   (copy node
-                         :children
-                         (append (subseq (children node) 0 index)
-                                 (list (-with (nth index (children node))
-                                              (cdr path)))
-                                 (subseq (children node) (1+ index))))))))
+  (labels ((descend (children index path)
+             (append (subseq children 0 index)
+                     (list (-with (nth index children) path))
+                     (subseq children (1+ index))))
+           (-with (node path)
+             (nest (if (emptyp path) value)
+                   (let ((index (car path))))
+                   (apply #'copy node)
+                   (mappend (lambda (slot)
+                              (when-let ((children (slot-value node slot)))
+                                (list (make-keyword slot)
+                                      (descend children index (cdr path)))))
+                            (child-slots node)))))
     (copy (-with tree path) :transform tree)))
 
 (defmethod with ((tree node) (location node) &optional (value nil valuep))
@@ -597,16 +603,19 @@ are compared with each other using fset:compare"
 (defmethod less ((tree node) path &optional (arg2 nil arg2p))
   (declare (ignore arg2))
   (fset::check-two-arguments arg2p 'less 'node)
-  (labels ((less- (node path)
-             (let ((index (car path)))
-               ;; FIXME: Ensure works with different children types.
-               (copy node
-                     :children
-                     (append (subseq (children node) 0 index)
-                             (unless (emptyp (cdr path))
-                               (list (less- (nth index (children node))
-                                            (cdr path))))
-                             (subseq (children node) (1+ index)))))))
+  (labels ((descend (children index path)
+             (append (subseq children 0 index)
+                     (unless (emptyp path)
+                       (list (less- (nth index children) path)))
+                     (subseq children (1+ index))))
+           (less- (node path)
+             (nest (let ((index (car path))))
+                   (apply #'copy node)
+                   (mappend (lambda (slot)
+                              (when-let ((children (slot-value node slot)))
+                                (list (make-keyword slot)
+                                      (descend children index (cdr path)))))
+                            (child-slots node)))))
     (less- tree path)))
 
 (defmethod less ((tree node) (location node) &optional (arg2 nil arg2p))
@@ -617,18 +626,21 @@ are compared with each other using fset:compare"
 (defmethod splice ((tree node) (path list) (values t))
   (insert tree path (list values)))
 (defmethod splice ((tree node) (path list) (values list))
-  ;; Walk down the path creating new trees on the way up.
-  (labels ((splice- (node path)
-             (let ((index (car path)))
-               ;; FIXME: Ensure works with different children types.
-               (copy node
-                     :children
-                     (append (subseq (children node) 0 index)
-                             (if (emptyp (cdr path))
-                                 values
-                                 (list (splice- (nth index (children node))
-                                                (cdr path))))
-                             (subseq (children node) index))))))
+  (labels ((descend (children index path)
+             (append (subseq children 0 index)
+                     (if (emptyp path)
+                         values
+                         (list (splice- (nth index children)
+                                        path)))
+                     (subseq children index)))
+           (splice- (node path)
+             (nest (let ((index (car path))))
+                   (apply #'copy node)
+                   (mappend (lambda (slot)
+                              (when-let ((children (slot-value node slot)))
+                                (list (make-keyword slot)
+                                      (descend children index (cdr path)))))
+                            (child-slots node)))))
     (splice- tree path)))
 
 (defmethod splice ((tree node) (location node) value)
@@ -678,7 +690,7 @@ are compared with each other using fset:compare"
 
 ;;;; FSET conversion operations
 
-;;; FIXME: All indications are this doesn't work yet.
+;;; NOTE: All indications are this doesn't work yet.
 (def-gmap-arg-type :node (node)
   "Yields the nodes of NODE in preorder."
   `((,node)
@@ -695,8 +707,6 @@ are compared with each other using fset:compare"
              (declare (type function value-fn))
              (if (typep node 'node)
                  (cons (funcall value-fn node)
-                       ;; FIXME: Determine how we want list conversion
-                       ;; to work with children.
                        (mapcar #'convert- (children node)))
                  node)))
     (convert- node)))
@@ -786,18 +796,26 @@ If secondary return value of PREDICATE is non-nil force substitution
                                 (list from-end end start test-not test)
                                 '(from-end end start test-not test)))))
   (when key (setf key (coerce key 'function)))
-  (labels ((check (item) (funcall predicate (if key (funcall key item) item)))
-           (position- (predicate node path)
-             (if (typep node 'node)
-                 (if (check node)
-                     (return-from position-if (nreverse path))
-                     ;; FIXME: Update to work with different children slots.
-                     (mapcar (lambda (child index)
-                               (position- predicate child (cons index path)))
-                             (children node)
-                             (iota (length (children node)))))
-                 (when (check node)
-                   (return-from position-if (nreverse path))))))
+  (labels
+      ((check (item) (funcall predicate (if key (funcall key item) item)))
+       (position- (predicate node path)
+         (nest (if (not (typep node 'node))
+                   (when (check node)
+                     (return-from position-if (nreverse path))))
+               (if (check node)
+                   (return-from position-if (nreverse path)))
+               (let* ((slots (child-slots node))
+                      (single-child (= 1 (length slots)))))
+               (mapc (lambda (slot)
+                       (let ((children (slot-value node slot)))
+                         (mapc (lambda (child index)
+                                 (nest
+                                  (position- predicate child)
+                                  (if single-child (cons index path))
+                                  (cons (cons (make-keyword slot) index) path)))
+                               children
+                               (iota (length children)))))
+                     slots))))
     (position- (coerce predicate 'function) node nil)
     nil))
 
@@ -817,41 +835,42 @@ If secondary return value of PREDICATE is non-nil force substitution
       ((check (node)
          (funcall predicate (if key (funcall (the function key) node) node)))
        (remove- (predicate node)
-         (if (typep node 'node)
-             (if (check node)
-                 (values nil t)
-                 (let* ((modifiedp nil)
-                        (new-children
-                         (mappend
-                          (lambda (child)
-                            (multiple-value-bind (new was-modified-p)
-                                (remove- predicate child)
-                              (when was-modified-p (setf modifiedp t))
-                              new))
-                          (children node))))
-                   (if (not modifiedp)
-                       (values (list node) nil)
-                       ;; FIXME: to work with multiple children slots.
-                       (values (list (copy node :children new-children)) t))))
-             (if (check node)
-                 (values nil t)
-                 (values (list node) nil)))))
+         (nest (if (not (typep node 'node))
+                   (if (check node)
+                       (values nil t)
+                       (values (list node) nil)))
+               (if (check node) (values nil t))
+               (let* ((modifiedp nil)
+                      (new-children
+                       (mappend
+                        (lambda (slot)
+                          (when-let ((children (slot-value node slot)))
+                            (list (make-keyword slot)
+                                  (mappend
+                                   (lambda (child)
+                                     (multiple-value-bind (new was-modified-p)
+                                         (remove- predicate child)
+                                       (when was-modified-p (setf modifiedp t))
+                                       new))
+                                   children))))
+                        (child-slots node)))))
+               (if (not modifiedp) (values (list node) nil))
+               (values (list (apply #'copy node new-children)) t))))
     (car (remove- (coerce predicate 'function) node))))
 
 (defmethod remove-if-not (predicate (node node)
-                          &key (key #'data key-p)
-                            &allow-other-keys)
+                          &key (key #'data key-p) &allow-other-keys)
   (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute
-    (newitem olditem (node node) &key (test #'equalp) (key #'data key-p)
-                                   &allow-other-keys)
+    (newitem olditem (node node)
+     &key (test #'equalp) (key #'data key-p) &allow-other-keys)
   (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
          :test test (when key-p (list :key key))))
 
-(defmethod substitute-if (newitem predicate (node node)
-                          &key (copy nil copyp) (key #'data key-p)
-                            &allow-other-keys)
+(defmethod substitute-if
+    (newitem predicate (node node)
+     &key (copy nil copyp) (key #'data key-p) &allow-other-keys)
   (when copyp (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
   (apply #'substitute-with
@@ -899,26 +918,28 @@ Also works on a functional tree node.")
       ((check (node)
          (funcall function (if key (funcall (the function key) node) node)))
        (substitute- (predicate node)
-         (if (typep node 'node)
-             (multiple-value-bind (value force) (check node)
-               (if (or force value)
-                   (values (list value) t)
-                   (let* ((modifiedp nil)
-                          (new-children
-                           (mappend
-                            (lambda (child)
-                              (multiple-value-bind (new was-modified-p)
-                                  (substitute- predicate child)
-                                (when was-modified-p (setf modifiedp t))
-                                new))
-                            (children node))))
-                     (if (not modifiedp)
-                         (values (list node) nil)
-                         ;; FIXME: to work with multiple children slots.
-                         (values (list (copy node :children new-children))
-                                 t)))))
-             (multiple-value-bind (value force) (check node)
-               (if (or force value)
-                   (values (list value) t)
-                   (values (list node) nil))))))
+         (nest (if (not (typep node 'node))
+                   (multiple-value-bind (value force) (check node)
+                     (if (or force value)
+                         (values (list value) t)
+                         (values (list node) nil))))
+               (multiple-value-bind (value force) (check node))
+               (if (or force value) (values (list value) t))
+               (let* ((modifiedp nil)
+                      (new-children
+                       (mappend
+                        (lambda (slot)
+                          (when-let ((children (slot-value node slot)))
+                            (list (make-keyword slot)
+                                  (mappend
+                                   (lambda (child)
+                                     (multiple-value-bind (new was-modified-p)
+                                         (substitute- predicate child)
+                                       (when was-modified-p (setf modifiedp t))
+                                       new))
+                                   children))))
+                        (child-slots node))))
+                 (if (not modifiedp)
+                     (values (list node) nil)
+                     (values (list (apply #'copy node new-children)) t))))))
     (car (substitute- (coerce function 'function) node))))
