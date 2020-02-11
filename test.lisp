@@ -681,7 +681,8 @@ diagnostic information on error or failure."
 (deftest remove-tree ()
   (is (= (length (convert 'list (remove 24 (convert 'node-with-data
                                                     (iota 100)))))
-         99)))
+         99))
+  (is (transform (remove 24 (convert 'node-with-data (iota 100))))))
 
 (deftest remove-tree-if ()
   ;; NOTE: Counterintuitively, because the "0" node is the parent of
@@ -694,7 +695,8 @@ diagnostic information on error or failure."
 (deftest substitute-test ()
   (let ((no-twenty (substitute 40 20 (convert 'node-with-data (iota 100)))))
     (is (= 0 (count 20 no-twenty)))
-    (is (= 2 (count 40 no-twenty)))))
+    (is (= 2 (count 40 no-twenty)))
+    (is (transform no-twenty))))
 
 (deftest substitute-if-test ()
   (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data

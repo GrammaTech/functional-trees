@@ -313,21 +313,22 @@ that FINGER is pointed through."))
     (cons (map-tree function (car object))
           (map-tree function (cdr object))))
   (:method (function (node node))
-    (copy (nest
-           (multiple-value-bind (value stop) (funcall function node))
-           (if stop value)
-           (apply #'copy value)
-           (apply #'append)
-           (mapcar (lambda (slot)
-                     (when-let ((it (slot-value node slot)))
-                       (list (make-keyword slot)
-                             (mapcar (curry #'map-tree function) it))))
-                   (child-slots node)))
-          ;; Set the transform field of the result to the old node.
-          :transform node)))
+    (nest
+     (multiple-value-bind (value stop) (funcall function node))
+     (if stop value)
+     (apply #'copy value)
+     (apply #'append)
+     (mapcar (lambda (slot)
+               (when-let ((it (slot-value node slot)))
+                 (list (make-keyword slot)
+                       (mapcar (curry #'map-tree function) it))))
+             (child-slots node))))
+  (:method :around (function (node node))
+           ;; Set the transform field of the result to the old node.
+           (copy (call-next-method) :transform node)))
 
 (defgeneric traverse-nodes (root fn)
-  (:documentation 
+  (:documentation
   "Apply FN at every node below ROOT, in preorder, left to right
    If FN returns NIL, stop traversal below this point.  Returns NIL."))
 
@@ -354,7 +355,7 @@ that FINGER is pointed through."))
   (traverse-nodes-with-rpaths* node fn nil))
 
 (defgeneric traverse-nodes-with-rpaths* (root fn rpath)
-  (:documentation "Internal method to implement traverse-nodes-with-rpaths"))  
+  (:documentation "Internal method to implement traverse-nodes-with-rpaths"))
 
 (defmethod traverse-nodes-with-rpaths* :around ((node node) fn rpath)
   (when (funcall fn node rpath)
@@ -526,7 +527,7 @@ are compared with each other using fset:compare"
   (let (stack result)
     (iter (for (old new) in mapping)
           #+debug
-          (progn 
+          (progn
             (format t "(old new) = ~a~%" (list old new))
             (format t "stack = ~a~%" stack)
             (format t "result = ~a~%" result))
@@ -577,8 +578,8 @@ are compared with each other using fset:compare"
 ;;;       formulaic.  Perhaps they could share implementation
 ;;;       structure with independent `descend' methods.
 
-(defmethod with ((tree node) path &optional (value nil valuep))
-  "Adds VALUE (value2) at PATH (value1) in TREE."
+(defmethod with ((node node) (path t) &optional (value nil valuep))
+  "Adds VALUE (value2) at PATH (value1) in NODE."
   (fset::check-three-arguments valuep 'with 'node)
   ;; Walk down the path creating new trees on the way up.
   (labels ((descend (children index path)
@@ -594,7 +595,12 @@ are compared with each other using fset:compare"
                                 (list (make-keyword slot)
                                       (descend children index (cdr path)))))
                             (child-slots node)))))
-    (copy (-with tree path) :transform tree)))
+    (-with node path)))
+
+(defmethod with :around ((node node) (path t) &optional value)
+  ;; Ensure that we set the old node as the original for subsequent transforms.
+  (declare (ignorable value))
+  (when-let ((it (call-next-method))) (copy it :transform node)))
 
 (defmethod with ((tree node) (location node) &optional (value nil valuep))
   (fset::check-three-arguments valuep 'with 'node)
@@ -858,6 +864,10 @@ If secondary return value of PREDICATE is non-nil force substitution
                (values (list (apply #'copy node new-children)) t))))
     (car (remove- (coerce predicate 'function) node))))
 
+(defmethod remove-if :around (predicate (node node) &key &allow-other-keys)
+  ;; Ensure that we set the old node as the original for subsequent transforms.
+  (when-let ((it (call-next-method))) (copy it :transform node)))
+
 (defmethod remove-if-not (predicate (node node)
                           &key (key #'data key-p) &allow-other-keys)
   (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
@@ -943,3 +953,7 @@ Also works on a functional tree node.")
                      (values (list node) nil)
                      (values (list (apply #'copy node new-children)) t))))))
     (car (substitute- (coerce function 'function) node))))
+
+(defmethod substitute-with :around (function (node node) &key &allow-other-keys)
+  ;; Ensure that we set the old node as the original for subsequent transforms.
+  (when-let ((it (call-next-method))) (copy it :transform node)))
