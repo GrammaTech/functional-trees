@@ -66,7 +66,7 @@ their usage much more concise.
 - [X] Integrate with FSet.
 - [X] Define a map-tree function.
 - [X] Replace `update-tree` with `map-tree`
-- [ ] Ensure tests provide good coverage.
+- [X] Ensure tests provide good coverage.
 - [ ] Integrate with GMap.
 - [ ] Automatically define `convert` methods for subclasses of node.
 - [ ] Consider hooking into the class definition mechanisms with the

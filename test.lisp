@@ -194,6 +194,21 @@ bucket getting at least 1.  Return as a list."
 (defroot test)
 (defsuite ft-tests "Functional tree tests")
 
+;;; Simple Copy Tests
+(deftest simple-copy-tests ()
+  (flet ((copy-is-equal (it)
+           (is (funcall (typecase it
+                          (symbol (lambda (a b)
+                                    (string= (symbol-name a) (symbol-name b))))
+                          (t #'equalp))
+                        it (copy it)))))
+    (every #'copy-is-equal
+           (list 0
+                 #(1 2 3 4)
+                 (let ((it (make-hash-table))) (setf (gethash :x it) 10) it)
+                 '(1 2 3 4)
+                 'foo))))
+
 (deftest lexicographic-<.1 ()
   (is (not (ft::lexicographic-< nil nil)))
   (is (not (ft::lexicographic-< '(1) nil)))
@@ -213,7 +228,8 @@ bucket getting at least 1.  Return as a list."
   (is (not (convert 'node-with-data nil)))
   (is (typep (convert 'node-with-data '(:a)) 'node))
   (is (null (transform (convert 'node-with-data '(:b (:c))))))
-  (is (equal (convert 'list (convert 'node-with-data '(:a))) '(:a))))
+  (is (equal (convert 'list (convert 'node-with-data '(:a))) '(:a)))
+  (is (= 4 (ft::serial-number (make-instance 'node :serial-number 4)))))
 
 (deftest finger.1 ()
   (let* ((init-list '(:a "ab" (:b) "xy" (:c (:d) #\Z (:e "!"))))
@@ -333,6 +349,12 @@ bucket getting at least 1.  Return as a list."
         (is (equal (convert 'list f6) (third (fourth l2))))))))
 
 ;;; Tests of ft::path-transform-of, map-tree
+(deftest map-tree.0 ()
+  (is (= (map-tree #'identity 1) 1))
+  (is (= (map-tree #'1+ 1) 2))
+  (is (equalp (map-tree #'1+ '(0 1 (2 . 3)))
+              '(1 2 (3 . 4)))))
+
 (deftest map-tree.1 ()
     (let* ((n1 (convert 'node-with-data '(:a (:b) (:c) (:d))))
            (n2 (map-tree (lambda (n)
@@ -529,9 +551,9 @@ diagnostic information on error or failure."
   (let* ((l1 '(:i 17 17 (:d 26) (:m (:b 54 84))))
          (n1 (convert 'node-with-data l1))
          (n2 (@ n1 '(2)))
-         #+broken (f2 (make-instance 'finger :node n1 :path '(2)))
+         (f2 (make-instance 'finger :node n1 :path '(2)))
          (n3 (@ n1 '(3 0)))
-         #+broken (f3 (make-instance 'finger :node n1 :path '(3 0)))
+         (f3 (make-instance 'finger :node n1 :path '(3 0)))
          (n4 (swap n1 n2 n3)))
     (is (equal (transform n1) nil))
     (is (typep (transform n4) 'ft::path-transform))
@@ -544,11 +566,28 @@ diagnostic information on error or failure."
     (is (eql (@ n1 '(2)) (@ n4 '(3 0))))
     (is (eql n2 (@ n4 '(3 0))))
     (is (eql n3 (@ n4 '(2))))
+    ;; Fingers find original nodes in original.
+    (is (eql n2 (@ n1 f2)))
+    (is (eql n3 (@ n1 f3)))
     ;; Fingers find the new nodes at the new locations.
     #+broken (is (equal n2 (@ n4 f2)))
     #+broken (is (equal n3 (@ n4 f3)))))
 
-#+known-failure  ; TODO: Can't handle deleted root node (whole tree).
+(deftest path-of-node.0 ()
+  (let ((it (convert 'node-with-data '(:i 17 17 (:d 26) (:m (:b 54 84))))))
+    (is (equalp (ft::path-of-node it (@ it '(3 0))) '(3 0)))))
+
+(deftest size.0 ()
+  (let ((it (convert 'node-with-data '(:i 17 17 (:d 26) (:m (:b 54 84))))))
+    (is (= 4 (size it)))))
+
+(deftest substitute-with.0 ()
+  (is (equalp (ft::substitute-with (lambda (n) (case n (3 :eric))) '(1 2 3 4))
+              '(1 2 :eric 4)))
+  (is (equalp (ft::substitute-with (lambda (n) (case n (3 :eric))) (fset:seq 1 2 3 4))
+              (fset::seq 1 2 :eric 4))))
+
+#+broken  ; TODO: Can't handle deleted root node (whole tree).
 (deftest random.1 ()
   ;; Randomized test of path transforms
   (is (equal (random-test 20 200 (lambda (n) (remove-nodes-randomly n 0.2))) nil)))
@@ -674,6 +713,11 @@ diagnostic information on error or failure."
     (is (= (count-if [#'zerop {mod _ 3}] tree) 3))
     (is (zerop (count-if (constantly nil) tree)))))
 
+(deftest count-if-not-tree ()
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (is (= (count-if-not [#'zerop {mod _ 3}] tree) 6))
+    (is (not (zerop (count-if-not (constantly nil) tree))))))
+
 (deftest position-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
     (is (equalp (position 4 tree) '(2)))
@@ -704,6 +748,11 @@ diagnostic information on error or failure."
   (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data
                                                               (iota 100))))))))
 
+(deftest remove-tree-if-not ()
+  (is (= 50 (length (convert 'list (nest (remove-if-not #'evenp)
+                                         (convert 'node-with-data)
+                                         (iota 100)))))))
+
 (deftest substitute-test ()
   (let ((no-twenty (substitute 40 20 (convert 'node-with-data (iota 100)))))
     (is (= 0 (count 20 no-twenty)))
@@ -713,6 +762,30 @@ diagnostic information on error or failure."
 (deftest substitute-if-test ()
   (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data
                                                     (iota 100)))))
+    (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
+    (is (= 50 (count :odd no-odd)))))
+
+(deftest substitute-if-not-test ()
+  (let ((no-odd
+         (substitute-if-not :odd #'evenp
+                            (convert 'node-with-data (iota 100)))))
+    (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
+    (is (= 50 (count :odd no-odd)))))
+
+(deftest subst-test ()
+  (let ((no-twenty (subst 40 20 (convert 'node-with-data (iota 100)))))
+    (is (= 0 (count 20 no-twenty)))
+    (is (= 2 (count 40 no-twenty)))
+    (is (transform no-twenty))))
+
+(deftest subst-if-test ()
+  (let ((no-odd (subst-if :odd #'oddp (convert 'node-with-data (iota 100)))))
+    (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
+    (is (= 50 (count :odd no-odd)))))
+
+(deftest subst-if-not-test ()
+  (let ((no-odd
+         (subst-if-not :odd #'evenp (convert 'node-with-data (iota 100)))))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd)))))
 

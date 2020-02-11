@@ -2,7 +2,7 @@
   (:nicknames :ft :functional-trees/functional-trees)
   (:use :common-lisp :alexandria :iterate :gmap)
   (:shadowing-import-from :fset
-                          :@ :do-seq :seq :lookup :alist
+                          :@ :do-seq :seq :lookup :alist :size
                           :unionf :appendf :with :less :splice :insert :removef
 			  ;; Shadowed set operations
 			  :union :intersection :set-difference :complement
@@ -61,7 +61,6 @@
   (:method ((obj array) &key &allow-other-keys) (copy-array obj))
   (:method ((obj hash-table) &key &allow-other-keys) (copy-hash-table obj))
   (:method ((obj list) &key &allow-other-keys) (copy-list obj))
-  (:method ((obj readtable) &key &allow-other-keys) (copy-readtable obj))
   (:method ((obj sequence) &key &allow-other-keys) (copy-seq obj))
   (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
 
@@ -192,14 +191,6 @@ tree to another."))
 (defgeneric transform-finger-to (f p to)
   (:documentation "Converts a finger from one tree to another."))
 
-(defgeneric successor (tree node)
-  (:documentation "Return the successor of NODE in TREE.")
-  (:method ((tree node) (node t)) (error "TODO: Implement `successor'.")))
-
-(defgeneric predecessor (tree node)
-  (:documentation "Return the predecessor of NODE in TREE.")
-  (:method ((tree node) (node t)) (error "TODO: Implement `predecessor'.")))
-
 ;;; Around method to verify pre, post conditions
 (defmethod transform-finger-to :around ((f finger) (p path-transform) (to node))
   (assert (eql (node f) (from p)))
@@ -285,20 +276,8 @@ that FINGER is pointed through."))
 ;;; compatibility functions.  It computes the path leading from ROOT
 ;;; to NODE, or signals an error if it cannot be found.
 (defun path-of-node (root node)
-  (labels ((%search (path n)
-             (when (eql n node)
-               (return-from path-of-node
-                 (nreverse (if (= 1 (length (child-slots node)))
-                               (mapcar #'cdr path)
-                               path))))
-             (typecase n
-               (node
-                (iter (for s in (child-slots node))
-                      (iter (for i from 0)
-                            (for c in (slot-value n s))
-                            (%search (cons (cons s i) path) c)))))))
-    (%search nil root))
-  (error "Cannot find ~a in ~a" node root))
+  (multiple-value-bind (path foundp) (position node root :key #'identity)
+    (if foundp path (error "Cannot find ~a in ~a" node root))))
 
 ;;; To add: algorithm for extracting a  path transform from
 ;;; a set of rewrites (with var objects).  Also, conversion of the
@@ -311,7 +290,8 @@ that FINGER is pointed through."))
     (funcall function object))
   (:method (function (object cons))
     (cons (map-tree function (car object))
-          (map-tree function (cdr object))))
+          (when (cdr object)    ; Don't funcall on the tail of a list.
+            (map-tree function (cdr object)))))
   (:method (function (node node))
     (nest
      (multiple-value-bind (value stop) (funcall function node))
@@ -830,9 +810,9 @@ If secondary return value of PREDICATE is non-nil force substitution
        (position- (predicate node path)
          (nest (if (not (typep node 'node))
                    (when (check node)
-                     (return-from position-if (nreverse path))))
+                     (return-from position-if (values (nreverse path) t))))
                (if (check node)
-                   (return-from position-if (nreverse path)))
+                   (return-from position-if (values (nreverse path) t)))
                (let* ((slots (child-slots node))
                       (single-child (= 1 (length slots)))))
                (mapc (lambda (slot)
@@ -846,7 +826,7 @@ If secondary return value of PREDICATE is non-nil force substitution
                                (iota (length children)))))
                      slots))))
     (position- (coerce predicate 'function) node nil)
-    nil))
+    (values nil nil)))
 
 (defmethod position-if-not (predicate (node node)
                             &key (key #'data key-p) &allow-other-keys)
