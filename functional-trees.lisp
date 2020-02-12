@@ -752,7 +752,7 @@ If secondary return value of PREDICATE is non-nil force substitution
   (apply #'reduce fn (flatten (convert 'list node)) rest))
 
 (defmethod find (item (node node)
-                 &key (test #'equalp) (key #'data key-p) &allow-other-keys)
+                 &key (test #'equalp) (key nil key-p) &allow-other-keys)
   (apply #'find-if (curry (coerce test 'function) item) node
          (when key-p (list :key key))))
 
@@ -779,7 +779,7 @@ If secondary return value of PREDICATE is non-nil force substitution
     nil))
 
 (defmethod find-if-not
-    (predicate (node node) &key (key #'data key-p) &allow-other-keys)
+    (predicate (node node) &key (key nil key-p) &allow-other-keys)
   (apply #'find-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod count (item (node node) &rest rest &key &allow-other-keys)
@@ -792,7 +792,7 @@ If secondary return value of PREDICATE is non-nil force substitution
                          &rest rest &key &allow-other-keys)
   (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
 
-(defmethod position (item (node node) &key (test #'equalp) (key #'data key-p)
+(defmethod position (item (node node) &key (test #'equalp) (key nil key-p)
                                         &allow-other-keys)
   (apply #'position-if (curry (coerce test 'function) item) node
          (when key-p (list :key key))))
@@ -832,12 +832,12 @@ If secondary return value of PREDICATE is non-nil force substitution
     (values nil nil)))
 
 (defmethod position-if-not (predicate (node node)
-                            &key (key #'data key-p) &allow-other-keys)
+                            &key (key nil key-p) &allow-other-keys)
   (apply #'position-if (complement predicate) node
          (when key-p (list :key key))))
 
 (defmethod remove (item (node node)
-                   &key (test #'equalp) (key #'data key-p) &allow-other-keys)
+                   &key (test #'equalp) (key nil key-p) &allow-other-keys)
   (apply #'remove-if (curry (coerce test 'function) item) node
          (when key-p (list :key key))))
 
@@ -875,31 +875,30 @@ If secondary return value of PREDICATE is non-nil force substitution
   (when-let ((it (call-next-method))) (copy it :transform node)))
 
 (defmethod remove-if-not (predicate (node node)
-                          &key (key #'data key-p) &allow-other-keys)
+                          &key (key nil key-p) &allow-other-keys)
   (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
 
 (defmethod substitute
     (newitem olditem (node node)
-     &key (test #'equalp) (key #'data key-p) &allow-other-keys)
+     &key (test #'equalp) (key nil key-p) &allow-other-keys)
   (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
-         :test test (when key-p (list :key key))))
+         (when key-p (list :key key))))
 
 (defmethod substitute-if
     (newitem predicate (node node)
-     &key (copy nil copyp) (key #'data key-p) &allow-other-keys)
-  (when copyp (setf copy (coerce copy 'function)))
+     &key (copy nil copy-p) (key nil key-p) &allow-other-keys)
+  (when copy-p (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
   (apply #'substitute-with
          (lambda (item)
            (when (funcall predicate item)
-             (values (if copyp (funcall copy newitem) newitem) t)))
+             (values (if copy-p (funcall copy newitem) newitem) t)))
          node (when key-p (list :key key))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
-                              &key (key #'data key-p)
-                                &allow-other-keys)
-  (apply #'substitute-if newitem
-         (complement predicate) node (when key-p (list :key key))))
+                              &key (key nil key-p) &allow-other-keys)
+  (apply #'substitute-if newitem (complement predicate) node
+         (when key-p (list :key key))))
 
 (defgeneric subst (new old tree &key key test test-not)
   (:documentation "If TREE is a cons, this simply calls `cl:subst'.
