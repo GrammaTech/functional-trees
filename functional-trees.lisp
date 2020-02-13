@@ -27,7 +27,7 @@
   (:export :copy
            :node :transform :child-slots :data-slot :finger
            :path :transform-finger-to :residue
-           :children
+           :children :data
            :populate-fingers
            :map-tree
            :traverse-nodes
