@@ -101,9 +101,8 @@ to this node, or the node that led to this node.")
 If no `data-slot' is defined on NODE return itself.")
   (:method ((non-node t)) non-node)
   (:method ((node node))
-    (if (data-slot node)
-        (slot-value node (data-slot node))
-        node)))
+    (when (data-slot node)
+      (slot-value node (data-slot node)))))
 
 (defmethod transform :around ((n node))
   ;; Compute the PT lazily, when TRANSFORM is a node
