@@ -6,7 +6,7 @@
         :alexandria
         :named-readtables
         :curry-compose-reader-macros
-        :software-evolution-library/stefil-plus
+        :stefil
         :iterate)
   (:import-from :uiop/utility :nest)
   (:shadowing-import-from :functional-trees
@@ -191,8 +191,8 @@ bucket getting at least 1.  Return as a list."
 
 
 ;;;; Test suite.
-(defroot test)
-(defsuite ft-tests "Functional tree tests")
+(defsuite test)
+(in-suite test)
 
 ;;; Simple Copy Tests
 (deftest simple-copy-tests ()
@@ -595,22 +595,22 @@ diagnostic information on error or failure."
 (deftest random.2 ()
   (let ((result :pass)
         (size 50))
-    (iter (repeat 1000)
-          (let ((root (make-random-tree size)))
-            (ft::traverse-nodes-with-rpaths
-             root
-             (lambda (n rpath)
-               (let ((p (reverse rpath)))
-                 (macrolet ((is (e)
-                              `(unless ,e
-                                 (setf result (list :fail ',e p n root))
-                                 (return))))
-                   ;; TODO: Iterate needs to be taught how to walk `is'.
-                   (is (ft::path-p p))
-                   (is (typep p 'path))
-                   (is (eql (@ root p) n))
-                   (is (equal (ft::path-of-node root n) p))))
-               t))))
+    (dotimes (n 1000)
+      (let ((root (make-random-tree size)))
+        (ft::traverse-nodes-with-rpaths
+         root
+         (lambda (n rpath)
+           (let ((p (reverse rpath)))
+             (macrolet ((is (e)
+                          `(unless ,e
+                             (setf result (list :fail ',e p n root))
+                             (return))))
+               ;; TODO: Iterate needs to be taught how to walk `is'.
+               (is (ft::path-p p))
+               (is (typep p 'path))
+               (is (eql (@ root p) n))
+               (is (equal (ft::path-of-node root n) p))))
+           t))))
       (is (equal result :pass))))
 
 #+broken
@@ -675,8 +675,6 @@ diagnostic information on error or failure."
     (is (equal (convert 'list n4) '(:data :foo
                                     :a ((:data :bar))
                                     :b ((:data :quux)))))))
-
-(defsuite ft-fset-tests "Functional tree FSET tests")
 
 (deftest reduce-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
