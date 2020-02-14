@@ -23,7 +23,10 @@
    :cl :set :union :intersection :set-difference :complement)
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
-  (:import-from :closer-mop :slot-definition-name :class-slots)
+  (:import-from :closer-mop
+                :slot-definition-name
+                :slot-definition-allocation
+                :class-slots)
   (:export :copy
            :node :transform :child-slots :data-slot :finger
            :path :transform-finger-to :residue
