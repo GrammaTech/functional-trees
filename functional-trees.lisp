@@ -119,7 +119,9 @@ If no `data-slot' is defined on NODE return itself.")
    (apply #'make-instance (class-name (class-of node)))
    (apply #'append keys)
    (mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
-   (mapcar #'slot-definition-name (class-slots (class-of node)))))
+   (mapcar #'slot-definition-name )
+   (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
+   (class-slots (class-of node))))
 
 (defclass finger ()
   ((node :reader node :initarg :node
