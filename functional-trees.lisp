@@ -40,10 +40,12 @@
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
+;;; TODO: implement successor
+;;; TODO: implement predecessor
+;;; TODO: implement parent
 
 
 ;;;; Core functional tree definitions.
-
 (deftype path ()
   `(and list (satisfies path-p)))
 
