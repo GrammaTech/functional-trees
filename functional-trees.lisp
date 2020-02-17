@@ -406,7 +406,7 @@ below ROOT and produce a valid tree."))
      (lambda (n)
        ;; Do not store serial-numbers at or below at-node
        (unless (eql n at-node)
-         (setf (gethash (serial-number n) serial-number-table) n))))
+         (setf (gethash (slot-value n 'serial-number) serial-number-table) n))))
     ;; Check for collisions
     (traverse-nodes
      new-node
@@ -467,11 +467,13 @@ are compared with each other using fset:compare"
     (traverse-nodes-with-rpaths
      from
      (lambda (n rpath)
-       (let ((sn (serial-number n)))
-         (let ((pto (gethash sn table)))
-           (assert (null pto) () "Two nodes in tree with same serial number.~%~a~%Path1: ~a~%Path2: ~a"
-                   sn (pto-data-from-path pto) (reverse rpath)))
-         (setf (gethash sn table)
+       (with-slots (serial-number) n
+         (let ((pto (gethash serial-number table)))
+           (assert (null pto) ()
+                   "Two nodes in tree with same serial number.~%~
+                    ~a~%Path1: ~a~%Path2: ~a"
+                   serial-number (pto-data-from-path pto) (reverse rpath)))
+         (setf (gethash serial-number table)
                (make-pto-data :from n :from-path (reverse rpath))))))
     #+debug (format t "Table (1): ~a~%" table)
     ;; Now find nodes that are shared
