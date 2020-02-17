@@ -656,7 +656,15 @@ are compared with each other using fset:compare"
   (:method ((tree node) (location-1 list) (location-2 list))
     (let ((value-1 (@ tree location-1))
           (value-2 (@ tree location-2)))
-      (with (with tree location-1 value-2) location-2 value-1)))
+      ;; Use a temporary place-holder node to ensure that neither node
+      ;; ever appears twice in the tree at the same time.
+      (reduce (lambda (tree pair)
+                (destructuring-bind (location . value) pair
+                  (with tree location value)))
+              (list (cons location-1 (make-instance (class-of value-1)))
+                    (cons location-2 value-1)
+                    (cons location-1 value-2))
+              :initial-value tree)))
   (:method ((tree node) (location-1 node) location-2)
     (swap tree (path-of-node tree location-1) location-2))
   (:method ((tree node) location-1 (location-2 node))
