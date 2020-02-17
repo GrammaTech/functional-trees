@@ -456,19 +456,23 @@ are compared with each other using fset:compare"
   ;; Node in the source tree
   from
   ;; Node in the target tree
-  to
+  (to nil)
   ;; Path from root of source tree to FROM node
   from-path
   ;; Path from root of target tree to TO node
-  to-path)
+  (to-path nil))
 
 (defmethod path-transform-of ((from node) (to node))
   (let ((table (make-hash-table)))
     (traverse-nodes-with-rpaths
      from
      (lambda (n rpath)
-       (setf (gethash (serial-number n) table)
-             (make-pto-data :from n :from-path (reverse rpath)))))
+       (let ((sn (serial-number n)))
+         (let ((pto (gethash sn table)))
+           (assert (null pto) () "Two nodes in tree with same serial number.~%~a~%Path1: ~a~%Path2: ~a"
+                   sn (pto-data-from-path pto) (reverse rpath)))
+         (setf (gethash sn table)
+               (make-pto-data :from n :from-path (reverse rpath))))))
     #+debug (format t "Table (1): ~a~%" table)
     ;; Now find nodes that are shared
     (traverse-nodes-with-rpaths
