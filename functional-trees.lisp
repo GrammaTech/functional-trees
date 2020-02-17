@@ -688,8 +688,6 @@ are compared with each other using fset:compare"
 
 
 ;;;; FSET conversion operations
-
-;;; NOTE: All indications are this doesn't work yet.
 (def-gmap-arg-type :node (node)
   "Yields the nodes of NODE in preorder."
   `((list ,node)
