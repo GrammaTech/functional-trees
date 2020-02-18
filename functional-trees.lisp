@@ -75,6 +75,8 @@
   ((transform :reader transform
               :initarg :transform
               :initform nil
+              ;; TODO: change the back pointer to a weak vector
+              ;; containing the pointer.y
               :type (or null node path-transform)
               :documentation "If non-nil, is either a PATH-TRANSFORM object
 to this node, or the node that led to this node.")
@@ -508,6 +510,15 @@ are compared with each other using fset:compare"
   from-path
   ;; Path from root of target tree to TO node
   (to-path nil))
+
+;;; TODO: see if we can make PATH-TRANSFORM-OF more efficient.  The problem is
+;;; that it spends time proportional to the size of the FROM tree, even if the
+;;; change is much smaller
+;;;
+;;; Suggestion: maintain a timestamp at each node, which is the order in which
+;;; it was allocated (incremented each time a new node is created).  Traverse
+;;; the two trees in increasing order of timestamp, stopping the traversal on
+;;; common nodes.  Serial numbers cannot be used for this.
 
 (defmethod path-transform-of ((from node) (to node))
   (let ((table (make-hash-table)))
