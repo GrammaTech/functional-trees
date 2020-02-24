@@ -295,6 +295,7 @@ that FINGER is pointed through."))
   (:method (function (object t))
     (funcall function object))
   (:method (function (object cons))
+    (funcall function object)
     (cons (map-tree function (car object))
           (when (cdr object)    ; Don't funcall on the tail of a list.
             (map-tree function (cdr object)))))
