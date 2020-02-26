@@ -80,6 +80,9 @@
               :type (or null node path-transform)
               :documentation "If non-nil, is either a PATH-TRANSFORM object
 to this node, or the node that led to this node.")
+   (size :reader size
+         :type (integer 1)
+         :documentation "Number of nodes in tree rooted here.")
    (child-slots :reader child-slots
                 :initform nil
                 :allocation :class
@@ -163,6 +166,11 @@ If no `data-slot' is defined on NODE return itself.")
     (if (typep tr 'node)
         (setf (slot-value n 'transform) (path-transform-of tr n))
         tr)))
+
+(defmethod size ((obj t)) 0)
+(defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
+  (setf (slot-value obj 'size)
+        (reduce #'+ (children obj) :key #'size :initial-value 1)))
 
 ;;; NOTE: There should be a way to chain together methods for COPY for
 ;;; classes and their superclasses, perhaps using the initialization
@@ -519,6 +527,11 @@ are compared with each other using fset:compare"
 ;;; it was allocated (incremented each time a new node is created).  Traverse
 ;;; the two trees in increasing order of timestamp, stopping the traversal on
 ;;; common nodes.  Serial numbers cannot be used for this.
+;;;
+;;; As an alternative, instead of timestamps we could use a combination of
+;;; size and serial-number, using ordering based in larger size, then larger
+;;; serial number if sizes are equal.   In place of "size" any function that
+;;; is monotonically increasing from children to parent could be used.
 
 (defmethod path-transform-of ((from node) (to node))
   (let ((table (make-hash-table)))
@@ -568,6 +581,167 @@ are compared with each other using fset:compare"
          :from from
          :transforms (mapcar (lambda (p) (append p (list :live)))
                              sorted-result))))))
+
+(defclass node-heap ()
+  ((heap :initform (make-array '(100))
+         :type simple-vector
+         :accessor node-heap/heap)
+   (count :initform 0
+          :type (integer 0)
+          :accessor node-heap/count))
+  (:documentation "Max heaps for path-transform computation"))
+
+(defun make-node-heap ()
+  (make-instance 'node-heap))
+
+(deftype node-heap-index () '(integer 0 #.most-positive-fixnum))
+
+(defstruct node-heap-data
+  (node nil)
+  (size 0)
+  (path nil)
+  (sn 0))
+
+(defun node-heap-pop (nh)
+  (declare (type node-heap nh))
+  (nest
+   (with-slots (heap count) nh)
+   (if (= count 0) nil)
+   (let ((d (aref heap 0)))
+     (decf count)
+     (when (> count 0)
+       (setf (aref heap 0) (aref heap count))
+       (node-heap-sift-down heap count))
+     (values (node-heap-data-node d)
+             (node-heap-data-size d)
+             (node-heap-data-sn d)
+             (node-heap-data-path d)))))
+
+(declaim (inline node-heap-data-<))
+(defun node-heap-data-< (nd1 nd2)
+  (let ((s1 (node-heap-data-size nd1))
+        (s2 (node-heap-data-size nd2)))
+    (or (< s1 s2)
+        (and (= s1 s2)
+             (< (node-heap-data-sn nd1)
+                (node-heap-data-sn nd2))))))
+
+(defun node-heap-sift-down (heap count)
+  (declare ; (type node-heap-index count)
+           (type simple-vector heap))
+  (let ((i 0)
+        (n (aref heap 0)))
+    (declare (type node-heap-index i))
+    (iter (let ((l (1+ (the node-heap-index (+ i i)))))
+            (declare (type node-heap-index l))
+            (when (>= l count) (return))
+            (let ((r (1+ l)))
+              (declare (type node-heap-index r))
+              (when (>= r count)
+                (let ((ln (aref heap l)))
+                  (if (node-heap-data-< n ln)
+                      (setf (aref heap i) ln
+                            (aref heap l) n)
+                      (setf (aref heap i) n))
+                  (return)))
+              ;; General case
+              (let ((ln (aref heap l))
+                    (rn (aref heap r)))
+                (when (node-heap-data-< ln rn)
+                  (rotatef l r)
+                  (rotatef ln rn))
+                (when (node-heap-data-< ln n)
+                  (setf (aref heap i) n)
+                  (return))
+                (setf (aref heap i) ln)
+                (setf i l)))))))
+
+(defun node-heap-sift-up (heap i)
+  (declare (type node-heap-index i)
+           (type simple-vector heap))
+  (let ((n (aref heap i)))
+    (iter (while (> i 0))
+          (let* ((p (1- (ash i -1)))
+                 (pn (aref heap p)))
+            (when (node-heap-data-< n pn)
+              (return))
+            (setf (aref heap i) pn)
+            (setf i p)))
+    (setf (aref heap i) n)))
+
+(defun node-heap-insert (nh node path)
+  (with-slots (heap count) nh
+    (let ((d (make-node-heap-data :node node :size (size node)
+                                  :sn (serial-number node)
+                                  :path path)))
+      (when (= (length heap) count)
+        (setf heap (adjust-array heap (list (+ count count))
+                                 :initial-element nil)))
+      (setf (aref heap count) d)
+      (node-heap-sift-up heap count)
+      (incf count)))
+  nh)
+
+(defun node-heap-add-children (nh node path)
+  (iter (for i from 0)
+        (for c in (children node))
+        (when (typep c 'node)
+          (node-heap-insert nh node (append path (list i))))))
+
+(defmethod new-path-transform-of ((from node) (to node))
+  ;; New algorithm for computing the path transform from FROM to TO
+  ;; Uses two heaps to pull nodes from FROM and TO in decreasing
+  ;; order of size and serial number
+  (let* ((from-heap (make-node-heap))
+         (to-heap (make-node-heap))
+         (from-size (size from))
+         (from-sn (serial-number from))
+         (from-path nil)
+         (to-size (size to))
+         (to-sn (serial-number to))
+         (to-path nil)
+         (mapping nil)
+         (from from)
+         (to to))
+    (declare (type fixnum from-size from-sn to-size to-sn))
+    (tagbody
+     again
+       (when (< from-size to-size) (go advance1))
+       (when (> from-size to-size) (go advance2))
+       ;; sizes are eql
+       (when (< from-sn to-sn) (go advance1))
+       (when (> from-sn to-sn) (go advance2))
+       ;;
+       (push (list from-path to-path) mapping)
+       (setf (values from from-size from-sn from-path)
+             (node-heap-pop from-heap))
+       (unless from (go done))
+       (setf (values to to-size to-sn to-path)
+             (node-heap-pop to-heap))
+       (unless to (go done))
+       (go again)
+     advance1
+       (node-heap-add-children from-heap from from-path)
+       (setf (values from from-size from-sn from-path)
+             (node-heap-pop from-heap))
+       (unless from (go done))
+       (go again)
+     advance2
+       (node-heap-add-children to-heap to to-path)
+       (setf (values to to-size to-sn to-path)
+             (node-heap-pop to-heap))
+       (unless to (go done))
+       (go again)
+     done)
+    (setf mapping (sort mapping #'lexicographic-< :key #'car))
+    #+debug (format t "Sorted mapping:~%~A~%" mapping)
+
+    (let ((sorted-result (path-transform-compress-mapping mapping)))
+      (make-instance
+       'path-transform
+       :from from
+       :transforms (mapcar (lambda (p) (append p (list :live)))
+                           sorted-result)))))
 
 ;;; TODO: enhance this compression so that paths that differ
 ;;; only in the final index are compressed into "range" paths.
