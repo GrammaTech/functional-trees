@@ -129,10 +129,16 @@ specifies a specific number of children held in the slot.")
                          (eql :class (slot-definition-allocation slot)))))
          (class-slots class)))))
 
+(defun expand-copying-setf-writers (class)
+  ;; TODO: For every non-class-allocated slot with a accessor define a
+  ;; setf method that makes it copying by default.
+  nil)
+
 (defmethod finalize-inheritance :after (class)
   (when (subtypep class 'node)
     ;; Define a custom `children' method given the value of child-slots.
-    (eval (expand-children-defmethod class))))
+    (eval (expand-children-defmethod class))
+    (eval (expand-copying-setf-writers class))))
 
 ;;; NOTE: We might want to propos a patch to FSet to allow setting
 ;;; serial-number with an initialization argument.
