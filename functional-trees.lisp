@@ -24,8 +24,10 @@
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop
+                :finalize-inheritance
                 :slot-definition-name
                 :slot-definition-allocation
+                :slot-definition-initform
                 :class-slots)
   (:export :copy
            :node :transform :child-slots :data-slot :finger
@@ -78,7 +80,14 @@
 to this node, or the node that led to this node.")
    (child-slots :reader child-slots
                 :initform nil
-                :allocation :class)
+                :allocation :class
+                :type '(list (or symbol cons))
+                :documentation
+                "List of child slots with optional arity.
+This field should be specified as :allocation :class if defined by a
+subclass of `node'.  List of either symbols specifying a slot holding
+a list of children or a cons of (symbol . number) where number
+specifies a specific number of children held in the slot.")
    (data-slot :reader data-slot
               :initform nil
               :allocation :class)
@@ -88,18 +97,49 @@ to this node, or the node that led to this node.")
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
+(defgeneric children (node)
+  (:documentation "Return all children of NODE.")
+  ;; Default method should never be called as the customization of
+  ;; `finalize-inheritance' above should always define something more
+  ;; specific.
+  (:method ((node node))
+    (error "Somehow ~S doesn't have a `children' defmethod." (type-of node))))
+
+;;; When we finalize sub-classes of node, define a children method on
+;;; that class and also define functional copying setf writers.
+(defun expand-children-defmethod (class)
+  `(defmethod children ((node ,(class-name class)))
+     ;; NOTE: For now just append everything together wrapping
+     ;; singleton arity slots in `(list ...)'.  Down the line
+     ;; perhaps something smarter that takes advantage of the
+     ;; known size of some--maybe all--slots would be better.
+     (append
+      ,@(nest
+         (mapcar (lambda (form)
+                   (destructuring-bind (slot . arity)
+                       (etypecase form
+                         (symbol (cons form nil))
+                         (cons form))
+                     (if (and arity (= (the fixnum arity) 1))
+                         `(list (slot-value node ',slot))
+                         `(slot-value node ',slot)))))
+         (eval) (slot-definition-initform)
+         (find-if (lambda (slot)
+                    (and (eql 'child-slots (slot-definition-name slot))
+                         (eql :class (slot-definition-allocation slot)))))
+         (class-slots class)))))
+
+(defmethod finalize-inheritance :after (class)
+  (when (subtypep class 'node)
+    ;; Define a custom `children' method given the value of child-slots.
+    (eval (expand-children-defmethod class))))
+
 ;;; NOTE: We might want to propos a patch to FSet to allow setting
 ;;; serial-number with an initialization argument.
 (defmethod initialize-instance :after
   ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
   (when serial-number-p
     (setf (slot-value node 'serial-number) serial-number)))
-
-(defgeneric children (node)
-  (:documentation "Return all children of NODE.")
-  (:method ((node node))
-    (apply #'append
-           (mapcar (lambda (slot) (slot-value node slot)) (child-slots node)))))
 
 (defgeneric data (node)
   (:documentation "Return the data of NODE.
@@ -776,8 +816,7 @@ If secondary return value of PREDICATE is non-nil force substitution
          (when key-p (list :key key))))
 
 (defmethod find-if (predicate (node node)
-                    &key from-end end start test-not test
-                      (key #'data))
+                    &key from-end end start test-not test key)
   (assert (notany #'identity from-end end start test-not test)
           (from-end end start test-not test)
           "TODO: implement support for ~a key in `find-if'"
