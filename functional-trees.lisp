@@ -519,6 +519,17 @@ are compared with each other using fset:compare"
   ;; Path from root of target tree to TO node
   (to-path nil))
 
+;;; The around method here runs the new algorithm and compares
+;;; the result with the old algorithm.  It is an interim
+;;; step until the new algorithm is used by itself.
+
+(defmethod path-transform-of :around ((from t) (to t))
+  (let ((result (call-next-method)))
+    (let ((new-result (new-path-transform-of from to)))
+      (assert (eql (from result) (from new-result)))
+      (assert (equal (transforms result) (transforms new-result))))
+    result))
+
 ;;; TODO: see if we can make PATH-TRANSFORM-OF more efficient.  The problem is
 ;;; that it spends time proportional to the size of the FROM tree, even if the
 ;;; change is much smaller
@@ -688,22 +699,26 @@ are compared with each other using fset:compare"
         (when (typep c 'node)
           (node-heap-insert nh node (append path (list i))))))
 
-(defmethod new-path-transform-of ((from node) (to node))
+(defmethod new-path-transform-of ((orig-from node) (to node))
   ;; New algorithm for computing the path transform from FROM to TO
   ;; Uses two heaps to pull nodes from FROM and TO in decreasing
   ;; order of size and serial number
   (let* ((from-heap (make-node-heap))
          (to-heap (make-node-heap))
-         (from-size (size from))
-         (from-sn (serial-number from))
+         (from-size (size orig-from))
+         (from-sn (serial-number orig-from))
          (from-path nil)
          (to-size (size to))
          (to-sn (serial-number to))
          (to-path nil)
          (mapping nil)
-         (from from)
+         (from orig-from)
          (to to))
-    (declare (type fixnum from-size from-sn to-size to-sn))
+    (assert (typep from-size 'fixnum))
+    (assert (typep from-sn '(integer 0)))
+    (assert (typep to-size 'fixnum))
+    (assert (typep to-sn '(integer 0)))
+    ;; (declare (type fixnum from-size from-sn to-size to-sn))
     (tagbody
      again
        (when (< from-size to-size) (go advance1))
@@ -739,7 +754,7 @@ are compared with each other using fset:compare"
     (let ((sorted-result (path-transform-compress-mapping mapping)))
       (make-instance
        'path-transform
-       :from from
+       :from orig-from
        :transforms (mapcar (lambda (p) (append p (list :live)))
                            sorted-result)))))
 
