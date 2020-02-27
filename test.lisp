@@ -68,6 +68,10 @@ which may be more nodes, or other values.")
                  list-form)))
     (populate-fingers (make-node sequence))))
 
+(defmethod convert ((to-type (eql 'node-with-data)) (from node-with-data)
+                    &key &allow-other-keys)
+  from)
+
 (defclass node-with-fields (node)
   ((child-slots :initform '(a b) :allocation :class)
    (a :reader node-a
@@ -604,7 +608,6 @@ diagnostic information on error or failure."
   (is (equalp (substitute-with (lambda (n) (case n (3 :eric))) (fset:seq 1 2 3 4))
               (fset::seq 1 2 :eric 4))))
 
-#+broken  ; TODO: Can't handle deleted root node (whole tree).
 (deftest random.1 ()
   ;; Randomized test of path transforms
   (is (equal (random-test 20 200 (lambda (n) (remove-nodes-randomly n 0.2))) nil)))
@@ -628,15 +631,32 @@ diagnostic information on error or failure."
                (is (eql (@ root p) n))
                (is (equal (path-of-node root n) p))))
            t))))
-      (is (equal result :pass))))
+    (is (equal result :pass))))
 
-#+broken
-(deftest random.3 ()
-  (is (equal (random-test 20 1000 (lambda (n)
-                                    (iter (repeat (1+ (random 4)))
-                                          (setf n (swap-random-nodes n)))
-                                    n))
+(deftest random.3a ()
+  (is (equal (random-test 5 1000 #'swap-random-nodes)
              nil)))
+
+(deftest random.3 ()
+  (is (equal (random-test 5 1000 (lambda (n)
+                                   (iter (repeat (1+ (random 4)))
+                                         (setf n (swap-random-nodes n)))
+                                   n))
+             nil)))
+
+(defun tree-has-null-data-node (n)
+  (typecase n
+    (node-with-data (or (null (data n))
+                        (some #'tree-has-null-data-node (children n))))
+    (t nil)))
+
+(deftest new/old.path-transform.1 ()
+  (let* ((l1 '(a 65 (g 39 82) 23 (a 68 51)))
+         (n1 (convert 'node-with-data l1))
+         (c (children n1))
+         (l2 `(a 65 ,(elt c 3) 23 ,(elt c 1)))
+         (n2 (copy (convert 'node-with-data l2) :transform n1)))
+    (is (null (random-test-check n1 n2)))))
 
 (deftest path-transform-compress-mapping.1 ()
   (let ((mapping '((nil nil) ((0) (2 0)) ((1) (0 1))
