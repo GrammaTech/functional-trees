@@ -305,6 +305,10 @@ that FINGER is pointed through."))
 (defmethod transform-finger ((f finger) (node node) &key (error-p t))
   (declare (ignore error-p)) ;; for now
 
+  ;;; TODO: cache PATH-TRANSFORM-OF
+  ;;; TODO: arrange the TRANSFORM of a tree's root to be
+  ;;;   short circuited, if the intermediate states are not important.
+
   (let ((node-of-f (node f)))
     (transform-finger-to f (path-transform-of node-of-f node) node))
 
@@ -528,6 +532,8 @@ are compared with each other using fset:compare"
 ;;; The around method here runs the new algorithm and compares
 ;;; the result with the old algorithm.  It is an interim
 ;;; step until the new algorithm is used by itself.
+;;;
+;;; TODO: get rid of this method
 
 (defmethod path-transform-of :around ((from t) (to t))
   #+(or)
@@ -538,7 +544,7 @@ are compared with each other using fset:compare"
     result)
   (call-next-method))
 
-;;; TODO: see if we can make PATH-TRANSFORM-OF more efficient.  The problem is
+;;; We can make PATH-TRANSFORM-OF more efficient.  The problem is
 ;;; that it spends time proportional to the size of the FROM tree, even if the
 ;;; change is much smaller
 ;;;
@@ -551,6 +557,9 @@ are compared with each other using fset:compare"
 ;;; size and serial-number, using ordering based in larger size, then larger
 ;;; serial number if sizes are equal.   In place of "size" any function that
 ;;; is monotonically increasing from children to parent could be used.
+;;;
+;;; This has been implemented in new-path-transform-of.  TODO: When that
+;;; becomes the default implementation, convert this comment to documentation.
 
 (defmethod path-transform-of ((from node) (to node))
   (let ((table (make-hash-table)))
@@ -623,6 +632,7 @@ are compared with each other using fset:compare"
 
 #+debug-node-heap
 (defmethod check-heap ((nh node-heap))
+  "Heap state consistency check"
   (let ((heap (node-heap/heap nh))
         (count (node-heap/count nh)))
     (iter (for i from 1 below count)
