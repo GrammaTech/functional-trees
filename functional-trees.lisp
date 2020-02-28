@@ -31,8 +31,6 @@
                           :identity-ordering-mixin :serial-number
                           :compare :convert)
   (:shadow :subst :subst-if :subst-if-not)
-  (:shadowing-import-from
-   :cl :set :union :intersection :set-difference :complement)
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop
