@@ -306,13 +306,12 @@ that FINGER is pointed through."))
   (declare (ignore error-p)) ;; for now
 
   ;;; TODO: cache PATH-TRANSFORM-OF
-  ;;; TODO: arrange the TRANSFORM of a tree's root to be
-  ;;;   short circuited, if the intermediate states are not important.
 
+  #+brute-force-transform-finger
   (let ((node-of-f (node f)))
     (transform-finger-to f (path-transform-of node-of-f node) node))
 
-  #+(or)
+  #-brute-force-transform-finger
   (let ((node-of-f (node f)))
     (labels ((%transform (x)
                (cond
@@ -328,8 +327,7 @@ that FINGER is pointed through."))
                     (transform-finger-to
                      (%transform (from transform))
                      transform x))))))
-      (%transform node)))
-  )
+      (%transform node))))
 
 (defun populate-fingers (root)
   "Walk tree, creating fingers back to root."
@@ -536,7 +534,6 @@ are compared with each other using fset:compare"
 ;;; TODO: get rid of this method
 
 (defmethod path-transform-of :around ((from t) (to t))
-  #+(or)
   (let ((result (call-next-method)))
     (let ((new-result (new-path-transform-of from to)))
       (assert (eql (from result) (from new-result)))
@@ -889,6 +886,24 @@ are compared with each other using fset:compare"
                 (every #'node-equalp c1 c2)))))
   (:method (node1 node2) (equal node1 node2)))
 
+;;; Rewrite encapsulation
+;;; The idea here is to allow grouping of several changes to a tree
+;;; into a single change.  The intermediate changes do not need to be
+;;; remembered, and the tree need not be in a consistent state during
+;;; them.
+
+(defun encapsulate (tree rewrite-fn)
+  "Apply REWRITE-FN to TREE, producing a new tree.  The new
+tree has its predecessor set to TREE."
+  (let ((new-tree (funcall rewrite-fn tree)))
+    (if (eql tree (transform new-tree))
+        new-tree
+        (copy new-tree :transform tree))))
+
+(defmacro with-encapsulation (tree &body body)
+  (let ((var (gensym)))
+    `(encapsulate ,tree #'(lambda (,var) (declare (ignore ,var)) ,@body))))
+
 
 ;;;; FSet interoperability.
 
@@ -1009,7 +1024,9 @@ are compared with each other using fset:compare"
   (:method ((tree node) (location-1 node) location-2)
     (swap tree (path-of-node tree location-1) location-2))
   (:method ((tree node) location-1 (location-2 node))
-    (swap tree location-1 (path-of-node tree location-2))))
+    (swap tree location-1 (path-of-node tree location-2)))
+  (:method :around ((tree node) (location-1 t) (location-2 t))
+    (with-encapsulation tree (call-next-method))))
 
 (defmethod size ((other t)) 0)
 (defmethod size ((node node))
