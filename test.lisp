@@ -370,7 +370,7 @@ bucket getting at least 1.  Return as a list."
 (deftest map-tree.0 ()
   (is (= (map-tree #'identity 1) 1))
   (is (= (map-tree #'1+ 1) 2))
-  (is (equalp (map-tree #'1+ '(0 1 (2 . 3)))
+  (is (equalp (map-tree (lambda (x) (if (integerp x) (1+ x) x)) '(0 1 (2 . 3)))
               '(1 2 (3 . 4)))))
 
 (deftest map-tree.1 ()
@@ -724,20 +724,21 @@ diagnostic information on error or failure."
 
 (deftest find-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
-    (is (= (find-if «and [#'zerop {mod _ 3}] {< 4 }» tree) 6))
+    (is (= (find-if «and #'integerp [#'zerop {mod _ 3}] {< 4 }» tree) 6))
     (is (not (find-if (constantly nil) tree)))))
 
 (deftest find-returns-a-node ()
   (let ((tree (convert 'node-with-fields '(:data :foo
                                            :a ((:data :bar))
                                            :b ((:data :baz))))))
-    (is (null (find :qux tree)))
-    (is (typep (find :foo tree) 'node-with-fields))
-    (is (equalp (find :foo tree) tree))
-    (is (typep (find :bar tree) 'node-with-fields))
-    (is (typep (find :baz tree) 'node-with-fields))
-    (is (equalp (find :baz tree)
-                (@ tree (position :baz tree))))))
+    (flet ((%f (v) (find v tree :key #'data)))
+      (is (null (%f :qux)))
+      (is (typep (%f :foo) 'node-with-fields))
+      (is (equalp (%f :foo) tree))
+      (is (typep (%f :bar) 'node-with-fields))
+      (is (typep (%f :baz) 'node-with-fields))
+      (is (equalp (%f :baz)
+                  (@ tree (position :baz tree :key #'data)))))))
 
 (deftest count-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
