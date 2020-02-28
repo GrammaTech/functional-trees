@@ -16,17 +16,17 @@
   (:shadowing-import-from :fset
                           :@ :do-seq :seq :lookup :alist :size
                           :unionf :appendf :with :less :splice :insert :removef
-			  ;; Shadowed set operations
-			  :union :intersection :set-difference :complement
-			  ;; Shadowed sequence operations
-			  :first :last :subseq :reverse :sort :stable-sort
-			  :reduce
-			  :find :find-if :find-if-not
-			  :count :count-if :count-if-not
-			  :position :position-if :position-if-not
-			  :remove :remove-if :remove-if-not
-			  :substitute :substitute-if :substitute-if-not
-			  :some :every :notany :notevery
+                          ;; Shadowed set operations
+                          :union :intersection :set-difference :complement
+                          ;; Shadowed sequence operations
+                          :first :last :subseq :reverse :sort :stable-sort
+                          :reduce
+                          :find :find-if :find-if-not
+                          :count :count-if :count-if-not
+                          :position :position-if :position-if-not
+                          :remove :remove-if :remove-if-not
+                          :substitute :substitute-if :substitute-if-not
+                          :some :every :notany :notevery
                           ;; Additional stuff
                           :identity-ordering-mixin :serial-number
                           :compare :convert)
