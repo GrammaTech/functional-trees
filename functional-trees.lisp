@@ -131,7 +131,7 @@ specifies a specific number of children held in the slot.")
 ;;; When we finalize sub-classes of node, define a children method on
 ;;; that class and also define functional copying setf writers.
 (defun expand-children-defmethod (class)
-  `(defmethod children ((node ,(class-name class)))
+  `(defmethod children ((node ,class))
      ;; NOTE: For now just append everything together wrapping
      ;; singleton arity slots in `(list ...)'.  Down the line
      ;; perhaps something smarter that takes advantage of the
