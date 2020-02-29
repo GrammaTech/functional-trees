@@ -166,9 +166,10 @@ to subtrees."))
                                     (when-let ((children
                                                 (slot-value node child-slot)))
                                       (list (make-keyword child-slot)
-                                            (mapcar ‹typecase
-                                                        (node {convert 'list})
-                                                      (t #'identity)›
+                                            (mapcar (lambda (c)
+                                                      (typecase c
+                                                        (node (convert 'list c))
+                                                        (t c)))
                                                     children))))
                                   (child-slots node)))
                  node)))
