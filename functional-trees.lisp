@@ -350,8 +350,8 @@ that FINGER is pointed through."))
     (if foundp path (error "Cannot find ~a in ~a" node root))))
 
 ;;; To add: algorithm for extracting a  path transform from
-;;; a set of rewrites (with var objects).  Also, conversion of the
-;;; transform set to a trie.
+;;; a set of rewrites (with var objects).  (Is this still relevant?)
+;;  Also, conversion of the transform set to a trie.
 
 (defgeneric map-tree (function tree)
   (:documentation
@@ -519,11 +519,11 @@ are compared with each other using fset:compare"
 ;;; Structure used in computation of path-transform-of
 (defstruct pto-data
   ;; Node in the source tree
-  from
+  (from (required-argument 'from))
   ;; Node in the target tree
   (to nil)
   ;; Path from root of source tree to FROM node
-  from-path
+  (from-path (required-argument 'from-path))
   ;; Path from root of target tree to TO node
   (to-path nil))
 
