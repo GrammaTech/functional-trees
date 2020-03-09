@@ -1,11 +1,12 @@
 (defsystem "functional-trees"
   :author "GrammaTech"
-  :licence "GPL V3"
-  :description "prototype for functional manipulation of trees"
-  :long-description "Prototype for a system that allows walking
-and rewriting of parts of trees in a functional manner, along
-with translation of references to internal nodes that can be carried
-from one tree to its successors"
+  :licence "MIT"
+  :description "Tree data structure supporting functional manipulation"
+  :long-description "Tree data structure supporting functional (or
+applicative) manipulation.  This system allows the walking and
+rewriting of parts of trees in a functional manner, along with
+translation of references to internal nodes that can be carried from
+one tree to its successors."
   :version "0.0.0"
   :depends-on (:functional-trees/functional-trees)
   :class :package-inferred-system
@@ -14,7 +15,7 @@ from one tree to its successors"
 
 (defsystem "functional-trees/test"
   :author "GrammaTech"
-  :licence "GPL V3"
+  :licence "MIT"
   :description "Test the FUNCTIONAL-TREES package."
   :version "0.0.0"
   :perform
