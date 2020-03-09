@@ -102,6 +102,14 @@ specifies a specific number of children held in the slot.")
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
+;; debug macro
+(defmacro dump (&body forms)
+  `(progn
+     ,@(iter (for form in forms)
+             (collecting `(format t "~a = ~s~%"
+                                  ,(format nil "~s" form)
+                                  ,form)))))
+
 (defgeneric children (node)
   (:documentation "Return all children of NODE.")
   ;; Default method should never be called as the customization of
@@ -167,7 +175,6 @@ If no `data-slot' is defined on NODE return itself.")
         (setf (slot-value n 'transform) (path-transform-of tr n))
         tr)))
 
-(defmethod size ((obj t)) 0)
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
   (setf (slot-value obj 'size)
         (reduce #'+ (children obj) :key #'size :initial-value 1)))
@@ -266,7 +273,89 @@ tree to another."))
     (make-instance 'finger :path new-path
                    :node to :residue residue)))
 
-(defun transform-path (path transforms)
+(defclass trie ()
+  ((root :initarg :root :accessor root
+         :type trie-node)))
+
+(defclass trie-node ()
+  ((data :initform nil :initarg :data
+         :accessor data
+         :documentation "Data for segments that end at this trie node,
+or NIL if no such segments end here.")
+   (map :initform nil :initarg :map
+        :type list
+        :accessor trie-map
+        :documentation "Alist mapping indices to trie nodes")))
+
+(defun make-trie ()
+  (make-instance 'trie :root (make-instance 'trie-node)))
+
+;;; TODO: make trie maps switch over to hash tables if the alist
+;;;   gets too long
+
+(defgeneric trie-insert (trie segment data)
+  (:method ((trie trie) (segment list) (data t))
+    ;; Find the trie node for SEGMENT
+    (let ((node (root trie)))
+      (iter (when (null segment)
+              (setf (data node) data)
+              (return))
+            (let* ((map (trie-map node))
+                   (i (car segment))
+                   (p (assoc i (trie-map node))))
+              (if p
+                  (setf node (cdr p)
+                        segment (cdr segment))
+                  (let ((child (make-instance 'trie-node)))
+                    (setf (trie-map node) (cons (cons i child) map))
+                    (pop segment)
+                    (setf node child))))))))
+
+(defun transforms-to-trie (transforms)
+  "Construct a trie for TRANSFORMS, which is a list as described
+in the transforms slot of PATH-TRANSFORMS objects."
+  (let ((trie (make-trie)))
+    (iter (for (segment new-initial-segment status) in transforms)
+          (trie-insert trie segment (list new-initial-segment status)))
+    trie))
+
+(defgeneric transform-path (path transforms))
+
+(defmethod transform-path ((orig-path list) (trie trie))
+  (let ((node (root trie))
+        (path orig-path)
+        (len (length orig-path))
+        suffix
+        deepest-match)
+    (iter (let ((d (data node)))
+            (when d
+              (setf suffix path
+                    deepest-match d)))
+          (while path)
+          (let* ((i (car path))
+                 (p (assoc i (trie-map node))))
+            (unless p (return))
+            (setf node (cdr p)
+                  path (cdr path))))
+    (if (null deepest-match)
+        orig-path
+        (destructuring-bind (new-segment status)
+            deepest-match
+          (ecase status
+            (:live (append new-segment suffix))
+            (:dead (values new-segment
+                           (subseq orig-path (length new-segment)))))))))
+
+;; testing method
+(defmethod transform-path :around ((path list) (transforms list))
+  (let ((trie (transforms-to-trie transforms))
+        (results (multiple-value-list (call-next-method))))
+    (let ((new-results (multiple-value-list (transform-path path trie))))
+      (assert (equal results new-results) ()
+              "Paths not the same:~%~a~%~a" results new-results)
+      (apply #'values results))))
+
+(defmethod transform-path ((path list) (transforms list))
   ;; This is inefficient, and is just for demonstration
   ;; In the real implementation, the segments are blended together
   ;; into a trie
@@ -280,16 +369,10 @@ tree to another."))
                                        (<= (car i-set) i (cadr i-set)))))
                             path segment))
             (return
-              (let ((new-segment
-                     (loop for i in path
-                        for init in new-initial-segment
-                        for p in path
-                        collect (if (consp i)
-                                    (+ init (- p (car i)))
-                                    init))))
-                (if (< len (length new-initial-segment))
-                    (append new-segment (subseq new-initial-segment len)
-                            (subseq path (length segment)))
+              (if (< len (length new-initial-segment))
+                  (append new-initial-segment
+                          (subseq path (length segment)))
+                  (let ((new-segment new-initial-segment))
                     (ecase status
                       (:live (append new-segment
                                      (subseq path (length segment))))
