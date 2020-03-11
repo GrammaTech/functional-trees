@@ -23,6 +23,7 @@
   (:import-from :uiop/utility :nest)
   (:shadowing-import-from :functional-trees
                           :lexicographic-<
+                          :new-path-transform-of
                           :node-can-implant
                           :node-valid
                           :nodes-disjoint
@@ -31,6 +32,7 @@
                           :path-transform
                           :path-transform-compress-mapping
                           :path-transform-of
+                          :prefix?
                           :serial-number
                           :subst
                           :subst-if
@@ -850,12 +852,20 @@ diagnostic information on error or failure."
   (is (= 9 (length (flatten (convert 'list
                              (with (convert 'node-with-data
                                             '(1 2 3 4 (5 6 7 8) (((9)))))
-                                   '(3 0) :touched)))))))
+                                   '(3 0) :touched))))))
+  (let* ((r (convert 'node-with-data '(:a 1 2 (:b 3 4) 5)))
+         (n (@ r '(2))))
+    (is (equal (flatten (convert 'list (with r n :removed)))
+               '(:a 1 2 :removed 5)))))
 
 (deftest less-test ()
   (let ((no-threes (less (convert 'node-with-data (iota 10)) '(2))))
     (is (zerop (count 3 no-threes)))
-    (is (= 9 (length (convert 'list no-threes))))))
+    (is (= 9 (length (convert 'list no-threes)))))
+  (let* ((r (convert 'node-with-data '(:a 1 (:b 2) (:c 3) 4)))
+         (n (@ r 2)))
+    (is (equal (flatten (convert 'list (less r n)))
+               '(:a 1 :b 2 4)))))
 
 (deftest @-test ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
@@ -881,12 +891,41 @@ diagnostic information on error or failure."
 (deftest splice-test ()
   (let ((it (convert 'node-with-data '(0 1 2 3 4))))
     (is (equalp (convert 'list (splice it '(1) '(:a :b :c)))
-                '(0 1 :a :b :c 2 3 4)))))
+                '(0 1 :a :b :c 2 3 4)))
+    (is (handler-case (progn (splice it nil '(1)) nil)
+          (error () t)))
+    (is (handler-case (progn (splice it it '(1)) nil)
+          (error () t))))
+  #|
+  (let ((it (convert 'node-with-data '(0 1 2 3 4)))
+        (n (convert 'node-with-data '(:a 5))))
+    (is (equal (convert 'list (splice it '(1) n))
+               `(0 1 ,n 2 3 4))))
+  |#
+  (let ((it (convert 'node-with-data '(:a (:b 1) (:c (:d 2) (:e 3) 4) 5))))
+    (is (equal (convert 'list (splice it '(1 0) '(:new)))
+               '(:a (:b 1) (:c :new (:d 2) (:e 3)  4) 5)))
+    (is (equal (convert 'list (splice it (@ it '(1 1)) '(:new)))
+               '(:a (:b 1) (:c (:d 2) :new (:e 3) 4) 5))))
+  #|
+  (let ((it (convert 'node-with-fields '(:data :x :a (1) :b (2)))))
+    (is (handler-case (progn (splice it '(:a) :what) nil)
+          (error () t))))
+  |#
+  )
 
 (deftest insert-test ()
   (let ((it (convert 'node-with-data '(0 1 2 3 4))))
     (is (equalp (convert 'list (insert it '(1) ':a))
-                '(0 1 :a 2 3 4)))))
+                '(0 1 :a 2 3 4)))
+    (is (handler-case (progn (insert it nil :what) nil)
+          (error () t)))
+    (is (handler-case (progn (insert it it :what) nil)
+          (error () t))))
+  (let* ((it (convert 'node-with-data '(:a (:b 1) (:c 2 3 (:d 4) 5) 6)))
+         (n (@ it '(1 2))))
+    (is (equal (convert 'list (insert it n :new))
+               '(:a (:b 1) (:c 2 3 :new (:d 4) 5) 6)))))
 
 (deftest conversion-to-node-with-data ()
   (is (= 3 (nest (count :data)
@@ -913,3 +952,33 @@ diagnostic information on error or failure."
     (is (find (@ node '(3 0)) list))
     (is (find 26 list))
     (is (= (length list) 9))))
+
+(deftest bad-tree ()
+  ;; Test where a tree has a node twice
+  (let* ((n1 (convert 'node-with-data '(:a 1)))
+         (n2 (convert 'node-with-data `(:b ,n1 ,n1)))
+         (n3 (convert 'node-with-data '(:b (:a 1) (:a 1)))))
+    (flet ((%f (f x y)
+             (assert
+              (handler-case
+                  (progn (funcall f x y) nil)
+                (error (e) (declare (ignorable e))
+                       (format t "Error was ~a~%" e)
+                       t))
+              ()
+              "PATH-TRANSFORM-OF on tree with duplicate node did not signal an error: ~a, ~a"
+              x y)))
+      (%f #'path-transform-of n2 n3)
+      (%f #'path-transform-of n3 n2)
+      (%f #'ft::new-path-transform-of n2 n3)
+      (%f #'ft::new-path-transform-of n3 n2))))
+
+(deftest prefix?.1 ()
+  (is (prefix? nil nil))
+  (is (prefix? nil '(a)))
+  (is (prefix? '(a) '(a)))
+  (is (prefix? '(a) '(a b)))
+  (is (not (prefix? '(a) nil)))
+  (is (not (prefix? '(a) '(b))))
+  (is (not (prefix? '(a a) '(a b))))
+  (is (not (prefix? '(a a) '(a)))))

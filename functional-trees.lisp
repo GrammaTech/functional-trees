@@ -1073,16 +1073,24 @@ tree has its predecessor set to TREE."
   (fset::check-two-arguments arg2p 'less 'node)
   (less tree (path-of-node tree location)))
 
+;; This method appeared to be wrong
+;; SPLICE in FSET on sequences fails when VALUES is not a sequence-like thing
 (defmethod splice ((tree node) (path list) (values t))
   (insert tree path (list values)))
-(defmethod splice ((tree node) (path list) (values list))
+(defmethod splice ((tree node) (path null) (values t))
+  (error "Cannot splice at the root of a tree: ~a" tree))
+(defmethod splice ((tree node) (path cons) (values list))
   (labels ((descend (children index path)
-             (append (subseq children 0 index)
-                     (if (emptyp path)
+             (if (emptyp path)
+                 (append (subseq children 0 index)
                          values
-                         (list (splice- (nth index children)
-                                        path)))
-                     (subseq children index)))
+                         (subseq children index))
+                 ;; TODO: extend this to nodes with fixed arity
+                 ;; Probably best to use a general rewriting mechanism
+                 (append
+                  (subseq children 0 index)
+                  (list* (splice- (nth index children) path)
+                         (subseq children (1+ index))))))
            (splice- (node path)
              (nest (let ((index (car path))))
                    (apply #'copy node)
@@ -1094,7 +1102,14 @@ tree has its predecessor set to TREE."
     (splice- tree path)))
 
 (defmethod splice ((tree node) (location node) value)
-  (splice tree (path-of-node tree location) value))
+  (let ((path (path-of-node tree location)))
+    (unless path
+      (error "Attempt to splice at the root"))
+    (let ((l (cl:last path)))
+      (unless (typep (car l) '(integer 0))
+        (error "Path to NODE must end in an integer"))
+      (splice tree path
+              value))))
 
 (defmethod insert ((tree node) (path list) value)
   (splice tree path (list value)))
