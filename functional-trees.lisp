@@ -1374,26 +1374,32 @@ If secondary return value of PREDICATE is non-nil force substitution
      &key (copy nil copy-p) (key nil key-p) &allow-other-keys)
   (when copy-p (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
-  (apply #'substitute-with
-         (lambda (item)
-           (when (funcall predicate item)
-             (values (if copy-p (funcall copy newitem) newitem) t)))
-         node (when key-p (list :key key))))
+  (multiple-value-call
+      #'substitute-with
+    (lambda (item)
+      (when (funcall predicate item)
+        (values (if copy-p (funcall copy newitem) newitem) t)))
+    node
+    (if key-p (values :key key) (values))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
-                              &key (key nil key-p) &allow-other-keys)
-  (apply #'substitute-if newitem (complement predicate) node
-         (when key-p (list :key key))))
+                              &key (key nil key-p) (copy nil copy-p) &allow-other-keys)
+  (multiple-value-call
+      #'substitute-if newitem (values (complement predicate)) node
+      (if key-p (values :key key) (values))
+      (if copy-p (values :copy copy) (values))
+      ))
 
 (defgeneric subst (new old tree &key key test test-not)
   (:documentation "If TREE is a cons, this simply calls `cl:subst'.
 Also works on a functional tree node.")
   (:method (new old (tree cons)
             &key (key nil key-p) (test nil test-p) (test-not nil test-not-p))
-    (apply #'cl:subst new old tree
-           `(,@(when key-p (list :key key))
-               ,@(when test-p (list :test test))
-               ,@(when test-not-p (list :test-not test-not)))))
+    (multiple-value-call #'cl:subst
+      new old tree
+      (if key-p (values :key key) (values))
+      (if test-p (values :test test) (values))
+      (if test-not-p (values :test-not test-not) (values))))
   (:method (new old (tree node) &rest rest &key &allow-other-keys)
     (apply #'substitute new old tree rest)))
 
