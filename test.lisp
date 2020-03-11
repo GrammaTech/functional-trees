@@ -117,16 +117,16 @@ which may be more nodes, or other values.")
   from)
 
 (defclass node-with-fields (node)
-  ((child-slots :initform '(a b) :allocation :class)
+  ((child-slots :initform '((a . 1) (b . 1)) :allocation :class)
    (a :reader node-a
       :initarg :a
       :initform nil
-      :type '(list node-with-fields)
+      :type (or null node-with-fields)
       :documentation "Example of a node field")
    (b :reader node-b
       :initarg :b
       :initform nil
-      :type '(list node-with-fields)
+      :type (or null node-with-fields)
       :documentation "Example of a node field")
    (data-slot :initform 'data :allocation :class)
    (data :reader data :initarg :data :initform nil
@@ -147,9 +147,9 @@ to subtrees."))
                   (cons (when-let ((it (safe-getf list-form :data)))
                           (list :data it)))
                   (cons (when-let ((it (safe-getf list-form :a)))
-                          (list :a (mapcar #'make-node it))))
+                          (list :a (make-node it))))
                   (cons (when-let ((it (safe-getf list-form :b)))
-                          (list :b (mapcar #'make-node it))))
+                          (list :b (make-node it))))
                   nil)
                  list-form)))
     (populate-fingers (make-node sequence))))
@@ -163,14 +163,14 @@ to subtrees."))
              (if (typep node 'node)
                  (append (to-plist node)
                          (mappend (lambda (child-slot)
-                                    (when-let ((children
-                                                (slot-value node child-slot)))
-                                      (list (make-keyword child-slot)
-                                            (mapcar (lambda (c)
-                                                      (typecase c
-                                                        (node (convert 'list c))
-                                                        (t c)))
-                                                    children))))
+                                    (assert (consp child-slot))
+                                    (destructuring-bind
+                                          (slot . size) child-slot
+                                      (assert (= size 1))
+                                      (when-let ((children
+                                                  (slot-value node slot)))
+                                        (list (make-keyword slot)
+                                              (convert 'list children)))))
                                   (child-slots node)))
                  node)))
     (convert- node)))
@@ -728,14 +728,14 @@ diagnostic information on error or failure."
     (is (equal (node-b n) nil))))
 
 (deftest node-with-fields.3 ()
-  (let ((n (convert 'node-with-fields '(:data :foo :a (1) :b (2)))))
-    (is (equal (node-a n) '(1)))
-    (is (equal (node-b n) '(2)))))
+  (let ((n (convert 'node-with-fields '(:data :foo :a (:data 1) :b (:data 2)))))
+    (is (equal (data (node-a n)) 1))
+    (is (equal (data (node-b n)) 2))))
 
 (deftest node-with-fields.4 ()
   (let* ((n1 (convert 'node-with-fields '(:data :foo
-                                          :a ((:data :bar))
-                                          :b ((:data :baz)))))
+                                          :a (:data :bar)
+                                          :b (:data :baz))))
          (n2 (map-tree (lambda (n)
                          (if (eql :bar (data n))
                              (make-instance 'node-with-fields :data :qux)
@@ -748,14 +748,14 @@ diagnostic information on error or failure."
                              n))
                        n1)))
     (is (equal (convert 'list n1) '(:data :foo
-                                    :a ((:data :bar))
-                                    :b ((:data :baz)))))
+                                    :a (:data :bar)
+                                    :b (:data :baz))))
     (is (equal (convert 'list n2) '(:data :foo
-                                    :a ((:data :qux))
-                                    :b ((:data :baz)))))
+                                    :a (:data :qux)
+                                    :b (:data :baz))))
     (is (equal (convert 'list n4) '(:data :foo
-                                    :a ((:data :bar))
-                                    :b ((:data :quux)))))))
+                                    :a (:data :bar)
+                                    :b (:data :quux))))))
 
 (deftest reduce-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
@@ -773,8 +773,8 @@ diagnostic information on error or failure."
 
 (deftest find-returns-a-node ()
   (let ((tree (convert 'node-with-fields '(:data :foo
-                                           :a ((:data :bar))
-                                           :b ((:data :baz))))))
+                                           :a (:data :bar)
+                                           :b (:data :baz)))))
     (flet ((%f (v) (find v tree :key #'data)))
       (is (null (%f :qux)))
       (is (typep (%f :foo) 'node-with-fields))
@@ -806,8 +806,8 @@ diagnostic information on error or failure."
 
 (deftest position-tree-w-named-children ()
   (is (equalp (position 1 (convert 'node-with-fields
-                                   '(:data :foo :a (1) :b (2))))
-              '((:a . 0)))))
+                                   '(:data :foo :a (:data 1) :b (:data 2))))
+              '(:a))))
 
 (deftest position-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
