@@ -18,13 +18,24 @@ allocated on the class itself.  See the following example.
 
 ```lisp
 (defclass if-then-else-node (node)
-  ((child-slots :initform '(then else) :allocation :class)
-   (then :reader then :type list)
-   (else :reader else :type list))
+  ((child-slots :initform '((then . 1) else) :allocation :class)
+   (then :reader then :type node)
+   (else :reader else :type '(list node)))
   (:documentation "An if-then-else subtree of a program AST."))
 ```
 
-Each child slot should hold a *list* of nodes or non-node children.
+Each child slot should hold children nodes.  Child slots may hold a
+single node or multiple nodes.  It is possible to specify the arity of
+a child slot using the `child-slots` class-level field.  This changes
+the behavior of relevant generic functions.  E.g., the `then` slot in
+`if-then-else-node` above holds a single node child while the `else`
+slot may hold a list of any number of children.
+
+In addition to customizing the functional-tree generic functions to
+traverse your tree appropriately, defining `child-slots` will cause
+the generic `children` function to be defined to return all children
+of a newly defined node subclass--this is done by hooking the MOP
+sub-class finalization process for sub-classes of `node`.
 
 ### Default data access
 In some cases it may be useful to identify a slot which by default
