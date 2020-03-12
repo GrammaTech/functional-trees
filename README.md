@@ -80,6 +80,6 @@ their usage much more concise.
 - [X] Ensure tests provide good coverage.
 - [X] Integrate with GMap.
 - [ ] Automatically define `convert` methods for subclasses of node.
-- [ ] Consider hooking into the class definition mechanisms with the
+- [X] Consider hooking into the class definition mechanisms with the
       MOP to define copy-based setf setters for all fields on any
       child of a node.
