@@ -244,6 +244,7 @@ bucket getting at least 1.  Return as a list."
 
 (defmethod lookup ((node node-with-fields) (i (eql :a))) (node-a node))
 (defmethod lookup ((node node-with-fields) (i (eql :b))) (node-b node))
+(defmethod lookup ((node node-with-fields) (i (eql :data))) (data node))
 
 (defun plist-drop-keys (keys plist)
   (iter (for e on plist by #'cddr)
@@ -716,10 +717,12 @@ diagnostic information on error or failure."
 ;;; Tests of subclass of NODE with discrete fields
 
 (deftest node-with-fields.1 ()
-  (let ((n (make-instance 'node-with-fields :data :foo :a '(1) :b '(2))))
-    (is (equal (convert 'list n) '(:data :foo :a (1) :b (2))))
-    (is (equal (@ n :a) '(1)))
-    (is (equal (@ n :b) '(2)))))
+  (let ((n (make-instance 'node-with-fields :data :foo
+                          :a (make-instance 'node-with-fields :data 1)
+                          :b (make-instance 'node-with-fields :data 2))))
+    (is (equal (convert 'list n) '(:data :foo :a (:data 1) :b (:data 2))))
+    (is (equal (@ n '(:a :data)) 1))
+    (is (equal (@ n '(:b :data)) 2))))
 
 (deftest node-with-fields.2 ()
   (let ((n (convert 'node-with-fields '(:data 12))))
