@@ -363,15 +363,19 @@ in the transforms slot of PATH-TRANSFORMS objects."
                            (subseq orig-path (length new-segment)))))))))
 
 ;; testing method
+#+double-check-ft
 (defmethod transform-path :around ((path list) (transforms list))
-  (let ((trie (transforms-to-trie transforms))
-        (results (multiple-value-list (call-next-method))))
-    (let ((new-results (multiple-value-list (transform-path path trie))))
-      (assert (equal results new-results) ()
-              "Paths not the same:~%~a~%~a" results new-results)
-      (apply #'values results))))
+  (let ((results (multiple-value-list (call-next-method)))
+        (old-results (multiple-value-list (old-transform-path path transforms))))
+    (assert (equal results old-results) ()
+            "Paths not the same:~%~a~%~a" results old-results)
+    (apply #'values results)))
 
 (defmethod transform-path ((path list) (transforms list))
+  (transform-path path (transforms-to-trie transforms)))
+
+#+double-check-ft
+(defmethod old-transform-path ((path list) (transforms list))
   ;; This is inefficient, and is just for demonstration
   ;; In the real implementation, the segments are blended together
   ;; into a trie
@@ -637,13 +641,13 @@ are compared with each other using fset:compare"
 ;;;
 ;;; TODO: get rid of this method
 
+#+double-check-ft
 (defmethod path-transform-of :around ((from t) (to t))
   (let ((result (call-next-method)))
-    (let ((new-result (new-path-transform-of from to)))
-      (assert (eql (from result) (from new-result)))
-      (assert (equal (transforms result) (transforms new-result))))
-    result)
-  (call-next-method))
+    (let ((old-result (old-path-transform-of from to)))
+      (assert (eql (from result) (from old-result)))
+      (assert (equal (transforms result) (transforms old-result))))
+    result))
 
 ;;; We can make PATH-TRANSFORM-OF more efficient.  The problem is
 ;;; that it spends time proportional to the size of the FROM tree, even if the
@@ -662,7 +666,8 @@ are compared with each other using fset:compare"
 ;;; This has been implemented in new-path-transform-of.  TODO: When that
 ;;; becomes the default implementation, convert this comment to documentation.
 
-(defmethod path-transform-of ((from node) (to node))
+#+double-check-ft
+(defmethod old-path-transform-of ((from node) (to node))
   (let ((table (make-hash-table)))
     (traverse-nodes-with-rpaths
      from
@@ -836,7 +841,7 @@ are compared with each other using fset:compare"
         (when (typep c 'node)
           (node-heap-insert nh c (append path (list i))))))
 
-(defmethod new-path-transform-of ((orig-from node) (to node))
+(defmethod path-transform-of ((orig-from node) (to node))
   ;; New algorithm for computing the path transform from FROM to TO
   ;; Uses two heaps to pull nodes from FROM and TO in decreasing
   ;; order of size and serial number

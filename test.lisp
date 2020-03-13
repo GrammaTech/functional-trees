@@ -26,7 +26,6 @@
                           :dump
                           :lexicographic-<
                           :make-node-heap-data
-                          :new-path-transform-of
                           :node
                           :node-can-implant
                           :node-heap-data
@@ -1075,34 +1074,25 @@ diagnostic information on error or failure."
 
 (deftest bad-tree ()
   ;; Test where a tree has a node twice
-  (let* ((n1 (convert 'node-with-data '(:a 1)))
-         (n2 (convert 'node-with-data `(:b ,n1 ,n1)))
-         (n3 (convert 'node-with-data '(:b (:a 1) (:a 1)))))
-    (flet ((%f (f x y)
-             (assert
-              (handler-case
-                  (progn (funcall f x y) nil)
-                (error (e) (declare (ignorable e))
-                       ;; (format t "Expected error: ~a~%" e)
-                       t))
-              ()
-              "PATH-TRANSFORM-OF on tree with duplicate node did not signal an error: ~a, ~a"
-              x y)))
-      (%f #'path-transform-of n2 n3)
-      (%f #'path-transform-of n3 n2)
-      (%f #'ft::new-path-transform-of n2 n3)
-      (%f #'ft::new-path-transform-of n3 n2)
-      ;; Test where a tree has two nodes with the same SN
-      (let* ((sn 261237163)
-             (n1 (convert 'node-with-data '(:a 1)))
-             (n1a (copy n1 :serial-number sn))
-             (n2 (convert 'node-with-data '(:b 2)))
-             (n2a (copy n2 :serial-number sn))
-             (good (convert 'node-with-data `(:c ,n1 ,n2)))
-             (bad (convert 'node-with-data `(:c ,n1a ,n2a))))
-        (%f #'ft::new-path-transform-of good bad)
-        (%f #'ft::new-path-transform-of bad good)))))
-           
+  (flet ((%f (f x y)
+           (assert
+            (handler-case
+                (progn (funcall f x y) nil)
+              (error (e) (declare (ignorable e))
+                     ;; (format t "Expected error: ~a~%" e)
+                     t))
+            ()
+            "PATH-TRANSFORM-OF on tree with duplicate SN did not signal an error: ~a, ~a"
+            x y)))
+    (let* ((sn 261237163)
+           (n1 (convert 'node-with-data '(:a 1)))
+           (n1a (copy n1 :serial-number sn))
+           (n2 (convert 'node-with-data '(:b 2)))
+           (n2a (copy n2 :serial-number sn))
+           (good (convert 'node-with-data `(:c ,n1 ,n2)))
+           (bad (convert 'node-with-data `(:c ,n1a ,n2a))))
+      (%f #'path-transform-of good bad)
+      (%f #'path-transform-of bad good))))          
 
 (deftest prefix?.1 ()
   (is (prefix? nil nil))
