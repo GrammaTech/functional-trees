@@ -8,4 +8,4 @@ PACKAGE_NICKNAME = ft
 
 LISP_DEPS = $(wildcard *.lisp)
 
-include cl.mk
+include .cl-make/cl.mk
