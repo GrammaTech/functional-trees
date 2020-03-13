@@ -23,9 +23,14 @@
         #+gt :testbot)
   (:import-from :uiop/utility :nest)
   (:shadowing-import-from :functional-trees
+                          :dump
                           :lexicographic-<
+                          :make-node-heap-data
                           :new-path-transform-of
+                          :node
                           :node-can-implant
+                          :node-heap-data
+                          :node-heap-data-<
                           :node-valid
                           :nodes-disjoint
                           :path-of-node
@@ -39,7 +44,9 @@
                           :subst-if
                           :subst-if-not
                           :substitute-with
-                          :traverse-nodes-with-rpaths)
+                          :transform-finger
+                          :traverse-nodes-with-rpaths
+                          :with-encapsulation)
   (:shadowing-import-from :fset
                           :@ :convert :less :splice :insert :lookup :alist
                           :map :set :partition :alist :size
@@ -412,6 +419,16 @@ bucket getting at least 1.  Return as a list."
         (is (null (residue f6)))
         (is (equal (convert 'list f6) (third (fourth l2))))))))
 
+(deftest transform-path.error ()
+  (let* ((l1 '(:a 1))
+         (l2 '(:b 2))
+         (node1 (convert 'node-with-data l1))
+         (node2 (convert 'node-with-data l2))
+         (f1 (make-instance 'finger :node node1 :path nil)))
+    (is (handler-case
+            (progn (transform-finger f1 node2) nil)
+          (error () t)))))        
+
 ;;; Tests of path-transform-of, map-tree
 (deftest map-tree.0 ()
   (is (= (map-tree #'identity 1) 1))
@@ -772,7 +789,14 @@ diagnostic information on error or failure."
 (deftest find-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (is (= (find-if «and #'integerp [#'zerop {mod _ 3}] {< 4 }» tree) 6))
-    (is (not (find-if (constantly nil) tree)))))
+    (is (not (find-if (constantly nil) tree)))
+    (is (not (find-if (constantly nil) tree :key #'identity)))))
+
+(deftest find-if-not-tree ()
+  (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
+    (is (= (find-if-not [#'not «and #'integerp [#'zerop {mod _ 3}] {< 4 }»] tree) 6))
+    (is (not (find-if-not (constantly t) tree)))
+    (is (not (find-if-not #'identity tree :key #'identity)))))
 
 (deftest find-returns-a-node ()
   (let ((tree (convert 'node-with-fields '(:data :foo
@@ -1067,7 +1091,18 @@ diagnostic information on error or failure."
       (%f #'path-transform-of n2 n3)
       (%f #'path-transform-of n3 n2)
       (%f #'ft::new-path-transform-of n2 n3)
-      (%f #'ft::new-path-transform-of n3 n2))))
+      (%f #'ft::new-path-transform-of n3 n2)
+      ;; Test where a tree has two nodes with the same SN
+      (let* ((sn 261237163)
+             (n1 (convert 'node-with-data '(:a 1)))
+             (n1a (copy n1 :serial-number sn))
+             (n2 (convert 'node-with-data '(:b 2)))
+             (n2a (copy n2 :serial-number sn))
+             (good (convert 'node-with-data `(:c ,n1 ,n2)))
+             (bad (convert 'node-with-data `(:c ,n1a ,n2a))))
+        (%f #'ft::new-path-transform-of good bad)
+        (%f #'ft::new-path-transform-of bad good)))))
+           
 
 (deftest prefix?.1 ()
   (is (prefix? nil nil))
@@ -1078,3 +1113,73 @@ diagnostic information on error or failure."
   (is (not (prefix? '(a) '(b))))
   (is (not (prefix? '(a a) '(a b))))
   (is (not (prefix? '(a a) '(a)))))
+
+(deftest children-error ()
+  (is (handler-case (progn (children (make-instance 'node)) nil)
+        (error () t))))
+
+(deftest node-heap-data-test ()
+  (let ((all (iter (for sz from 1 to 2)
+                   (appending
+                    (iter (for sn from 1 to 2)
+                          (collecting
+                           (make-node-heap-data :size sz :sn sn)))))))
+    (declare (notinline node-heap-data-<)) ;; so coverage hits the def
+    (iter (for e on all)
+          (let ((n1 (car e)))
+            (is (not (node-heap-data-< n1 n1)))
+            (iter (for n2 in (cdr e))
+                  (is (node-heap-data-< n1 n2))
+                  (is (not (node-heap-data-< n2 n1))))))))
+
+;;; SBCL nonstandard sequence extension
+#+sbcl
+(progn
+  (defclass my-sequence (standard-object sequence)
+    ((actual :type list :initarg :actual :initform nil
+	     :accessor my-sequence-actual))
+    (:documentation "An example of an SBCL user-defined sequence class"))
+  (defmethod sb-sequence:length ((obj my-sequence))
+    (cl:length (my-sequence-actual obj)))
+  (defmethod sb-sequence:elt ((obj my-sequence) index)
+    (elt (my-sequence-actual obj) index))
+  (defmethod (setf sb-sequence:elt) (val (obj my-sequence) index)
+    (setf (elt (my-sequence-actual obj) index) val))
+  (defmethod sb-sequence:adjust-sequence ((obj my-sequence) len &rest args)
+    (setf (my-sequence-actual obj)
+	  (apply #'sb-sequence:adjust-sequence (my-sequence-actual obj) len args))
+    obj)
+  (defmethod sb-sequence:make-sequence-like ((obj my-sequence) len &rest args)
+    (let ((new-contents
+	   (apply #'sb-sequence:make-sequence-like (my-sequence-actual obj) len args)))
+      (make-instance 'my-sequence :actual new-contents)))
+  )
+
+(deftest copy-custom-sequence-test ()
+  (let ((s (make-instance 'my-sequence :actual (list 'a 'b 'c))))
+    (is (equal (my-sequence-actual (copy s)) '(a b c)))))
+
+(deftest dump-test ()
+  (is (equal (with-output-to-string (*standard-output*)
+               (eval '(let ((x 1)) (dump x))))
+             (concatenate 'string "X = 1" (string #\Newline)))))
+
+(deftest encapsulate-test ()
+  (let ((t3
+         (eval
+          '(let ((tree (convert 'node-with-data '(:a 1 2)))
+                 (t2 nil))
+            (with-encapsulation (setf t2 (with-encapsulation tree tree)) t2))))
+        (t4
+         (eval
+          '(let ((tree (convert 'node-with-data '(:a 1 2))))
+            (with-encapsulation tree tree)))))
+    (is (transform t3))
+    (is (transform t4))
+    (is (not (equal (transform t3) t3)))
+    (is (not (equal (transform t4) t4))))
+  (is (transform
+       (eval '(let ((t1 (convert 'node-with-data '(:a 1 2))))
+               (with-encapsulation t1 (copy t1 :transform t1)))))))
+    
+

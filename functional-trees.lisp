@@ -121,12 +121,12 @@ specifies a specific number of children held in the slot.")
                                   ,form)))))
 
 (defgeneric children (node)
-  (:documentation "Return all children of NODE.")
-  ;; Default method should never be called as the customization of
-  ;; `finalize-inheritance' above should always define something more
-  ;; specific.
-  (:method ((node node))
-    (error "Somehow ~S doesn't have a `children' defmethod." (type-of node))))
+  (:documentation "Return all children of NODE."))
+;; Default method should never be called as the customization of
+;; `finalize-inheritance' above should always define something more
+;; specific.
+(defmethod children ((node node))
+  (error "Somehow ~S doesn't have a `children' defmethod." (type-of node)))
 
 ;;; When we finalize sub-classes of node, define a children method on
 ;;; that class and also define functional copying setf writers.
@@ -266,6 +266,8 @@ sorted into non-increasing order of length of <path>.  If missing, compute
 from the source/target node pair, if possible."))
   (:documentation "An object used to rewrite fingers from one
 tree to another."))
+
+(defmethod from ((x null)) x)
 
 (defgeneric transform-finger-to (f p to)
   (:documentation "Converts a finger from one tree to another."))
@@ -994,7 +996,7 @@ are compared with each other using fset:compare"
   "Apply REWRITE-FN to TREE, producing a new tree.  The new
 tree has its predecessor set to TREE."
   (let ((new-tree (funcall rewrite-fn tree)))
-    (if (eql tree (transform new-tree))
+    (if (eql tree (from (transform new-tree)))
         new-tree
         (copy new-tree :transform tree))))
 
@@ -1076,10 +1078,6 @@ tree has its predecessor set to TREE."
   (fset::check-two-arguments arg2p 'less 'node)
   (less tree (path-of-node tree location)))
 
-;; This method appeared to be wrong
-;; SPLICE in FSET on sequences fails when VALUES is not a sequence-like thing
-(defmethod splice ((tree node) (path list) (values t))
-  (insert tree path (list values)))
 (defmethod splice ((tree node) (path null) (values t))
   (error "Cannot splice at the root of a tree: ~a" tree))
 (defmethod splice ((tree node) (path cons) (values list))
@@ -1089,6 +1087,7 @@ tree has its predecessor set to TREE."
                          values
                          (subseq children index))
                  ;; TODO: extend this to nodes with fixed arity
+                 ;; TODO: This should usually be an error
                  ;; Probably best to use a general rewriting mechanism
                  (append
                   (subseq children 0 index)
