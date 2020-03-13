@@ -30,7 +30,7 @@
                           ;; Additional stuff
                           :identity-ordering-mixin :serial-number
                           :compare :convert)
-  (:shadow :subst :subst-if :subst-if-not)
+  (:shadow :subst :subst-if :subst-if-not :assert)
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop
@@ -55,6 +55,10 @@
 ;;; TODO: implement successor
 ;;; TODO: implement predecessor
 ;;; TODO: implement parent
+
+(defmacro assert (&body body)
+  ;; Copy the body of the assert so it doesn't pollute coverage reports
+  `(cl:assert ,@(copy-tree body)))
 
 
 ;;;; Core functional tree definitions.
@@ -1016,6 +1020,7 @@ tree has its predecessor set to TREE."
     (cons
      (destructuring-bind (slot . i) path
        ;; NOTE: Is there a better way to get from a keyword to a symbol?
+       ;; This is almost certainly wrong.  Never call INTERN with one argument.
        (elt (slot-value node (intern (symbol-name slot))) i)))))
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))

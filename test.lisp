@@ -1177,3 +1177,6 @@ diagnostic information on error or failure."
   (is (transform
        (eval '(let ((t1 (convert 'node-with-data '(:a 1 2))))
                (with-encapsulation t1 (copy t1 :transform t1)))))))
+
+(deftest assert-test ()
+  (is (null (eval '(ft::assert t)))))
