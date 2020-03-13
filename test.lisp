@@ -1114,10 +1114,6 @@ diagnostic information on error or failure."
   (is (not (prefix? '(a a) '(a b))))
   (is (not (prefix? '(a a) '(a)))))
 
-(deftest children-error ()
-  (is (handler-case (progn (children (make-instance 'node)) nil)
-        (error () t))))
-
 (deftest node-heap-data-test ()
   (let ((all (iter (for sz from 1 to 2)
                    (appending
@@ -1181,5 +1177,3 @@ diagnostic information on error or failure."
   (is (transform
        (eval '(let ((t1 (convert 'node-with-data '(:a 1 2))))
                (with-encapsulation t1 (copy t1 :transform t1)))))))
-    
-
