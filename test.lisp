@@ -1083,7 +1083,7 @@ diagnostic information on error or failure."
               (handler-case
                   (progn (funcall f x y) nil)
                 (error (e) (declare (ignorable e))
-                       (format t "Expected error: ~a~%" e)
+                       ;; (format t "Expected error: ~a~%" e)
                        t))
               ()
               "PATH-TRANSFORM-OF on tree with duplicate node did not signal an error: ~a, ~a"
