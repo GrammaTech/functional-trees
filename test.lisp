@@ -1151,6 +1151,7 @@ diagnostic information on error or failure."
       (make-instance 'my-sequence :actual new-contents)))
   )
 
+#+sbcl
 (deftest copy-custom-sequence-test ()
   (let ((s (make-instance 'my-sequence :actual (list 'a 'b 'c))))
     (is (equal (my-sequence-actual (copy s)) '(a b c)))))
