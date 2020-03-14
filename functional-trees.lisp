@@ -625,6 +625,7 @@ are compared with each other using fset:compare"
   (:documentation "Produce a path transform that maps FROM-NODE to TO-NODE"))
 
 ;;; Structure used in computation of path-transform-of
+#+double-check-ft
 (defstruct pto-data
   ;; Node in the source tree
   (from (required-argument 'from))
