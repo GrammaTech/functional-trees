@@ -827,23 +827,28 @@ diagnostic information on error or failure."
 (deftest position-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
     (is (equalp (position 4 tree) '(2)))
-    (is (equalp (position 11 tree) '(4 0 0)))
+    (is (equalp (position 11 tree :key #'data) '(4 0 0)))
     (is (not (position 12 tree)))))
 
 (deftest position-tree-w-named-children ()
   (is (equalp (position 1 (convert 'node-with-fields
-                                   '(:data :foo :a (:data 1) :b (:data 2))))
+                                   '(:data :foo :a (:data 1) :b (:data 2)))
+                        :key #'data)
               '(:a))))
 
 (deftest position-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-    (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree)) 6))
+    (is (= (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree
+                                :key #'data))
+           6))
     (is (not (position-if (constantly nil) tree)))
     (is (not (position-if #'identity tree :key (constantly nil))))))
 
 (deftest position-if-not-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-    (is (= (@ tree (position-if-not [#'not «and [#'zerop {mod _ 3}] {< 4 }»] tree)) 6))
+    (is (= (@ tree (position-if-not [#'not «and [#'zerop {mod _ 3}] {< 4 }»]
+                                    tree :key #'data))
+           6))
     (is (not (position-if-not (constantly t) tree)))
     (is (not (position-if-not #'not tree :key (constantly nil))))))
 
@@ -864,14 +869,18 @@ diagnostic information on error or failure."
   ;; NOTE: Counterintuitively, because the "0" node is the parent of
   ;; the rest of the tree.
   (is (zerop (length (convert 'list (remove-if #'evenp (convert 'node-with-data
-                                                                (iota 100)))))))
+                                                                (iota 100))
+                                               :key #'data)))))
   (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data
-                                                              (iota 100))))))))
+                                                              (iota 100))
+                                              :key #'data))))))
 
 (deftest remove-tree-if-not ()
-  (is (= 50 (length (convert 'list (nest (remove-if-not #'evenp)
-                                         (convert 'node-with-data)
-                                         (iota 100))))))
+  (is (= 50 (length (convert 'list
+                             (remove-if-not #'evenp
+                                            (convert 'node-with-data
+                                                     (iota 100))
+                                            :key #'data)))))
   (is (equal (convert 'list (remove-if-not (lambda (a)
                                              (or (not (integerp a))
                                                  (<= 2 a 4)))
@@ -894,20 +903,22 @@ diagnostic information on error or failure."
 
 (deftest substitute-if-test ()
   (let ((no-odd (substitute-if :odd #'oddp (convert 'node-with-data
-                                                    (iota 100)))))
+                                                    (iota 100))
+                               :key #'data)))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd)))
     (let ((it (convert 'node-with-data '(0 2 3 3 4)))
           (n (convert 'node-with-data '(:z 17))))
-      (let ((c1 (substitute-if n #'oddp it)))
+      (let ((c1 (substitute-if n #'oddp it :key #'data)))
         (is (eql (@ c1 '(1)) (@ c1 '(2)))))
-      (let ((c1 (substitute-if n #'oddp it :copy 'copy)))
+      (let ((c1 (substitute-if n #'oddp it :copy 'copy :key #'data)))
         (is (not (eql (@ c1 '(1)) (@ c1 '(2)))))))))
 
 (deftest substitute-if-not-test ()
   (let ((no-odd
          (substitute-if-not :odd #'evenp
-                            (convert 'node-with-data (iota 100)))))
+                            (convert 'node-with-data (iota 100))
+                            :key #'data)))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd)))
     (let ((it (convert 'node-with-data (iota 6))))
@@ -916,9 +927,9 @@ diagnostic information on error or failure."
                  '(0 1 :x :x :x 5))))
     (let ((it (convert 'node-with-data '(0 2 3 3 4)))
           (n (convert 'node-with-data '(:z 17))))
-      (let ((c1 (substitute-if-not n #'evenp it)))
+      (let ((c1 (substitute-if-not n «or (complement #'numberp) #'evenp» it)))
         (is (eql (@ c1 '(1)) (@ c1 '(2)))))
-      (let ((c1 (substitute-if-not n #'evenp it :copy 'copy)))
+      (let ((c1 (substitute-if-not n #'evenp it :copy 'copy :key #'data)))
         (is (not (eql (@ c1 '(1)) (@ c1 '(2)))))))))
 
 (deftest subst-test ()
@@ -939,22 +950,30 @@ diagnostic information on error or failure."
     (is (equal (convert 'list it)
                '(:a 1 (:b 2) 3 (:c (:d :x) 5) (:e :x) 7))))
   (let ((it (subst 17 :c (convert 'node-with-data '(:a 1 (:b 2) (:c 3) (:d 4))))))
-    (is (equal (convert 'list it)
-               '(:a 1 (:b 2) 17 (:d 4))))))
-
+    (is (equal (convert 'list it) '(:a 1 (:b 2) (:c 3) (:d 4)))))
+  (let ((it (subst 17 :c (convert 'node-with-data '(:a 1 (:b 2) (:c 3) (:d 4)))
+                   :key #'data)))
+    (is (equal (convert 'list it) '(:a 1 (:b 2) 17 (:d 4))))))
 
 (deftest subst-if-test ()
-  (let ((no-odd (subst-if :odd #'oddp (convert 'node-with-data (iota 100)))))
+  (let ((no-odd (subst-if :odd #'oddp (convert 'node-with-data (iota 100))
+                          :key #'data)))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd))))
+  (let ((it (subst-if :odd «and #'numberp #'oddp» (convert 'node-with-data '(:a 1 2 3)))))
+    (is (equal (convert 'list it) '(:a :odd 2 :odd))))
   (is (equal (subst-if :x #'zerop '(1 2) :key #'size)
              '(:x :x . :x))))
 
 (deftest subst-if-not-test ()
   (let ((no-odd
-         (subst-if-not :odd #'evenp (convert 'node-with-data (iota 100)))))
+         (subst-if-not :odd #'evenp (convert 'node-with-data (iota 100))
+                       :key #'data)))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd)))
     (is (= 50 (count :odd no-odd))))
+  (let ((it (subst-if-not :odd (complement «and #'numberp #'oddp»)
+                          (convert 'node-with-data '(:a 1 2 3)))))
+    (is (equal (convert 'list it) '(:a :odd 2 :odd))))
   (is (equal (subst-if-not :x #'plusp '(1 2) :key #'size)
              '(:x :x . :x))))
 
@@ -1005,7 +1024,7 @@ diagnostic information on error or failure."
                    (flatten)
                    (convert 'list)
                    (less it)
-                   (position '= it))))))
+                   (position '= it :key #'data))))))
 
 (deftest splice-test ()
   (let ((it (convert 'node-with-data '(0 1 2 3 4))))

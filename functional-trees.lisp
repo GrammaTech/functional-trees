@@ -1025,7 +1025,7 @@ tree has its predecessor set to TREE."
      (lookup (lookup node (car path)) (cdr path)))
     (cons
      (destructuring-bind (slot . i) path
-       ;; Previously this was interning (symbol-name slot) in *package*
+       ;; Previously this was interning (SYMBOL-NAME SLOT) in *PACKAGE*
        ;; That's unlikely to be the right thing to do, so just use SLOT
        (elt (slot-value node slot) i)))))
 (defmethod lookup ((node node) (finger finger))
@@ -1250,20 +1250,30 @@ If secondary return value of PREDICATE is non-nil force substitution
 (defmethod reduce (fn (node node) &rest rest &key &allow-other-keys)
   (apply #'reduce fn (flatten (convert 'list node)) rest))
 
+(defmacro test-handler (fn)
+  "This macro is an idiom that occurs in many methods.  It handles
+checking and normalization of :TEST and :TEST-NOT arguments."
+  `(nest
+    (if test-p (progn
+                 (assert (not test-not-p) () ,(format nil "~a given both :TEST and :TEST-NOT" fn))
+                 (setf test (coerce test 'function))))
+    (when test-not-p (setf test (complement (coerce test-not 'function))))))
+
 (defmethod find (item (node node)
-                 &key (test #'equalp) (key nil key-p) &allow-other-keys)
-  (apply #'find-if (curry (coerce test 'function) item) node
+                 &key (test #'eql test-p) (test-not nil test-not-p) (key nil key-p) &allow-other-keys)
+  (test-handler find)
+  (apply #'find-if (curry test item) node
          (when key-p (list :key key))))
 
 (defmethod find-if (predicate (node node)
-                    &key from-end end start test-not test key)
-  (assert (notany #'identity from-end end start test-not test)
-          (from-end end start test-not test)
+                    &key from-end end start key)
+  (assert (notany #'identity from-end end start)
+          (from-end end start)
           "TODO: implement support for ~a key in `find-if'"
           (cdr (find-if #'car
                         (mapcar #'cons
-                                (list from-end end start test-not test)
-                                '(from-end end start test-not test)))))
+                                (list from-end end start)
+                                '(from-end end start)))))
   (when key (setf key (coerce key 'function)))
   (labels
       ((check (item) (funcall predicate (if key (funcall key item) item)))
@@ -1283,7 +1293,8 @@ If secondary return value of PREDICATE is non-nil force substitution
 
 (defmethod find-if-not
     (predicate (node node) &key (key nil key-p) &allow-other-keys)
-  (apply #'find-if (complement predicate) node (when key-p (list :key key))))
+  (multiple-value-call #'find-if (complement predicate) node
+                       (if key-p (values :key key) (values))))
 
 (defmethod count (item (node node) &rest rest &key &allow-other-keys)
   (apply #'count item (flatten (convert 'list node)) rest))
@@ -1295,21 +1306,24 @@ If secondary return value of PREDICATE is non-nil force substitution
                          &rest rest &key &allow-other-keys)
   (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
 
-(defmethod position (item (node node) &key (test #'equalp) (key nil key-p)
+(defmethod position (item (node node) &key (test #'eql test-p)
+                                        (test-not nil test-not-p)
+                                        (key nil key-p)
                                         &allow-other-keys)
-  (apply #'position-if (curry (coerce test 'function) item) node
-         (when key-p (list :key key))))
+  (test-handler position)
+  (multiple-value-call #'position-if (curry test item) node
+                       (if key-p (values :key key) (values))))
 
 (defmethod position-if (predicate (node node)
-                        &key from-end end start test-not test
-                          (key #'data))
-  (assert (notany #'identity from-end end start test-not test)
-          (from-end end start test-not test)
+                        &key from-end end start
+                          (key nil))
+  (assert (notany #'identity from-end end start)
+          (from-end end start)
           "TODO: implement support for ~a key in `position-if'"
           (cdr (find-if #'car
                         (mapcar #'cons
-                                (list from-end end start test-not test)
-                                '(from-end end start test-not test)))))
+                                (list from-end end start)
+                                '(from-end end start)))))
   (when key (setf key (coerce key 'function)))
   (labels
       ((check (item) (funcall predicate (if key (funcall key item) item)))
@@ -1341,17 +1355,17 @@ If secondary return value of PREDICATE is non-nil force substitution
     (position- (coerce predicate 'function) node nil)
     (values nil nil)))
 
-(defmethod position-if-not (predicate (node node)
-                            &key (key nil key-p) &allow-other-keys)
-  (apply #'position-if (complement predicate) node
-         (when key-p (list :key key))))
+(defmethod position-if-not (predicate (node node) &rest args
+                            &key &allow-other-keys)
+  (apply #'position-if (values (complement predicate)) node args))
 
 (defmethod remove (item (node node)
-                   &key (test #'equalp) (key nil key-p) &allow-other-keys)
-  (apply #'remove-if (curry (coerce test 'function) item) node
-         (when key-p (list :key key))))
+                   &key (test #'eql test-p) (test-not nil test-not-p) key &allow-other-keys)
+  (test-handler remove)
+  (multiple-value-call #'remove-if (curry test item) node
+                       (if key (values :key key) (values))))
 
-(defmethod remove-if (predicate (node node) &key (key #'data) &allow-other-keys)
+(defmethod remove-if (predicate (node node) &key key &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
       ((check (node)
@@ -1385,18 +1399,21 @@ If secondary return value of PREDICATE is non-nil force substitution
   (when-let ((it (call-next-method))) (copy it :transform node)))
 
 (defmethod remove-if-not (predicate (node node)
-                          &key (key nil key-p) &allow-other-keys)
-  (apply #'remove-if (complement predicate) node (when key-p (list :key key))))
+                          &key key  &allow-other-keys)
+  (multiple-value-call
+      #'remove-if (complement predicate) node
+      (if key (values :key key) (values))))
 
-(defmethod substitute
-    (newitem olditem (node node)
-     &key (test #'equalp) (key nil key-p) &allow-other-keys)
-  (apply #'substitute-if newitem (curry (coerce test 'function) olditem) node
-         (when key-p (list :key key))))
+(defmethod substitute (newitem olditem (node node)
+                       &key (test #'eql test-p) (test-not nil test-not-p)
+                         key &allow-other-keys)
+  (test-handler substitute)
+  (multiple-value-call
+      #'substitute-if newitem (curry test olditem) node
+      (if key (values :key key) (values))))
 
-(defmethod substitute-if
-    (newitem predicate (node node)
-     &key (copy nil copy-p) (key nil key-p) &allow-other-keys)
+(defmethod substitute-if (newitem predicate (node node)
+                          &key (copy nil copy-p) key &allow-other-keys)
   (when copy-p (setf copy (coerce copy 'function)))
   (setf predicate (coerce predicate 'function))
   (multiple-value-call
@@ -1405,24 +1422,23 @@ If secondary return value of PREDICATE is non-nil force substitution
       (when (funcall predicate item)
         (values (if copy-p (funcall copy newitem) newitem) t)))
     node
-    (if key-p (values :key key) (values))))
+    (if key (values :key key) (values))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
-                              &key (key nil key-p) (copy nil copy-p) &allow-other-keys)
+                              &key key copy &allow-other-keys)
   (multiple-value-call
       #'substitute-if newitem (values (complement predicate)) node
-      (if key-p (values :key key) (values))
-      (if copy-p (values :copy copy) (values))
-      ))
+      (if key (values :key key) (values))
+      (if copy (values :copy copy) (values))))
 
 (defgeneric subst (new old tree &key key test test-not)
   (:documentation "If TREE is a cons, this simply calls `cl:subst'.
 Also works on a functional tree node.")
   (:method (new old (tree cons)
-            &key (key nil key-p) (test nil test-p) (test-not nil test-not-p))
+            &key key (test nil test-p) (test-not nil test-not-p))
     (multiple-value-call #'cl:subst
       new old tree
-      (if key-p (values :key key) (values))
+      (if key (values :key key) (values))
       (if test-p (values :test test) (values))
       (if test-not-p (values :test-not test-not) (values))))
   (:method (new old (tree node) &rest rest &key &allow-other-keys)
@@ -1440,10 +1456,12 @@ Also works on a functional tree node.")
   (:documentation "If TREE is a cons, this simply calls `cl:subst-if'.
 Also works on a functional tree node.")
   (:method (new test tree &key (key nil key-p))
-    (apply #'subst-if new (complement test) tree (when key-p (list :key key)))))
+    (multiple-value-call
+        #'subst-if new (complement test) tree
+        (if key (values :key key) (values)))))
 
 (defmethod substitute-with (function (node node)
-                            &key (key #'data) &allow-other-keys)
+                            &key key &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (labels
       ((check (node)
