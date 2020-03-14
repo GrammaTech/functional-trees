@@ -1025,9 +1025,9 @@ tree has its predecessor set to TREE."
      (lookup (lookup node (car path)) (cdr path)))
     (cons
      (destructuring-bind (slot . i) path
-       ;; NOTE: Is there a better way to get from a keyword to a symbol?
-       ;; This is almost certainly wrong.  Never call INTERN with one argument.
-       (elt (slot-value node (intern (symbol-name slot))) i)))))
+       ;; Previously this was interning (symbol-name slot) in *package*
+       ;; That's unlikely to be the right thing to do, so just use SLOT
+       (elt (slot-value node slot) i)))))
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
