@@ -90,7 +90,7 @@
               :initarg :transform
               :initform nil
               ;; TODO: change the back pointer to a weak vector
-              ;; containing the pointer.y
+              ;; containing the pointer.
               :type (or null node path-transform)
               :documentation "If non-nil, is either a PATH-TRANSFORM object
 to this node, or the node that led to this node.")
@@ -362,43 +362,8 @@ in the transforms slot of PATH-TRANSFORMS objects."
             (:dead (values new-segment
                            (subseq orig-path (length new-segment)))))))))
 
-;; testing method
-#+double-check-ft
-(defmethod transform-path :around ((path list) (transforms list))
-  (let ((results (multiple-value-list (call-next-method)))
-        (old-results (multiple-value-list (old-transform-path path transforms))))
-    (assert (equal results old-results) ()
-            "Paths not the same:~%~a~%~a" results old-results)
-    (apply #'values results)))
-
 (defmethod transform-path ((path list) (transforms list))
   (transform-path path (transforms-to-trie transforms)))
-
-#+double-check-ft
-(defmethod old-transform-path ((path list) (transforms list))
-  ;; This is inefficient, and is just for demonstration
-  ;; In the real implementation, the segments are blended together
-  ;; into a trie
-  (let ((len (length path)))
-    (iter (for (segment new-initial-segment status) in transforms)
-          (when (and (>= len (length segment))
-                     (every (lambda (i i-set)
-                              (or (eql i i-set)
-                                  (and (consp i-set)
-                                       (integerp i)
-                                       (<= (car i-set) i (cadr i-set)))))
-                            path segment))
-            (return
-              (if (< len (length new-initial-segment))
-                  (append new-initial-segment
-                          (subseq path (length segment)))
-                  (let ((new-segment new-initial-segment))
-                    (ecase status
-                      (:live (append new-segment
-                                     (subseq path (length segment))))
-                      (:dead (values new-segment
-                                     (subseq path (length new-segment)))))))))
-          (finally (return path)))))
 
 (defgeneric transform-finger (finger node &key error-p)
   (:documentation "Transforms FINGER, producing a new finger that
@@ -624,99 +589,6 @@ are compared with each other using fset:compare"
 (defgeneric path-transform-of (from-node to-node)
   (:documentation "Produce a path transform that maps FROM-NODE to TO-NODE"))
 
-;;; Structure used in computation of path-transform-of
-#+double-check-ft
-(defstruct pto-data
-  ;; Node in the source tree
-  (from (required-argument 'from))
-  ;; Node in the target tree
-  (to nil)
-  ;; Path from root of source tree to FROM node
-  (from-path (required-argument 'from-path))
-  ;; Path from root of target tree to TO node
-  (to-path nil))
-
-;;; The around method here runs the new algorithm and compares
-;;; the result with the old algorithm.  It is an interim
-;;; step until the new algorithm is used by itself.
-;;;
-;;; TODO: get rid of this method
-
-#+double-check-ft
-(defmethod path-transform-of :around ((from t) (to t))
-  (let ((result (call-next-method)))
-    (let ((old-result (old-path-transform-of from to)))
-      (assert (eql (from result) (from old-result)))
-      (assert (equal (transforms result) (transforms old-result))))
-    result))
-
-;;; We can make PATH-TRANSFORM-OF more efficient.  The problem is
-;;; that it spends time proportional to the size of the FROM tree, even if the
-;;; change is much smaller
-;;;
-;;; Suggestion: maintain a timestamp at each node, which is the order in which
-;;; it was allocated (incremented each time a new node is created).  Traverse
-;;; the two trees in increasing order of timestamp, stopping the traversal on
-;;; common nodes.  Serial numbers cannot be used for this.
-;;;
-;;; As an alternative, instead of timestamps we could use a combination of
-;;; size and serial-number, using ordering based in larger size, then larger
-;;; serial number if sizes are equal.   In place of "size" any function that
-;;; is monotonically increasing from children to parent could be used.
-;;;
-;;; This has been implemented in new-path-transform-of.  TODO: When that
-;;; becomes the default implementation, convert this comment to documentation.
-
-#+double-check-ft
-(defmethod old-path-transform-of ((from node) (to node))
-  (let ((table (make-hash-table)))
-    (traverse-nodes-with-rpaths
-     from
-     (lambda (n rpath)
-       (with-slots (serial-number) n
-         (let ((pto (gethash serial-number table)))
-           (assert (null pto) ()
-                   "Two nodes in tree with same serial number.~%~
-                    ~a~%Path1: ~a~%Path2: ~a"
-                   serial-number (pto-data-from-path pto) (reverse rpath)))
-         (setf (gethash serial-number table)
-               (make-pto-data :from n :from-path (reverse rpath))))))
-    #+debug (format t "Table (1): ~a~%" table)
-    ;; Now find nodes that are shared
-    (traverse-nodes-with-rpaths
-     to
-     (lambda (n rpath)
-       (let* ((entry (gethash (serial-number n) table)))
-         (or (not entry)
-             (progn
-               (setf (pto-data-to entry) n
-                     (pto-data-to-path entry) (reverse rpath))
-               ;; Stop recursion when this is common
-               (not (eql (pto-data-from entry) n)))))))
-    ;; Construct mapping
-    (let (mapping)
-      (maphash (lambda (n pd)
-                 (declare (ignorable n))
-                 #+debug (format t "Maphash ~a, ~a~%" n pd)
-                 (when (pto-data-to pd)
-                   (push
-                    (list (pto-data-from-path pd)
-                          (pto-data-to-path pd))
-                    mapping)))
-               table)
-      #+debug (format t "Mapping:~%~A~%" mapping)
-      ;; Mapping is now a list of (<old path> <new path>) lists
-      ;; Sort this into increasing order of <old path>, lexicographically
-      (setf mapping (sort mapping #'lexicographic-< :key #'car))
-      #+debug (format t "Sorted mapping:~%~A~%" mapping)
-
-      (let ((sorted-result (path-transform-compress-mapping mapping)))
-        (make-instance
-         'path-transform
-         :from from
-         :transforms (mapcar (lambda (p) (append p (list :live)))
-                             sorted-result))))))
-
 (defclass node-heap ()
   ((heap :initform (make-array '(10))
          :type simple-vector
@@ -842,10 +714,18 @@ are compared with each other using fset:compare"
         (when (typep c 'node)
           (node-heap-insert nh c (append path (list i))))))
 
+;;; The algorithm for computing the path transform finds all
+;;; the nodes that are unique to either tree, and their immediate
+;;; children.  Only the paths to these nodes need be considered
+;;; when computing path transforms.  In a common case where
+;;; a single node replacement has been (functionally) performed on
+;;; a tree, the size of the sets is O(depth of changed node).
+;;;
+;;; The algorithm for computing the path transform from FROM to TO
+;;; Uses two heaps to pull nodes from FROM and TO in decreasing
+;;; order of size and serial number.
+
 (defmethod path-transform-of ((orig-from node) (to node))
-  ;; New algorithm for computing the path transform from FROM to TO
-  ;; Uses two heaps to pull nodes from FROM and TO in decreasing
-  ;; order of size and serial number
   (let* (;; TABLE is a mapping from serial numbers
          ;; to length 2 lists.  The elements of the list
          ;; are either NIL or a pair containing a node from the
@@ -864,11 +744,11 @@ are compared with each other using fset:compare"
          (from orig-from)
          (to to))
     (flet ((%add-from ()
-             #+ft-debug-new-path-transform-of
+             #+ft-debug-path-transform-of
              (format t "%add-from~%")
              (let ((entry (gethash from-sn table))
                    (l (list from from-path)))
-               #+ft-debug-new-path-transform-of
+               #+ft-debug-path-transform-of
                (format t "entry = ~a~%" entry)
                (if (null entry)
                    (setf (gethash from-sn table) (list l nil))
@@ -876,11 +756,11 @@ are compared with each other using fset:compare"
                        (setf (car entry) l)
                        (error "Two nodes in FROM tree with same SN: ~a" from-sn)))))
            (%add-to ()
-             #+ft-debug-new-path-transform-of
+             #+ft-debug-path-transform-of
              (format t "%add-to~%")
              (let ((entry (gethash to-sn table))
                    (l (list to to-path)))
-               #+ft-debug-new-path-transform-of
+               #+ft-debug-path-transform-of
                (format t "entry = ~a~%" entry)
                (if (null entry)
                    (setf (gethash to-sn table) (list nil l))
@@ -890,12 +770,12 @@ are compared with each other using fset:compare"
       ;; (declare (type fixnum from-size from-sn to-size to-sn))
       (tagbody
        again
-         #+ft-debug-new-path-transform-of
+         #+ft-debug-path-transform-of
          (progn
            (format t "from-size=~a, from-sn=~a~%" from-size from-sn)
            (format t "to-size=~a, to-sn=~a~%" to-size to-sn))
          (when (eql from to)
-           #+ft-debug-new-path-transform-of
+           #+ft-debug-path-transform-of
            (format t "eql~%")
            (%add-from)
            (%add-to)
@@ -912,7 +792,7 @@ are compared with each other using fset:compare"
          (unless (and from to) (go done))
          (go again)
        advance1
-         #+ft-debug-new-path-transform-of
+         #+ft-debug-path-transform-of
          (format t "advance1~%")
          (%add-from)
          (node-heap-add-children from-heap from from-path)
@@ -921,7 +801,7 @@ are compared with each other using fset:compare"
          (unless from (go done))
          (go again)
        advance2
-         #+ft-debug-new-path-transform-of
+         #+ft-debug-path-transform-of
          (format t "advance2~%")
          (%add-to)
          (node-heap-add-children to-heap to to-path)
@@ -930,7 +810,7 @@ are compared with each other using fset:compare"
          (unless to (go done))
          (go again)
        done
-         #+ft-debug-new-path-transform-of
+         #+ft-debug-path-transform-of
          (format t "done~%"))
       (iter (while from)
             (%add-from)
@@ -949,7 +829,7 @@ are compared with each other using fset:compare"
            (push (list (cadar entry) (cadadr entry)) mapping)))
        table)
       (setf mapping (sort mapping #'lexicographic-< :key #'car))
-      #+ft-debug-new-path-transform-of
+      #+ft-debug-path-transform-of
       (format t "Sorted mapping:~%~A~%" mapping)
 
       (let ((sorted-result (path-transform-compress-mapping mapping)))

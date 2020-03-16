@@ -58,20 +58,18 @@ which may be more nodes, or other values.")
 ```
 
 By defining `data-slot` the generic `data` function will operate on
-the defined subclass.  As `data` is the default key for common
-common-lisp functions like `position` when run on nodes, this makes
-their usage much more concise.
+the defined subclass.
 
 ```lisp
 (let ((it (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-  (list (position 8 it)
-        (@ (position 8 it) it)))
+  (list (position 8 it :key #'data)
+        (@ (position 8 it :key #'data) it)))
 ```
 
 ## Tasks
 - [X] Eliminate hard-coded children.
 - [X] Address all FIXMEs
-- [ ] Address all #+broken
+- [X] Address all #+broken
 - [X] Find should return the subtree.
 - [X] Define replacements for `cl:subst` and friends.
 - [X] Integrate with FSet.
@@ -83,3 +81,13 @@ their usage much more concise.
 - [X] Consider hooking into the class definition mechanisms with the
       MOP to define copy-based setf setters for all fields on any
       child of a node.
+- [X] Eliminate 'data' as default key in trees.
+- [X] Make default equality test in tree methods be EQL, as on sequences.
+- [ ] Add :START, :END for tree methods, where these are paths not integers.
+- [ ] Back pointer to previous tree versions should be weak, if that is supported.
+- [ ] Define copying setf expanders for non-class-allocated slots of node subclasses.
+- [ ] Make trie maps switch to hash tables if the branching is too large (efficiency.)
+- [ ] Cache PATH-TRANSFORM-OF.
+- [ ] Enhance path transform compression so paths that differ only in the final
+      index  are compressed into "range" paths.
+- [ ] Splice should report error on nodes of fixed arity.
