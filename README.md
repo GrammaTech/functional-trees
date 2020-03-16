@@ -91,3 +91,4 @@ the defined subclass.
 - [ ] Enhance path transform compression so paths that differ only in the final
       index  are compressed into "range" paths.
 - [ ] Splice should report error on nodes of fixed arity.
+- [ ] Make path transform algorithm more efficient with very long child lists.
