@@ -40,10 +40,9 @@
                 :slot-definition-initform
                 :class-slots)
   (:export :copy
-           :node :transform :child-slots :data-slot :finger
+           :node :transform :child-slots :finger
            :path :transform-finger-to :residue
-           :children :data
-           :populate-fingers
+           :children :node-values :populate-fingers
            :map-tree
            :traverse-nodes
            :traverse-nodes-with-rpaths
@@ -107,9 +106,6 @@ This field should be specified as :allocation :class if defined by a
 subclass of `node'.  List of either symbols specifying a slot holding
 a list of children or a cons of (symbol . number) where number
 specifies a specific number of children held in the slot.")
-   (data-slot :reader data-slot
-              :initform nil
-              :allocation :class)
    (finger :reader finger
            :initform nil
            :type (or null node finger)
@@ -173,14 +169,6 @@ specifies a specific number of children held in the slot.")
   ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
   (when serial-number-p
     (setf (slot-value node 'serial-number) serial-number)))
-
-(defgeneric data (node)
-  (:documentation "Return the data of NODE.
-If no `data-slot' is defined on NODE return itself.")
-  (:method ((non-node t)) non-node)
-  (:method ((node node))
-    (when (data-slot node)
-      (slot-value node (data-slot node)))))
 
 (defmethod transform :around ((n node))
   ;; Compute the PT lazily, when TRANSFORM is a node
@@ -1067,16 +1055,22 @@ tree has its predecessor set to TREE."
           (node (append (children (car state)) (cdr state)))
           (t (cdr state))))))
 
+(defgeneric node-values (node)
+  (:documentation "Returns multiple values that are used by
+CONVERT 'LIST to append to the beginning of the list representation
+of a node.")
+  (:method ((node node)) (values)))
+
 (defmethod convert ((to-type (eql 'list)) (node node)
-                    &key (value-fn #'data) &allow-other-keys)
+                    &key (value-fn #'node-values) &allow-other-keys)
   "Convert NODE of type node to a list."
   (declare (optimize (speed 3)))
   (setf value-fn (coerce value-fn 'function))
   (labels ((convert- (node)
              (declare (type function value-fn))
              (if (typep node 'node)
-                 (cons (funcall value-fn node)
-                       (mapcar #'convert- (children node)))
+                 (append (multiple-value-list (funcall value-fn node))
+                         (mapcar #'convert- (children node)))
                  node)))
     (convert- node)))
 

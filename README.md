@@ -37,35 +37,6 @@ the generic `children` function to be defined to return all children
 of a newly defined node subclass--this is done by hooking the MOP
 sub-class finalization process for sub-classes of `node`.
 
-### Default data access
-In some cases it may be useful to identify a slot which by default
-holds the data for a node.  This can be specified by defining the
-`data-slot` slot on your node subclass, which similarly should be
-stored on the class instance.
-
-```lisp
-(defclass node-with-data (node)
-  ((children :reader children
-             :type list
-             :initarg :children
-             :initform nil
-             :documentation "The list of children of the node,
-which may be more nodes, or other values.")
-   (child-slots :initform '(children) :allocation :class)
-   (data-slot :initform 'data :allocation :class)
-   (data :reader data :initarg :data :initform nil
-         :documentation "Arbitrary data")))
-```
-
-By defining `data-slot` the generic `data` function will operate on
-the defined subclass.
-
-```lisp
-(let ((it (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-  (list (position 8 it :key #'data)
-        (@ (position 8 it :key #'data) it)))
-```
-
 ## Tasks
 - [X] Eliminate hard-coded children.
 - [X] Address all FIXMEs

@@ -104,9 +104,11 @@
              :documentation "The list of children of the node,
 which may be more nodes, or other values.")
    (child-slots :initform '(children) :allocation :class)
-   (data-slot :initform 'data :allocation :class)
    (data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")))
+
+(defmethod node-values ((node node-with-data)) (data node))
+(defmethod data (val) val)
 
 (defmethod convert ((to-type (eql 'node-with-data)) (sequence list)
                     &key &allow-other-keys)
@@ -134,12 +136,13 @@ which may be more nodes, or other values.")
       :initform nil
       :type (or null node-with-fields)
       :documentation "Example of a node field")
-   (data-slot :initform 'data :allocation :class)
    (data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data"))
   (:documentation "Example class with two fields, a and b,
 that are made available (in addition to children) as links
 to subtrees."))
+
+(defmethod node-values ((node node-with-fields)) (data node))
 
 (defmethod convert ((to-type (eql 'node-with-fields)) (sequence list)
                     &key &allow-other-keys)
