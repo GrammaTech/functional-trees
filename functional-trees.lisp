@@ -429,7 +429,7 @@ that FINGER is pointed through."))
                (let ((slot (etypecase slot
                              (cons (car slot))
                              (symbol slot))))
-                 (when-let ((it (slot-value node slot)))
+                 (when-let ((it (slot-value value slot)))
                    (list (make-keyword slot)
                          (if (listp it)
                              (mapcar (curry #'map-tree function) it)
