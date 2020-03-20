@@ -1193,3 +1193,14 @@ diagnostic information on error or failure."
 
 (deftest assert-test ()
   (is (null (eval '(ft::assert t)))))
+
+(deftest map-tree-right-children-test ()
+  (is (equal '(1 2 3)
+             (children
+              (map-tree (lambda (node)
+                          (if (typep node 'node-with-data)
+                              (make-instance 'node-with-data
+                                             :children (reverse (children node)))
+                              node))
+                        (make-instance 'node-with-data
+                                       :children '(3 2 1)))))))
