@@ -434,7 +434,7 @@ that FINGER is pointed through."))
                          (if (listp it)
                              (mapcar (curry #'map-tree function) it)
                              (map-tree function it))))))
-             (child-slots node))))
+             (child-slots value))))
   (:method :around (function (node node))
            ;; Set the transform field of the result to the old node.
            (copy (call-next-method) :transform node)))
