@@ -11,13 +11,7 @@ one tree to its successors."
   :depends-on (:functional-trees/functional-trees)
   :class :package-inferred-system
   :defsystem-depends-on (:asdf-package-system)
-  :in-order-to ((test-op (test-op "functional-trees/test"))))
-
-(defsystem "functional-trees/test"
-  :author "GrammaTech"
-  :licence "MIT"
-  :description "Test the FUNCTIONAL-TREES package."
-  :version "0.0.0"
+  :in-order-to ((test-op (load-op "functional-trees/test")))
   :perform
   (test-op (o c) (symbol-call :functional-trees/test '#:test)))
 
