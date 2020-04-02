@@ -211,7 +211,7 @@ giving a path from node down to another node.")
 finger by a path-transform, some part of the path may not have been
 translated.  If so, this field is the part that could not be handled.
 Otherwise, it is NIL.")
-   (cache :accessor :node :accessor cache
+   (cache :accessor cache
          :documentation "Internal slot used to cache the lookup of a node."))
   (:documentation "A wrapper for a path to get to a node"))
 
