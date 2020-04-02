@@ -99,7 +99,7 @@ to this node, or the node that led to this node.")
    (child-slots :reader child-slots
                 :initform nil
                 :allocation :class
-                :type '(list (or symbol cons))
+                :type list ;; of (or symbol cons)
                 :documentation
                 "List of child slots with optional arity.
 This field should be specified as :allocation :class if defined by a
