@@ -1007,14 +1007,13 @@ diagnostic information on error or failure."
          (n (@ r 2)))
     (is (equal (flatten (convert 'list (less r n)))
                '(:a 1 :b 2 4))))
-  (nest
-   (ignore-errors)
-   (with-expected-failures)
-   (let* ((r (convert 'node-with-fields '(:data :foo :a (:data 1)
-                                             :b (:data 2))))
-             (n (@ r 1))))
-   (is (equal (flatten (convert 'list (less r n)))
-              '(:data :foo :a :data 1)))))
+  (let* ((r (convert 'node-with-fields '(:data :foo :a (:data 1)
+                                         :b (:data 2)))))
+    
+    (is (equal (flatten (convert 'list (less r (@ r 1))))
+               '(:data :foo :a :data 1)))
+    (is (equal (flatten (convert 'list (less r (@ r :b))))
+               '(:data :foo :a :data 1)))))
 
 (deftest @-test ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
