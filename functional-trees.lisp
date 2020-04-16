@@ -158,6 +158,7 @@ specifies a specific number of children held in the slot.")
 (defun expand-copying-setf-writers (class)
   ;; TODO: For every non-class-allocated slot with a accessor define a
   ;; setf method that makes it copying by default.
+  (declare (ignorable class))
   nil)
 
 (defmethod finalize-inheritance :after (class)
@@ -331,7 +332,6 @@ in the transforms slot of PATH-TRANSFORMS objects."
 (defmethod transform-path ((orig-path list) (trie trie))
   (let ((node (root trie))
         (path orig-path)
-        (len (length orig-path))
         suffix
         deepest-match)
     (iter (let ((d (data node)))
@@ -940,6 +940,8 @@ tree has its predecessor set to TREE."
   (with tree (path-of-node tree location) value))
 
 (defmethod less ((tree node) (path null) &optional (arg2 nil arg2p))
+  (declare (ignore arg2))
+  (fset::check-two-arguments arg2p 'less 'node)
   nil)
 (defmethod less ((tree node) (location node) &optional (arg2 nil arg2p))
   (declare (ignore arg2))
@@ -1380,7 +1382,7 @@ Also works on a functional tree node.")
   (:method (new test tree &key (key nil key-p))
     (multiple-value-call
         #'subst-if new (complement test) tree
-        (if key (values :key key) (values)))))
+        (if key-p (values :key key) (values)))))
 
 (defmethod substitute-with (function (node node)
                             &key key &allow-other-keys)
