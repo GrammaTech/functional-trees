@@ -133,29 +133,23 @@ specifies a specific number of children held in the slot.")
 
 ;;; When we finalize sub-classes of node, define a children method on
 ;;; that class and also define functional copying setf writers.
-(defun expand-children-defmethod (class)
+(defun expand-children-defmethod (class child-slots)
   `(defmethod children ((node ,class))
      ;; NOTE: For now just append everything together wrapping
      ;; singleton arity slots in `(list ...)'.  Down the line
      ;; perhaps something smarter that takes advantage of the
      ;; known size of some--maybe all--slots would be better.
-     (append
-      ,@(nest
-         (mapcar (lambda (form)
-                   (destructuring-bind (slot . arity)
-                       (etypecase form
-                         (symbol (cons form nil))
-                         (cons form))
-                     (if (and arity (= (the fixnum arity) 1))
-                         `(list (slot-value node ',slot))
-                         `(slot-value node ',slot)))))
-         (eval) (slot-definition-initform)
-         (find-if (lambda (slot)
-                    (and (eql 'child-slots (slot-definition-name slot))
-                         (eql :class (slot-definition-allocation slot)))))
-         (class-slots class)))))
+     (append ,@(mapcar (lambda (form)
+                         (destructuring-bind (slot . arity)
+                             (etypecase form
+                               (symbol (cons form nil))
+                               (cons form))
+                           (if (and arity (= (the fixnum arity) 1))
+                               `(list (slot-value node ',slot))
+                               `(slot-value node ',slot))))
+                       child-slots))))
 
-(defun expand-copying-setf-writers (class)
+(defun expand-copying-setf-writers (class child-slots)
   ;; TODO: For every non-class-allocated slot with a accessor define a
   ;; setf method that makes it copying by default.
   (declare (ignorable class))
@@ -163,9 +157,16 @@ specifies a specific number of children held in the slot.")
 
 (defmethod finalize-inheritance :after (class)
   (when (subtypep class 'node)
-    ;; Define a custom `children' method given the value of child-slots.
-    (eval (expand-children-defmethod class))
-    (eval (expand-copying-setf-writers class))))
+    (let ((child-slots
+           (nest (eval) (slot-definition-initform)
+                 (find-if
+                  (lambda (slot)
+                    (and (eql 'child-slots (slot-definition-name slot))
+                         (eql :class (slot-definition-allocation slot)))))
+                 (class-slots class))))
+      ;; Define a custom `children' method given the value of child-slots.
+      (eval (expand-children-defmethod class child-slots))
+      (eval (expand-copying-setf-writers class child-slots)))))
 
 ;;; NOTE: We might want to propos a patch to FSet to allow setting
 ;;; serial-number with an initialization argument.
