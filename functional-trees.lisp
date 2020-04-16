@@ -911,24 +911,27 @@ tree has its predecessor set to TREE."
 ;;;       formulaic.  Perhaps they could share implementation
 ;;;       structure with independent `descend' methods.
 
-(defmacro descend (name extra-args checks &body replace)
+(defmacro descend ((name &key other-args extra-args replace checks) &body new)
   `(progn
-     (defmethod ,name ((tree node) (path null) ,@extra-args)
-       ,@checks nil)
-     (defmethod ,name ((tree node) (location node) ,@extra-args)
-       ,@checks (,name tree (path-of-node tree location)))
-     (defmethod ,name ((tree node) (slot symbol) ,@extra-args)
-       ,@checks (copy tree (make-keyword slot) ,@replace))
-     (defmethod ,name ((tree node) (path cons) ,@extra-args)
+     (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
+       ,@checks (values ,@new))
+     (defmethod ,name ((tree node) (location node) ,@other-args ,@extra-args)
+       ,@checks (,name tree (path-of-node tree location)
+                       ,@(mapcar #'car other-args)))
+     (defmethod ,name ((tree node) (slot symbol) ,@other-args ,@extra-args)
+       ,@checks (copy tree (make-keyword slot) ,@new))
+     (defmethod ,name ((tree node) (path cons) ,@other-args ,@extra-args)
        ,@checks
        (cond
          ;; At the end of the path, so act directly.
-         ((null (cdr path)) (,name tree (car path)))
+         ((null (cdr path)) (,name tree (car path)
+                                   ,@(mapcar #'car other-args)))
          ;; Traversing past a slot name, so copy/recurse.
          ((symbolp (car path))
           (copy tree
                 (make-keyword (car path))
-                (,name (lookup tree (car path)) (cdr path))))
+                (,name (lookup tree (car path)) (cdr path)
+                       ,@(mapcar #'car other-args))))
          ;; Index an integer into the children.
          ((integerp (car path))
           (reduce
@@ -942,9 +945,10 @@ tree has its predecessor set to TREE."
                 (copy tree (make-keyword slot)
                       (if (listp children)
                           (append (subseq children 0 i)
-                                  (list (,name (nth i children) (cdr path)))
+                                  (list (,name (nth i children) (cdr path)
+                                               ,@(mapcar #'car other-args)))
                                   (subseq children (1+ i)))
-                          ,@replace)))))
+                          ,@new)))))
            (child-slots tree)
            :initial-value (car path)))))
      (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
@@ -965,7 +969,7 @@ tree has its predecessor set to TREE."
        (error ,(format nil "Cannot ~a beyond end of children." name)))
      (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
        ,@checks
-       (append (subseq list 0 i) ,@replace (subseq list (1+ i))))))
+       (append (subseq list 0 i) ,@new (subseq list ,(if replace '(1+ i) 'i))))))
 
 (defmethod with ((node node) (path t) &optional (value nil valuep))
   "Adds VALUE (value2) at PATH (value1) in NODE."
@@ -995,73 +999,13 @@ tree has its predecessor set to TREE."
   (fset::check-three-arguments valuep 'with 'node)
   (with tree (path-of-node tree location) value))
 
-(descend less (&optional (arg2 nil arg2p))
-    ((declare (ignore arg2))
-     (fset::check-two-arguments arg2p 'less 'node))
+(descend (less :extra-args (&optional (arg2 nil arg2p))
+               :checks ((declare (ignore arg2))
+                        (fset::check-two-arguments arg2p 'less 'node))
+               :replace t)
   nil)
 
-(defmethod splice ((tree node) (location node) (values t))
-  (splice tree (path-of-node tree location) values))
-(defmethod splice ((tree node) (path null) (values t))
-  (error "Cannot splice at the root of a tree: ~a" tree))
-(defmethod splice ((tree node) (path cons) (values list))
-  (cond
-    ;; At the end of the path, so splice directly.
-    ((null (cdr path)) (splice tree (car path) values))
-    ;; Traversing past a slot name, so copy/recurse.
-    ((symbolp (car path))
-     (copy tree
-           (make-keyword (car path))
-           (splice (lookup tree (car path)) (cdr path) values)))
-    ;; Index an integer into the children.
-    ((integerp (car path))
-     (reduce
-      (lambda (i child-slot)
-        (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-               (children (slot-value tree slot))
-               (account (if (listp children) (length children) 1)))
-          (if (> i account)
-              (- i account)
-              (return-from splice
-                (copy tree (make-keyword slot)
-                      (if (listp children)
-                          (append
-                           (subseq children 0 i)
-                           (list (splice (nth i children) (cdr path) values))
-                           (subseq children (1+ i)))
-                          nil))))))
-      (child-slots tree)
-      :initial-value (car path)))))
-(defmethod splice ((tree node) (i integer) (values list))
-  (reduce (lambda (i child-slot)
-            (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-                   (children (slot-value tree slot))
-                   (account (if (listp children) (length children) 1)))
-              (if (>= i account)
-                  (- i account)
-                  (return-from splice
-                    (copy tree (make-keyword slot)
-                          (if (listp children)
-                              (splice children i values)
-                              nil))))))
-          (child-slots tree)
-          :initial-value i)
-  (error "Cannot splice beyond end of children."))
-(defmethod splice ((tree node) (slot symbol) (values list))
-  (copy tree (make-keyword slot) values))
-(defmethod splice ((list list) (i integer) (values list))
-  (append (subseq list 0 i)
-          values
-          (subseq list i)))
-
-(defmethod splice ((tree node) (location node) value)
-  (let ((path (path-of-node tree location)))
-    (unless path
-      (error "Attempt to splice at the root"))
-    (let ((l (cl:last path)))
-      (unless (typep (car l) '(integer 0))
-        (error "Path to NODE must end in an integer"))
-      (splice tree path value))))
+(descend (splice :other-args ((values list))) values)
 
 (defmethod insert ((tree node) (location node) (value t))
   (insert tree (path-of-node tree location) value))

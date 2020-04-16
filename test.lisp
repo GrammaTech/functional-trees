@@ -1051,11 +1051,7 @@ diagnostic information on error or failure."
 (deftest splice-test ()
   (let ((it (convert 'node-with-data '(0 1 2 3 4))))
     (is (equalp (convert 'list (splice it '(1) '(:a :b :c)))
-                '(0 1 :a :b :c 2 3 4)))
-    (is (handler-case (progn (splice it nil '(1)) nil)
-          (error () t)))
-    (is (handler-case (progn (splice it it '(1)) nil)
-          (error () t))))
+                '(0 1 :a :b :c 2 3 4))))
   #|
   (let ((it (convert 'node-with-data '(0 1 2 3 4)))
         (n (convert 'node-with-data '(:a 5))))
