@@ -909,6 +909,16 @@ tree has its predecessor set to TREE."
 
 (defmacro descend ((name &key other-args extra-args replace splice checks)
                    &body new)
+  "Define generic functions which descend (and return) through functional trees.
+This is useful to define standard FSet functions such as `with',
+`less', etc...  Keyword arguments control specifics of how the
+recursion works and how the generic functions are defined.  OTHER-ARGS
+specifies additional arguments that are used.  EXTRA-ARGS defines
+additional arguments that are not used.  REPLACE is a boolean flagging
+if NEW replaces the target or is added alongside the target.  SPLICE
+is a boolean flagging if NEW is inserted or spliced.  CHECKS allows
+for the specification of checks to run at the beginning of the
+functions."
   (flet ((arg-values (args) (mapcar #'car (remove '&optional args))))
     `(progn
        (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
