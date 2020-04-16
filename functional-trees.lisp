@@ -120,6 +120,9 @@ specifies a specific number of children held in the slot.")
                                   ,(format nil "~s" form)
                                   ,form)))))
 
+;;; TODO: Also define `lookup' methods for child-slots after
+;;; finalize-inheritance?
+
 (defgeneric children (node)
   (:documentation "Return all children of NODE."))
 ;; Default method should never be called as the customization of
@@ -887,6 +890,8 @@ tree has its predecessor set to TREE."
 
 ;;; Define `lookup' methods to work with FSet's `@' macro.
 (defmethod lookup ((node t) (path null)) node)
+(defmethod lookup ((node t) (location node))
+  (lookup node (path-of-node node location)))
 (defmethod lookup ((node node) (path cons))
   (etypecase path
     (proper-list
@@ -995,6 +1000,8 @@ tree has its predecessor set to TREE."
   (fset::check-two-arguments arg2p 'less 'node)
   (append (subseq list 0 i) (subseq list (1+ i))))
 
+(defmethod splice ((tree node) (location node) (values t))
+  (splice tree (path-of-node tree location) values))
 (defmethod splice ((tree node) (path null) (values t))
   (error "Cannot splice at the root of a tree: ~a" tree))
 (defmethod splice ((tree node) (path cons) (values list))
@@ -1029,6 +1036,9 @@ tree has its predecessor set to TREE."
         (error "Path to NODE must end in an integer"))
       (splice tree path
               value))))
+
+(defmethod insert ((tree node) (location node) (value t))
+  (insert tree (path-of-node tree location) value))
 
 (defmethod insert ((tree node) (path list) value)
   (splice tree path (list value)))

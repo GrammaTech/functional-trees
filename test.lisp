@@ -999,6 +999,11 @@ diagnostic information on error or failure."
     (is (equal (flatten (convert 'list (with r n :removed)))
                '(:a 1 2 :removed 5)))))
 
+(deftest lookup-node-index-test ()
+  (let ((r (convert 'node-with-fields '(:data :foo :a (:data 1)
+                                        :b (:data 2)))))
+    (is (equalp (@ r :a) (@ r (@ r :a))))))
+
 (deftest less-test ()
   (let ((no-threes (less (convert 'node-with-data (iota 10)) '(2))))
     (is (zerop (count 3 no-threes)))
@@ -1079,6 +1084,8 @@ diagnostic information on error or failure."
           (error () t))))
   (let* ((it (convert 'node-with-data '(:a (:b 1) (:c 2 3 (:d 4) 5) 6)))
          (n (@ it '(1 2))))
+    (is (equal (convert 'list (insert it '(1 2) :new))
+               '(:a (:b 1) (:c 2 3 :new (:d 4) 5) 6)))
     (is (equal (convert 'list (insert it n :new))
                '(:a (:b 1) (:c 2 3 :new (:d 4) 5) 6))))
   (nest
