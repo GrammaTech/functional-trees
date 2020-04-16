@@ -911,6 +911,62 @@ tree has its predecessor set to TREE."
 ;;;       formulaic.  Perhaps they could share implementation
 ;;;       structure with independent `descend' methods.
 
+(defmacro descend (name extra-args checks &body replace)
+  `(progn
+     (defmethod ,name ((tree node) (path null) ,@extra-args)
+       ,@checks nil)
+     (defmethod ,name ((tree node) (location node) ,@extra-args)
+       ,@checks (,name tree (path-of-node tree location)))
+     (defmethod ,name ((tree node) (slot symbol) ,@extra-args)
+       ,@checks (copy tree (make-keyword slot) ,@replace))
+     (defmethod ,name ((tree node) (path cons) ,@extra-args)
+       ,@checks
+       (cond
+         ;; At the end of the path, so act directly.
+         ((null (cdr path)) (,name tree (car path)))
+         ;; Traversing past a slot name, so copy/recurse.
+         ((symbolp (car path))
+          (copy tree
+                (make-keyword (car path))
+                (,name (lookup tree (car path)) (cdr path))))
+         ;; Index an integer into the children.
+         ((integerp (car path))
+          (reduce
+           (lambda (i child-slot)
+             (nest
+              (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
+                     (children (slot-value tree slot))
+                     (account (if (listp children) (length children) 1))))
+              (if (> i account) (- i account))
+              (return-from ,name
+                (copy tree (make-keyword slot)
+                      (if (listp children)
+                          (append (subseq children 0 i)
+                                  (list (,name (nth i children) (cdr path)))
+                                  (subseq children (1+ i)))
+                          ,@replace)))))
+           (child-slots tree)
+           :initial-value (car path)))))
+     (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
+       ,@checks
+       (reduce (lambda (i child-slot)
+                 (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
+                        (children (slot-value tree slot))
+                        (account (if (listp children) (length children) 1)))
+                   (if (> i account)
+                       (- i account)
+                       (return-from ,name
+                         (copy tree (make-keyword slot)
+                               (if (listp children)
+                                   (,name children i ,@(mapcar #'car other-args))
+                                   ,@new))))))
+               (child-slots tree)
+               :initial-value i)
+       (error ,(format nil "Cannot ~a beyond end of children." name)))
+     (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
+       ,@checks
+       (append (subseq list 0 i) ,@replace (subseq list (1+ i))))))
+
 (defmethod with ((node node) (path t) &optional (value nil valuep))
   "Adds VALUE (value2) at PATH (value1) in NODE."
   (fset::check-three-arguments valuep 'with 'node)
@@ -939,68 +995,10 @@ tree has its predecessor set to TREE."
   (fset::check-three-arguments valuep 'with 'node)
   (with tree (path-of-node tree location) value))
 
-(defmethod less ((tree node) (path null) &optional (arg2 nil arg2p))
-  (declare (ignore arg2))
-  (fset::check-two-arguments arg2p 'less 'node)
+(descend less (&optional (arg2 nil arg2p))
+    ((declare (ignore arg2))
+     (fset::check-two-arguments arg2p 'less 'node))
   nil)
-(defmethod less ((tree node) (location node) &optional (arg2 nil arg2p))
-  (declare (ignore arg2))
-  (fset::check-two-arguments arg2p 'less 'node)
-  (less tree (path-of-node tree location)))
-(defmethod less ((tree node) (slot symbol) &optional (arg2 nil arg2p))
-  (declare (ignore arg2))
-  (fset::check-two-arguments arg2p 'less 'node)
-  (copy tree (make-keyword slot) nil))
-(defmethod less ((tree node) (path cons) &optional (arg2 nil arg2p))
-  (declare (ignore arg2))
-  (fset::check-two-arguments arg2p 'less 'node)
-  (cond
-    ;; At the end of the path, so less directly.
-    ((null (cdr path)) (less tree (car path)))
-    ;; Traversing past a slot name, so copy/recurse.
-    ((symbolp (car path))
-     (copy tree
-           (make-keyword (car path))
-           (less (lookup tree (car path)) (cdr path))))
-    ;; Index an integer into the children.
-    ((integerp (car path))
-     (reduce
-      (lambda (i child-slot)
-        (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-               (children (slot-value tree slot))
-               (account (if (listp children) (length children) 1)))
-          (if (> i account)
-              (- i account)
-              (return-from less
-                (copy tree (make-keyword slot)
-                      (if (listp children)
-                          (append (subseq children 0 i)
-                                  (list (less (nth i children) (cdr path)))
-                                  (subseq children (1+ i)))
-                          nil))))))
-      (child-slots tree)
-      :initial-value (car path)))))
-(defmethod less ((tree node) (i integer) &optional (arg2 nil arg2p))
-  (declare (ignore arg2))
-  (fset::check-two-arguments arg2p 'less 'node)
-  (reduce (lambda (i child-slot)
-            (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-                   (children (slot-value tree slot))
-                   (account (if (listp children) (length children) 1)))
-              (if (> i account)
-                  (- i account)
-                  (return-from less
-                    (copy tree (make-keyword slot)
-                          (if (listp children)
-                              (less children i)
-                              nil))))))
-          (child-slots tree)
-          :initial-value i)
-  (error "Cannot less beyond end of children."))
-(defmethod less ((list list) (i integer) &optional (arg2 nil arg2p))
-  (declare (ignore arg2))
-  (fset::check-two-arguments arg2p 'less 'node)
-  (append (subseq list 0 i) (subseq list (1+ i))))
 
 (defmethod splice ((tree node) (location node) (values t))
   (splice tree (path-of-node tree location) values))
