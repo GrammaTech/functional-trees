@@ -120,9 +120,6 @@ specifies a specific number of children held in the slot.")
                                   ,(format nil "~s" form)
                                   ,form)))))
 
-;;; TODO: Also define `lookup' methods for child-slots after
-;;; finalize-inheritance?
-
 (defgeneric children (node)
   (:documentation "Return all children of NODE."))
 ;; Default method should never be called as the customization of
@@ -152,8 +149,19 @@ specifies a specific number of children held in the slot.")
 (defun expand-copying-setf-writers (class child-slots)
   ;; TODO: For every non-class-allocated slot with a accessor define a
   ;; setf method that makes it copying by default.
-  (declare (ignorable class))
+  (declare (ignorable class child-slots))
   nil)
+
+(defun expand-lookup-specialization (class child-slots)
+  `(progn
+     ,@(mapcar (lambda (form)
+                 (let ((slot (etypecase form
+                               (symbol form)
+                               (cons (car form)))))
+                   `(defmethod lookup
+                        ((obj ,class) (key (eql ,(make-keyword slot))))
+                      (slot-value obj ',slot))))
+               child-slots)))
 
 (defmethod finalize-inheritance :after (class)
   (when (subtypep class 'node)
@@ -166,6 +174,7 @@ specifies a specific number of children held in the slot.")
                  (class-slots class))))
       ;; Define a custom `children' method given the value of child-slots.
       (eval (expand-children-defmethod class child-slots))
+      (eval (expand-lookup-specialization class child-slots))
       (eval (expand-copying-setf-writers class child-slots)))))
 
 ;;; NOTE: We might want to propos a patch to FSet to allow setting

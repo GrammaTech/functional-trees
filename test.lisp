@@ -144,6 +144,8 @@ to subtrees."))
 
 (defmethod node-values ((node node-with-fields)) (data node))
 
+(defmethod lookup ((node node-with-fields) (i (eql :data))) (data node))
+
 (defmethod convert ((to-type (eql 'node-with-fields)) (sequence list)
                     &key &allow-other-keys)
   (labels ((safe-getf (list-form key)
@@ -250,10 +252,6 @@ bucket getting at least 1.  Return as a list."
           (let ((r (random (1+ i))))
             (rotatef (aref seq i) (aref seq r))))
     (coerce seq 'list)))
-
-(defmethod lookup ((node node-with-fields) (i (eql :a))) (node-a node))
-(defmethod lookup ((node node-with-fields) (i (eql :b))) (node-b node))
-(defmethod lookup ((node node-with-fields) (i (eql :data))) (data node))
 
 (defun plist-drop-keys (keys plist)
   (iter (for e on plist by #'cddr)
