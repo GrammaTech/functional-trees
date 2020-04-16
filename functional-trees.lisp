@@ -907,10 +907,6 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (i integer))
   (elt (children node) i))
 
-;;; TODO: The following `with', `less', and `splice' are all very
-;;;       formulaic.  Perhaps they could share implementation
-;;;       structure with independent `descend' methods.
-
 (defmacro descend ((name &key other-args extra-args replace splice checks)
                    &body new)
   (flet ((arg-values (args) (mapcar #'car (remove '&optional args))))
