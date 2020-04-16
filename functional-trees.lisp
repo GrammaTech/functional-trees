@@ -969,7 +969,7 @@ functions."
                           (account (cond
                                      ;; Explicit arity
                                      ((and (consp child-slot)
-                                           (numberp (cdr child-slot)))
+                                           (typep (cdr child-slot) '(integer 0)))
                                       (cdr child-slot))
                                      ;; Populated children
                                      ((listp children) (length children))
