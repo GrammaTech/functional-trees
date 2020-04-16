@@ -147,10 +147,23 @@ specifies a specific number of children held in the slot.")
                        child-slots))))
 
 (defun expand-copying-setf-writers (class child-slots)
-  ;; TODO: For every non-class-allocated slot with a accessor define a
-  ;; setf method that makes it copying by default.
-  (declare (ignorable class child-slots))
-  nil)
+  `(progn
+     ,@(mapcar
+        (lambda (form)
+          (destructuring-bind (slot . arity)
+              (etypecase form
+                (symbol (cons form nil))
+                (cons form))
+            `(defmethod (setf ,slot) (new (obj ,class))
+               ,@(when (and arity (numberp arity))
+                   `(assert
+                      (= ,arity (length new))
+                      ,(format nil "New value for ~a has wrong arity ~~a not ~a."
+                               slot arity)
+                      (length new)))
+               ;; TODO: Actually I'm not sure what we want here.
+               (copy obj ,(make-keyword slot) new))))
+        child-slots)))
 
 (defun expand-lookup-specialization (class child-slots)
   `(progn
