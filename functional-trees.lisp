@@ -930,37 +930,35 @@ functions."
          ,@checks (copy tree (make-keyword slot) ,@new))
        (defmethod ,name ((tree node) (path cons) ,@other-args ,@extra-args)
          ,@checks
-         (cond
-           ;; At the end of the path, so act directly.
-           ((null (cdr path)) (,name tree (car path)
-                                     ,@(arg-values other-args)))
-           ;; Traversing past a slot name, so copy/recurse.
-           ((symbolp (car path))
-            (copy tree
-                  (make-keyword (car path))
-                  (,name (lookup tree (car path)) (cdr path)
-                         ,@(arg-values other-args))))
-           ;; Index an integer into the children.
-           ((integerp (car path))
-            (reduce
-             (lambda (i child-slot)
-               (nest
-                (let* ((slot (if (consp child-slot)
-                                 (car child-slot)
-                                 child-slot))
-                       (children (slot-value tree slot))
-                       (account (if (listp children) (length children) 1))))
-                (if (>= i account) (- i account))
-                (return-from ,name
-                  (copy tree (make-keyword slot)
-                        (if (listp children)
-                            (append (subseq children 0 i)
-                                    (list (,name (nth i children) (cdr path)
-                                                 ,@(arg-values other-args)))
-                                    (subseq children (1+ i)))
-                            ,@new)))))
-             (child-slots tree)
-             :initial-value (car path)))))
+         ;; At the end of the path, so act directly.
+         (if (null (cdr path))
+             (,name tree (car path) ,@(arg-values other-args))
+             (etypecase (car path)
+               (symbol
+                (copy tree
+                      (make-keyword (car path))
+                      (,name (lookup tree (car path)) (cdr path)
+                             ,@(arg-values other-args))))
+               ((integer 0)
+                (reduce
+                 (lambda (i child-slot)
+                   (nest
+                    (let* ((slot (if (consp child-slot)
+                                     (car child-slot)
+                                     child-slot))
+                           (children (slot-value tree slot))
+                           (account (if (listp children) (length children) 1))))
+                    (if (>= i account) (- i account))
+                    (return-from ,name
+                      (copy tree (make-keyword slot)
+                            (if (listp children)
+                                (append (subseq children 0 i)
+                                        (list (,name (nth i children) (cdr path)
+                                                     ,@(arg-values other-args)))
+                                        (subseq children (1+ i)))
+                                ,@new)))))
+                 (child-slots tree)
+                 :initial-value (car path))))))
        (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
          ,@checks
          (reduce (lambda (i child-slot)
