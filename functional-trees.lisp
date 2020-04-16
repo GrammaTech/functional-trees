@@ -913,103 +913,86 @@ tree has its predecessor set to TREE."
 
 (defmacro descend ((name &key other-args extra-args replace splice checks)
                    &body new)
-  `(progn
-     (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
-       ,@checks (values ,@new))
-     (defmethod ,name ((tree node) (location node) ,@other-args ,@extra-args)
-       ,@checks (,name tree (path-of-node tree location)
-                       ,@(mapcar #'car other-args)))
-     (defmethod ,name ((tree node) (slot symbol) ,@other-args ,@extra-args)
-       ,@checks (copy tree (make-keyword slot) ,@new))
-     (defmethod ,name ((tree node) (path cons) ,@other-args ,@extra-args)
-       ,@checks
-       (cond
-         ;; At the end of the path, so act directly.
-         ((null (cdr path)) (,name tree (car path)
-                                   ,@(mapcar #'car other-args)))
-         ;; Traversing past a slot name, so copy/recurse.
-         ((symbolp (car path))
-          (copy tree
-                (make-keyword (car path))
-                (,name (lookup tree (car path)) (cdr path)
-                       ,@(mapcar #'car other-args))))
-         ;; Index an integer into the children.
-         ((integerp (car path))
-          (reduce
-           (lambda (i child-slot)
-             (nest
-              (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-                     (children (slot-value tree slot))
-                     (account (if (listp children) (length children) 1))))
-              (if (>= i account) (- i account))
-              (return-from ,name
-                (copy tree (make-keyword slot)
-                      (if (listp children)
-                          (append (subseq children 0 i)
-                                  (list (,name (nth i children) (cdr path)
-                                               ,@(mapcar #'car other-args)))
-                                  (subseq children (1+ i)))
-                          ,@new)))))
-           (child-slots tree)
-           :initial-value (car path)))))
-     (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
-       ,@checks
-       (reduce (lambda (i child-slot)
-                 (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-                        (children (slot-value tree slot))
-                        (account (cond
-                                   ;; Explicit arity
-                                   ((and (consp child-slot)
-                                         (numberp (cdr child-slot)))
-                                    (cdr child-slot))
-                                   ;; Populated children
-                                   ((listp children) (length children))
-                                   (t 1))))
-                   (if (>= i account)
-                       (- i account)
-                       (return-from ,name
-                         (copy tree (make-keyword slot)
-                               (if children
-                                   (if (listp children)
-                                       (,name children i ,@(mapcar #'car other-args))
-                                       ,@new)
-                                   ,@new))))))
-               (child-slots tree)
-               :initial-value i)
-       (error ,(format nil "Cannot ~a beyond end of children." name)))
-     (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
-       ,@checks
-       (append (subseq list 0 i)
-               ,@(if splice `,new `((list ,@new)))
-               (subseq list ,(if replace '(1+ i) 'i))))))
+  (flet ((arg-values (args) (mapcar #'car (remove '&optional args))))
+    `(progn
+       (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
+         ,@checks (values ,@new))
+       (defmethod ,name ((tree node) (location node) ,@other-args ,@extra-args)
+         ,@checks (,name tree (path-of-node tree location)
+                         ,@(arg-values other-args)))
+       (defmethod ,name ((tree node) (slot symbol) ,@other-args ,@extra-args)
+         ,@checks (copy tree (make-keyword slot) ,@new))
+       (defmethod ,name ((tree node) (path cons) ,@other-args ,@extra-args)
+         ,@checks
+         (cond
+           ;; At the end of the path, so act directly.
+           ((null (cdr path)) (,name tree (car path)
+                                     ,@(arg-values other-args)))
+           ;; Traversing past a slot name, so copy/recurse.
+           ((symbolp (car path))
+            (copy tree
+                  (make-keyword (car path))
+                  (,name (lookup tree (car path)) (cdr path)
+                         ,@(arg-values other-args))))
+           ;; Index an integer into the children.
+           ((integerp (car path))
+            (reduce
+             (lambda (i child-slot)
+               (nest
+                (let* ((slot (if (consp child-slot)
+                                 (car child-slot)
+                                 child-slot))
+                       (children (slot-value tree slot))
+                       (account (if (listp children) (length children) 1))))
+                (if (>= i account) (- i account))
+                (return-from ,name
+                  (copy tree (make-keyword slot)
+                        (if (listp children)
+                            (append (subseq children 0 i)
+                                    (list (,name (nth i children) (cdr path)
+                                                 ,@(arg-values other-args)))
+                                    (subseq children (1+ i)))
+                            ,@new)))))
+             (child-slots tree)
+             :initial-value (car path)))))
+       (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
+         ,@checks
+         (reduce (lambda (i child-slot)
+                   (let* ((slot (if (consp child-slot)
+                                    (car child-slot)
+                                    child-slot))
+                          (children (slot-value tree slot))
+                          (account (cond
+                                     ;; Explicit arity
+                                     ((and (consp child-slot)
+                                           (numberp (cdr child-slot)))
+                                      (cdr child-slot))
+                                     ;; Populated children
+                                     ((listp children) (length children))
+                                     (t 1))))
+                     (if (>= i account)
+                         (- i account)
+                         (return-from ,name
+                           (copy tree (make-keyword slot)
+                                 (if children
+                                     (if (listp children)
+                                         (,name children i
+                                                ,@(arg-values other-args))
+                                         ,@new)
+                                     ,@new))))))
+                 (child-slots tree)
+                 :initial-value i)
+         (error ,(format nil "Cannot ~a beyond end of children." name)))
+       (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
+         ,@checks
+         (append (subseq list 0 i)
+                 ,@(if splice `,new `((list ,@new)))
+                 (subseq list ,(if replace '(1+ i) 'i)))))))
 
-(defmethod with ((node node) (path t) &optional (value nil valuep))
-  "Adds VALUE (value2) at PATH (value1) in NODE."
-  (fset::check-three-arguments valuep 'with 'node)
-  ;; Walk down the path creating new trees on the way up.
-  (labels ((descend (children index path)
-             (append (subseq children 0 index)
-                     (list (-with (nth index children) path))
-                     (subseq children (1+ index))))
-           (-with (node path)
-             (nest (if (emptyp path) value)
-                   (let ((index (car path))))
-                   (apply #'copy node)
-                   (mappend (lambda (slot)
-                              (when-let ((children (slot-value node slot)))
-                                (list (make-keyword slot)
-                                      (descend children index (cdr path)))))
-                            (child-slots node)))))
-    (-with node path)))
-
-(defmethod with :around ((node node) (path t) &optional value)
-  ;; Ensure that we set the old node as the original for subsequent transforms.
-  (declare (ignorable value))
-  (when-let ((it (call-next-method))) (copy it :transform node)))
-
-(defmethod with ((tree node) (location node) &optional (value nil valuep))
-  (fset::check-three-arguments valuep 'with 'node)
-  (with tree (path-of-node tree location) value))
+(descend (with :other-args (&optional (value nil valuep))
+               :checks ((fset::check-three-arguments valuep 'with 'node))
+               :replace t)
+  value)
 
 (descend (less :extra-args (&optional (arg2 nil arg2p))
                :checks ((declare (ignore arg2))
