@@ -911,7 +911,8 @@ tree has its predecessor set to TREE."
 ;;;       formulaic.  Perhaps they could share implementation
 ;;;       structure with independent `descend' methods.
 
-(defmacro descend ((name &key other-args extra-args replace checks) &body new)
+(defmacro descend ((name &key other-args extra-args replace splice checks)
+                   &body new)
   `(progn
      (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
        ,@checks (values ,@new))
@@ -940,7 +941,7 @@ tree has its predecessor set to TREE."
               (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
                      (children (slot-value tree slot))
                      (account (if (listp children) (length children) 1))))
-              (if (> i account) (- i account))
+              (if (>= i account) (- i account))
               (return-from ,name
                 (copy tree (make-keyword slot)
                       (if (listp children)
@@ -956,20 +957,31 @@ tree has its predecessor set to TREE."
        (reduce (lambda (i child-slot)
                  (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
                         (children (slot-value tree slot))
-                        (account (if (listp children) (length children) 1)))
-                   (if (> i account)
+                        (account (cond
+                                   ;; Explicit arity
+                                   ((and (consp child-slot)
+                                         (numberp (cdr child-slot)))
+                                    (cdr child-slot))
+                                   ;; Populated children
+                                   ((listp children) (length children))
+                                   (t 1))))
+                   (if (>= i account)
                        (- i account)
                        (return-from ,name
                          (copy tree (make-keyword slot)
-                               (if (listp children)
-                                   (,name children i ,@(mapcar #'car other-args))
+                               (if children
+                                   (if (listp children)
+                                       (,name children i ,@(mapcar #'car other-args))
+                                       ,@new)
                                    ,@new))))))
                (child-slots tree)
                :initial-value i)
        (error ,(format nil "Cannot ~a beyond end of children." name)))
      (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
        ,@checks
-       (append (subseq list 0 i) ,@new (subseq list ,(if replace '(1+ i) 'i))))))
+       (append (subseq list 0 i)
+               ,@(if splice `,new `((list ,@new)))
+               (subseq list ,(if replace '(1+ i) 'i))))))
 
 (defmethod with ((node node) (path t) &optional (value nil valuep))
   "Adds VALUE (value2) at PATH (value1) in NODE."
@@ -1002,74 +1014,12 @@ tree has its predecessor set to TREE."
 (descend (less :extra-args (&optional (arg2 nil arg2p))
                :checks ((declare (ignore arg2))
                         (fset::check-two-arguments arg2p 'less 'node))
-               :replace t)
+               :replace t :splice t)
   nil)
 
-(descend (splice :other-args ((values list))) values)
+(descend (splice :other-args ((values list)) :splice t) values)
 
-(defmethod insert ((tree node) (location node) (value t))
-  (insert tree (path-of-node tree location) value))
-
-(defmethod insert ((tree node) (path cons) (value t))
-  (cond
-    ;; At the end of the path, so splice directly.
-    ((null (cdr path)) (insert tree (car path) value))
-    ;; Traversing past a slot name, so copy/recurse.
-    ((symbolp (car path))
-     (copy tree
-           (make-keyword (car path))
-           (insert (lookup tree (car path)) (cdr path) value)))
-    ;; Index an integer into the children.
-    ((integerp (car path))
-     (reduce
-      (lambda (i child-slot)
-        (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-               (children (slot-value tree slot))
-               (account (if (listp children) (length children) 1)))
-          (if (>= i account)
-              (- i account)
-              (return-from insert
-                (copy tree (make-keyword slot)
-                      (if (listp children)
-                          (append
-                           (subseq children 0 i)
-                           (list (insert (nth i children) (cdr path) value))
-                           (subseq children (1+ i)))
-                          nil))))))
-      (child-slots tree)
-      :initial-value (car path)))))
-(defmethod insert ((tree node) (i integer) (value t))
-  (reduce (lambda (i child-slot)
-            (let* ((slot (if (consp child-slot) (car child-slot) child-slot))
-                   (children (slot-value tree slot))
-                   (account (cond
-                              ;; Explicit arity
-                              ((and (consp child-slot)
-                                    (numberp (cdr child-slot)))
-                               (cdr child-slot))
-                              ;; Populated children
-                              ((listp children) (length children))
-                              (t 1))))
-              (if (>= i account)
-                  (- i account)
-                  (return-from insert
-                    (copy tree (make-keyword slot)
-                          (if children
-                              (if (listp children)
-                                  (insert children i value)
-                                  value)
-                              value))))))
-          (child-slots tree)
-          :initial-value i)
-  (error "Cannot splice beyond end of children."))
-(defmethod insert ((tree node) (slot symbol) (value t))
-  (copy tree (make-keyword slot) value))
-(defmethod insert ((list list) (i integer) (value t))
-  (append (subseq list 0 i)
-          (list value)
-          (subseq list i)))
-(defmethod insert ((tree node) (location null) (value t))
-  (error "Attempt to insert at the root."))
+(descend (insert :other-args ((value t))) value)
 
 (defgeneric swap (tree location-1 location-2)
   (:documentation "Swap the contents of LOCATION-1 and LOCATION-2 in TREE.")
