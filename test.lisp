@@ -997,7 +997,15 @@ diagnostic information on error or failure."
   (let* ((r (convert 'node-with-data '(:a 1 2 (:b 3 4) 5)))
          (n (@ r '(2))))
     (is (equal (flatten (convert 'list (with r n :removed)))
-               '(:a 1 2 :removed 5)))))
+               '(:a 1 2 :removed 5))))
+  ;; Should replace '(:data 2) with :TOUCHED.
+  (let ((tree (convert 'node-with-fields '(:data :foo :a (:data 1)
+                                            :b (:data 2)))))
+    (is (equal (nest (flatten)
+                     (convert 'list)
+                     (with tree '(1))
+                     (make-instance 'node-with-fields :data :touched))
+               '(:data :foo :a :data 1 :b :data :touched)))))
 
 (deftest lookup-node-index-test ()
   (let ((r (convert 'node-with-fields '(:data :foo :a (:data 1)
@@ -1024,14 +1032,7 @@ diagnostic information on error or failure."
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (((9)))))))
     (let ((it (copy tree)))
       (setf (@ it '(3 0)) :deleted)
-      (is (zerop (count 6 it)))))
-  (nest
-   (ignore-errors)
-   (with-expected-failures)
-   (let ((tree (convert 'node-with-fields '(:data :foo :a (:data 1)
-                                            :b (:data 2))))))
-   (is (equal (flatten (convert 'list (@ tree '(1) 3)))
-              '(:data :foo :a :data 1 :b 3)))))
+      (is (zerop (count 6 it))))))
 
 (deftest more-less-tests ()
   (let ((it (convert 'node-with-data '(defun euclids-gcd (a b)
