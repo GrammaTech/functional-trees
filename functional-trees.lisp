@@ -1242,38 +1242,11 @@ non-nil return from body terminates recursion."
         (do-tree- ,tree ,@(when indexp '(nil))))
        ,(if value value body-result))))
 
-#+evaluation
-(progn
-(defun my-position (predicate tree)
-  (do-tree (node tree :index index)
-    (when (funcall predicate node)
-      (values t (nreverse index)))))
-
-(defun my-remove (predicate tree)
-  (do-tree (node tree :rebuild t)
-    (when (funcall predicate node)
-      (values t nil))))
-
-(defun my-count (predicate tree &aux (count 0))
-  (do-tree (node tree :value count)
-    (when (funcall predicate node) (incf count))
-    nil))
-
-(defun my-find (predicate tree)
-  (do-tree (node tree)
-    (when (funcall predicate node) (values t node))))
-
-(defun my-reduce (predicate tree &aux acc)
-  (do-tree (node tree :value acc)
-    (setf acc (funcall predicate acc node))
-    nil))
-)
-
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
    "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.
 If secondary return value of PREDICATE is non-nil force substitution
-  with primary value even if it is nil.")
+with primary value even if it is nil.")
   (:method (predicate (sequence sequence) &key &allow-other-keys )
     (let ((predicate (coerce predicate 'function)))
       (map (type-of sequence)
@@ -1288,7 +1261,41 @@ If secondary return value of PREDICATE is non-nil force substitution
         (multiple-value-bind (value force)
             (funcall predicate element)
           (push (if force value (or value element)) result)))
-      (convert 'seq (nreverse result)))))
+      (convert 'seq (nreverse result))))
+  (:method (function (node node) &key key &allow-other-keys)
+    (when key (setf key (coerce key 'function)))
+    (labels
+        ((check (node)
+           (funcall function (if key (funcall (the function key) node) node)))
+         (substitute- (predicate node)
+           (nest (if (not (typep node 'node))
+                     (multiple-value-bind (value force) (check node)
+                       (if (or force value)
+                           (values (list value) t)
+                           (values (list node) nil))))
+                 (multiple-value-bind (value force) (check node))
+                 (if (or force value) (values (list value) t))
+                 (let* ((modifiedp nil)
+                        (new-children
+                         (mappend
+                          (lambda (slot)
+                            (when-let ((children (slot-value node slot)))
+                              (list (make-keyword slot)
+                                    (mappend
+                                     (lambda (child)
+                                       (multiple-value-bind (new was-modified-p)
+                                           (substitute- predicate child)
+                                         (when was-modified-p (setf modifiedp t))
+                                         new))
+                                     children))))
+                          (child-slots node))))
+                   (if (not modifiedp)
+                       (values (list node) nil)
+                       (values (list (apply #'copy node new-children)) t))))))
+      (car (substitute- (coerce function 'function) node))))
+  (:method :around (function (node node) &key &allow-other-keys)
+           ;; Ensure that we set the old node as the original for subsequent transforms.
+           (when-let ((it (call-next-method))) (copy it :transform node))))
 
 (defmethod reduce (fn (node node) &rest rest &key &allow-other-keys)
   (apply #'reduce fn (flatten (convert 'list node)) rest))
@@ -1502,40 +1509,3 @@ Also works on a functional tree node.")
     (multiple-value-call
         #'subst-if new (complement test) tree
         (if key-p (values :key key) (values)))))
-
-(defmethod substitute-with (function (node node)
-                            &key key &allow-other-keys)
-  (when key (setf key (coerce key 'function)))
-  (labels
-      ((check (node)
-         (funcall function (if key (funcall (the function key) node) node)))
-       (substitute- (predicate node)
-         (nest (if (not (typep node 'node))
-                   (multiple-value-bind (value force) (check node)
-                     (if (or force value)
-                         (values (list value) t)
-                         (values (list node) nil))))
-               (multiple-value-bind (value force) (check node))
-               (if (or force value) (values (list value) t))
-               (let* ((modifiedp nil)
-                      (new-children
-                       (mappend
-                        (lambda (slot)
-                          (when-let ((children (slot-value node slot)))
-                            (list (make-keyword slot)
-                                  (mappend
-                                   (lambda (child)
-                                     (multiple-value-bind (new was-modified-p)
-                                         (substitute- predicate child)
-                                       (when was-modified-p (setf modifiedp t))
-                                       new))
-                                   children))))
-                        (child-slots node))))
-                 (if (not modifiedp)
-                     (values (list node) nil)
-                     (values (list (apply #'copy node new-children)) t))))))
-    (car (substitute- (coerce function 'function) node))))
-
-(defmethod substitute-with :around (function (node node) &key &allow-other-keys)
-  ;; Ensure that we set the old node as the original for subsequent transforms.
-  (when-let ((it (call-next-method))) (copy it :transform node)))
