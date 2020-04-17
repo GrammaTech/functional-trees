@@ -1135,6 +1135,102 @@ of a node.")
 
 
 ;;; FSET sequence operations (+ two) for functional tree.
+(defun map-children (node function)
+  (mapc
+   (lambda (child-slot)
+     (mapc function (slot-value node (if (consp child-slot)
+                                         (car child-slot)
+                                         child-slot))))
+   (child-slots node)))
+
+(defun map-children-w/index (node function)
+  (mapc
+   (lambda (child-slot)
+     (let* ((slot (if (consp child-slot)
+                      (car child-slot)
+                      child-slot))
+            (children (slot-value node slot))
+            (child-length (if (consp child-slot)
+                              (cdr child-slot)
+                              (length children))))
+       (mapc function
+             (if (and (consp child-slot) (= (cdr child-slot) 1))
+                 (list children)
+                 children)
+             (iota child-length))))
+   (child-slots node)))
+
+(defmacro do-tree ((var tree
+                        &key
+                        ;; (start nil startp) (end nil endp)
+                        ;; (from-end nil from-end-p)
+                        (index nil indexp) (rebuild (gensym "rebuild") rebuildp)
+                        (value nil))
+                   &body body)
+  "A generalized tree traversal used to implement common lisp sequence functions.
+
+If REBUILD then return nodes are left on the stack and BODY should
+return two values (MODIFIEDP NEW-BLOCK) indicating if the node has
+been modified and if so, giving the new value to use (where NEW-BLOCK
+of NIL means to remove that block).
+
+If REBUILD is nil, then a non-nil return from body terminates
+recursion."
+  (with-gensyms (block-name body-result)
+    `(let ((,body-result))
+       #+broken
+       (assert (notany #'identity ,from-end ,end ,start)
+               (,from-end ,end ,start)
+               "TODO: implement support for ~a key"
+               (cdr (find-if #'car
+                             (mapcar #'cons
+                                     (list ,from-end ,end ,start)
+                                     '(from-end end start)))))
+       (nest
+        (macrolet ((map-children (node)
+                     `(mapc
+                       (lambda (child-slot)
+                         (mapc #'do-tree-
+                               (let ((children (slot-value node (if (consp child-slot)
+                                                                    (car child-slot)
+                                                                    child-slot))))
+                                 (if (and (consp child-slot) (= 1 (cdr child-slot)))
+                                     (list children) children))))
+                       (child-slots ,node)))))
+        (setf ,body-result)
+        (block ,block-name)
+        (labels
+            ((do-tree- (node ,@(when indexp (list index)))
+               (typecase node
+                 ,(if rebuildp
+                      `(node (error "TODO:0"))
+                      `(node (when-let ((,body-result (let ((,var node)) ,@body)))
+                               (return-from ,block-name ,body-result))
+                             ,(if indexp
+                                  `(map-children-w/index
+                                    node
+                                    (lambda (child index) (to-tree child index)))
+                                  `(map-children node))))))))
+        (do-tree- ,tree))
+       ,(if value value body-result))))
+
+#+evaluation
+(progn
+(defun my-count (predicate tree &aux (count 0))
+  (do-tree (node tree :value count)
+    (when (funcall predicate node) (incf count))
+    nil))
+
+(defun my-find (predicate tree)
+  (do-tree (node tree)
+    (when (funcall predicate node) node)))
+
+(defun my-reduce (predicate tree &aux acc)
+  (do-tree (node tree :value acc)
+    (setf acc (funcall predicate acc node))
+    nil))
+)
+
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
    "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.
