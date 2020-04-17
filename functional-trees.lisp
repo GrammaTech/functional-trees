@@ -1150,6 +1150,9 @@ should return two values (MODIFIEDP NEW-BLOCK) indicating if the node
 has been modified and if so, giving the new value to use (where
 NEW-BLOCK of NIL means to remove that block).  If not REBUILD, then a
 non-nil return from body terminates recursion."
+  ;; (declare (ignorable start end from-end))
+  ;; (when (or startp endp from-end-p)
+  ;;   (warn "TODO: implement start end and from-end-p."))
   (assert (not (and indexp rebuild))
           (indexp rebuild)
           "Simultaneous rebuilding and index accumulation are not supported.")
@@ -1179,18 +1182,23 @@ non-nil return from body terminates recursion."
                         (mapc #'do-tree- (child-list ,node child-slot)))
                       (child-slots ,node)))
              (map-children/i (node index) ; Map children with updated index.
-               `(mapc
-                 (lambda (child-slot &aux (counter 0))
-                   (let ((name (slot-spec-slot child-slot)))
-                     (if (= 1 (slot-spec-arity child-slot))
-                         ;; Single arity just add slot name.
-                         (do-tree- (slot-value ,node name) (list* name ,index))
-                         ;; Otherwise add slot name and index into slot.
-                         (mapc (lambda (child)
-                                 (do-tree- child (list* counter name ,index))
-                                 (incf counter))
-                               (child-list ,node child-slot)))))
-                 (child-slots ,node)))
+               `(let ((num-slots (length (child-slots ,node))))
+                  (mapc
+                   (lambda (child-slot &aux (counter 0))
+                     (let ((name (slot-spec-slot child-slot)))
+                       (if (= 1 (slot-spec-arity child-slot))
+                           ;; Single arity just add slot name.
+                           (do-tree- (slot-value ,node name)
+                             (list* (make-keyword name) ,index))
+                           ;; Otherwise add slot name and index into slot.
+                           (mapc
+                            (lambda (child)
+                              (do-tree- child (if (= 1 num-slots)
+                                                  (list* counter ,index)
+                                                  (list* counter name ,index)))
+                              (incf counter))
+                            (child-list ,node child-slot)))))
+                   (child-slots ,node))))
              (mapcar-children (node)
                ;; Return copy keys and values for any changed
                ;; child-slot or none for unchanged child-slots.
@@ -1208,7 +1216,7 @@ non-nil return from body terminates recursion."
                        ;; Unpack a single-arity child from the list.
                        (1 (setf children (car children)))
                        ;; Remove nils from flexible-arity child lists.
-                       (0 (setf children (apply #'append children))))
+                       (0 (setf children (remove nil children))))
                      (when modifiedp
                        (list (make-keyword (slot-spec-slot child-slot))
                              children))))
@@ -1265,18 +1273,20 @@ with primary value even if it is nil.")
   (:method (function (node node) &key key &allow-other-keys)
     (when key (setf key (coerce key 'function)))
     (do-tree (node node :rebuild t)
-      (multiple-value-bind (new force) (funcall predicate node)
+      (multiple-value-bind (new force) (funcall function node)
         (values (or new force) new)))))
 
 (defmethod substitute-with :around (function (node node) &key &allow-other-keys)
   ;; Ensure that we set the old node as the original for subsequent transforms.
   (when-let ((it (call-next-method))) (copy it :transform node)))
 
-(defmethod reduce (fn (node node) &rest rest &key &allow-other-keys
-                      &aux accumulator)
-  (declare (ignore rest))
+(defmethod reduce
+    (fn (node node)
+      &key key initial-value ;; start end from-end
+      &allow-other-keys
+      &aux (accumulator initial-value))
   (do-tree (node node :value accumulator)
-    (setf accumulator (funcall fn accumulator node))
+    (setf accumulator (funcall fn accumulator (if key (funcall key node) node)))
     nil))
 
 (defmacro test-handler (fn)
@@ -1323,7 +1333,7 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                         (mapcar #'cons
                                 (list from-end end start)
                                 '(from-end end start)))))
-  (when key-p (setf key (coerce key 'function)))
+  (when key (setf key (coerce key 'function)))
   (do-tree (node node :value count)
     (when (funcall predicate (if key (funcall key node) node))
       (incf count))
@@ -1331,13 +1341,13 @@ checking and normalization of :TEST and :TEST-NOT arguments."
 
 (defmethod count-if-not (predicate (node node)
                          &key (key nil key-p) &allow-other-keys)
-  (multiple-value-call #'find-if (complement predicate) node
+  (multiple-value-call #'count-if (complement predicate) node
                        (if key-p (values :key key) (values))))
 
 (defmethod count
     (item (node node)
      &key (test #'eql test-p) (test-not nil test-not-p) (key nil key-p)
-     &allow-other-keys &aux (count 0))
+       &allow-other-keys)
   (test-handler position)
   (multiple-value-call #'count-if (curry test item) node
                        (if key-p (values :key key) (values))))
@@ -1394,9 +1404,9 @@ checking and normalization of :TEST and :TEST-NOT arguments."
 (defmethod substitute-if (newitem predicate (node node)
                           &key (copy nil copy-p) key &allow-other-keys)
   (when copy-p (setf copy (coerce copy 'function)))
-  (do-tree (node node :rebuilt t)
+  (do-tree (node node :rebuild t)
     (when (funcall predicate (if key (funcall key node) node))
-      (values t newitem))))
+      (values t (if copy-p (funcall copy newitem) newitem)))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
                               &key key copy &allow-other-keys)
