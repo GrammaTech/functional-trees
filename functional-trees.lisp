@@ -1135,14 +1135,6 @@ of a node.")
 
 
 ;;; FSET sequence operations (+ two) for functional tree.
-(defun map-children (node function)
-  (mapc
-   (lambda (child-slot)
-     (mapc function (slot-value node (if (consp child-slot)
-                                         (car child-slot)
-                                         child-slot))))
-   (child-slots node)))
-
 (defun map-children-w/index (node function)
   (mapc
    (lambda (child-slot)
@@ -1164,7 +1156,7 @@ of a node.")
                         &key
                         ;; (start nil startp) (end nil endp)
                         ;; (from-end nil from-end-p)
-                        (index nil indexp) (rebuild (gensym "rebuild") rebuildp)
+                        (index nil indexp) (rebuild)
                         (value nil))
                    &body body)
   "A generalized tree traversal used to implement common lisp sequence functions.
@@ -1176,6 +1168,9 @@ of NIL means to remove that block).
 
 If REBUILD is nil, then a non-nil return from body terminates
 recursion."
+  (assert (not (and indexp rebuild))
+          (indexp rebuild)
+          "Rebuilding a tree and tracking the running path are not both supported.")
   (with-gensyms (block-name body-result)
     `(let ((,body-result))
        #+broken
@@ -1187,24 +1182,58 @@ recursion."
                                      (list ,from-end ,end ,start)
                                      '(from-end end start)))))
        (nest
-        (macrolet ((map-children (node)
-                     `(mapc
-                       (lambda (child-slot)
-                         (mapc #'do-tree-
-                               (let ((children (slot-value node (if (consp child-slot)
-                                                                    (car child-slot)
-                                                                    child-slot))))
-                                 (if (and (consp child-slot) (= 1 (cdr child-slot)))
-                                     (list children) children))))
-                       (child-slots ,node)))))
+        (macrolet
+            ((slot-spec-slot (slot-spec)
+               `(if (consp ,slot-spec) (car ,slot-spec) ,slot-spec))
+             (slot-spec-arity (slot-spec) ; 0 for infinit arity.
+               `(or (and (consp ,slot-spec) (cdr ,slot-spec)) 0))
+             (child-list (node slot-spec)
+               `(let ((children (slot-value ,node (slot-spec-slot ,slot-spec))))
+                  (if (= 1 (slot-spec-arity ,slot-spec)) (list children) children)))
+             (map-children (node)
+               `(mapc (lambda (child-slot)
+                        (mapc #'do-tree- (child-list ,node child-slot)))
+                      (child-slots ,node)))
+             (mapcar-children (node)
+               ;; Return copy keys and values for any changed
+               ;; child-slot or none for unchanged child-slots.
+               `(mappend
+                 (lambda (child-slot &aux modifiedp)
+                   (let ((children
+                          (mapcar (lambda (child)
+                                    (multiple-value-bind (modified new)
+                                        (do-tree- child)
+                                      (when modified (setf modifiedp t))
+                                      (if modified new child)))
+                                  (child-list ,node child-slot))))
+                     ;; Adjust the children list for special arities.
+                     (case (slot-spec-arity child-slot)
+                       ;; Unpack a single-arity child from the list.
+                       (1 (setf children (car children)))
+                       ;; Remove nils from flexible-arity child lists.
+                       (0 (setf children (apply #'append children))))
+                     (when modifiedp
+                       (list (make-keyword (slot-spec-slot child-slot))
+                             children))))
+                 (child-slots ,node)))))
         (setf ,body-result)
+        ,@(when rebuild '((second) (multiple-value-list)))
         (block ,block-name)
         (labels
             ((do-tree- (node ,@(when indexp (list index)))
                (typecase node
-                 ,(if rebuildp
-                      `(node (error "TODO:0"))
-                      `(node (when-let ((,body-result (let ((,var node)) ,@body)))
+                 ,(if rebuild
+                      `(node
+                        (multiple-value-bind (modified new) (let ((,var node))
+                                                              ,@body)
+                          (when modified (setf node new))
+                          (if node
+                              (if-let ((keys (mapcar-children node)))
+                                (values t (apply #'copy node keys))
+                                (values modified node))
+                              (values modified node))))
+                      `(node (when-let ((,body-result (let ((,var node))
+                                                        ,@body)))
                                (return-from ,block-name ,body-result))
                              ,(if indexp
                                   `(map-children-w/index
@@ -1216,6 +1245,11 @@ recursion."
 
 #+evaluation
 (progn
+(defun my-remove (predicate tree)
+  (do-tree (node tree :rebuild t)
+    (when (funcall predicate node)
+      (values t nil))))
+
 (defun my-count (predicate tree &aux (count 0))
   (do-tree (node tree :value count)
     (when (funcall predicate node) (incf count))
