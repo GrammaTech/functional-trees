@@ -1187,9 +1187,11 @@ recursion."
                `(if (consp ,slot-spec) (car ,slot-spec) ,slot-spec))
              (slot-spec-arity (slot-spec) ; 0 for infinit arity.
                `(or (and (consp ,slot-spec) (cdr ,slot-spec)) 0))
-             (child-list (node slot-spec)
+             (child-list (node slot-spec) ; Ensure children are a list.
                `(let ((children (slot-value ,node (slot-spec-slot ,slot-spec))))
-                  (if (= 1 (slot-spec-arity ,slot-spec)) (list children) children)))
+                  (if (= 1 (slot-spec-arity ,slot-spec))
+                      (list children)
+                      children)))
              (map-children (node)
                `(mapc (lambda (child-slot)
                         (mapc #'do-tree- (child-list ,node child-slot)))
@@ -1221,9 +1223,9 @@ recursion."
         (block ,block-name)
         (labels
             ((do-tree- (node ,@(when indexp (list index)))
-               (typecase node
+               (typecase node           ; Ignore non-node children.
                  ,(if rebuild
-                      `(node
+                      `(node            ; Build a new tree on the stack.
                         (multiple-value-bind (modified new) (let ((,var node))
                                                               ,@body)
                           (when modified (setf node new))
@@ -1232,14 +1234,10 @@ recursion."
                                 (values t (apply #'copy node keys))
                                 (values modified node))
                               (values modified node))))
-                      `(node (when-let ((,body-result (let ((,var node))
-                                                        ,@body)))
-                               (return-from ,block-name ,body-result))
-                             ,(if indexp
-                                  `(map-children-w/index
-                                    node
-                                    (lambda (child index) (to-tree child index)))
-                                  `(map-children node))))))))
+                      `(node            ; Don't rebuild a new tree.
+                        (when-let ((,body-result (let ((,var node)) ,@body)))
+                          (return-from ,block-name ,body-result))
+                        (map-children node)))))))
         (do-tree- ,tree))
        ,(if value value body-result))))
 
