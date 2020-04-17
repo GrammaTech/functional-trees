@@ -1264,41 +1264,20 @@ with primary value even if it is nil.")
       (convert 'seq (nreverse result))))
   (:method (function (node node) &key key &allow-other-keys)
     (when key (setf key (coerce key 'function)))
-    (labels
-        ((check (node)
-           (funcall function (if key (funcall (the function key) node) node)))
-         (substitute- (predicate node)
-           (nest (if (not (typep node 'node))
-                     (multiple-value-bind (value force) (check node)
-                       (if (or force value)
-                           (values (list value) t)
-                           (values (list node) nil))))
-                 (multiple-value-bind (value force) (check node))
-                 (if (or force value) (values (list value) t))
-                 (let* ((modifiedp nil)
-                        (new-children
-                         (mappend
-                          (lambda (slot)
-                            (when-let ((children (slot-value node slot)))
-                              (list (make-keyword slot)
-                                    (mappend
-                                     (lambda (child)
-                                       (multiple-value-bind (new was-modified-p)
-                                           (substitute- predicate child)
-                                         (when was-modified-p (setf modifiedp t))
-                                         new))
-                                     children))))
-                          (child-slots node))))
-                   (if (not modifiedp)
-                       (values (list node) nil)
-                       (values (list (apply #'copy node new-children)) t))))))
-      (car (substitute- (coerce function 'function) node))))
-  (:method :around (function (node node) &key &allow-other-keys)
-           ;; Ensure that we set the old node as the original for subsequent transforms.
-           (when-let ((it (call-next-method))) (copy it :transform node))))
+    (do-tree (node node :rebuild t)
+      (multiple-value-bind (new force) (funcall predicate node)
+        (values (or new force) new)))))
 
-(defmethod reduce (fn (node node) &rest rest &key &allow-other-keys)
-  (apply #'reduce fn (flatten (convert 'list node)) rest))
+(defmethod substitute-with :around (function (node node) &key &allow-other-keys)
+  ;; Ensure that we set the old node as the original for subsequent transforms.
+  (when-let ((it (call-next-method))) (copy it :transform node)))
+
+(defmethod reduce (fn (node node) &rest rest &key &allow-other-keys
+                      &aux accumulator)
+  (declare (ignore rest))
+  (do-tree (node node :value accumulator)
+    (setf accumulator (funcall fn accumulator node))
+    nil))
 
 (defmacro test-handler (fn)
   "This macro is an idiom that occurs in many methods.  It handles
@@ -1308,12 +1287,6 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                  (assert (not test-not-p) () ,(format nil "~a given both :TEST and :TEST-NOT" fn))
                  (setf test (coerce test 'function))))
     (when test-not-p (setf test (complement (coerce test-not 'function))))))
-
-(defmethod find (item (node node)
-                 &key (test #'eql test-p) (test-not nil test-not-p) (key nil key-p) &allow-other-keys)
-  (test-handler find)
-  (apply #'find-if (curry test item) node
-         (when key-p (list :key key))))
 
 (defmethod find-if (predicate (node node)
                     &key from-end end start key)
@@ -1325,43 +1298,48 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                                 (list from-end end start)
                                 '(from-end end start)))))
   (when key (setf key (coerce key 'function)))
-  (labels
-      ((check (item) (funcall predicate (if key (funcall key item) item)))
-       (find- (predicate node)
-         (nest (if (check node) (return-from find-if node))
-               (when (typep node 'node))
-               (mapc (lambda (slot)
-                       (when-let ((it (slot-value node (etypecase slot
-                                                (cons (car slot))
-                                                (symbol slot)))))
-                         (if (listp it)
-                             (mapc (curry #'find- predicate) it)
-                             (find- predicate it))))
-                     (child-slots node)))))
-    (find- (coerce predicate 'function) node)
-    nil))
+  (do-tree (node node)
+    (when (funcall predicate (if key (funcall key node) node))
+      (values t node))))
 
 (defmethod find-if-not
     (predicate (node node) &key (key nil key-p) &allow-other-keys)
   (multiple-value-call #'find-if (complement predicate) node
                        (if key-p (values :key key) (values))))
 
-(defmethod count (item (node node) &rest rest &key &allow-other-keys)
-  (apply #'count item (flatten (convert 'list node)) rest))
+(defmethod find (item (node node)
+                 &key (test #'eql test-p) (test-not nil test-not-p) (key nil key-p) &allow-other-keys)
+  (test-handler position)
+  (multiple-value-call #'find-if (curry test item) node
+                       (if key-p (values :key key) (values))))
 
-(defmethod count-if (predicate (node node) &rest rest &key &allow-other-keys)
-  (apply #'count-if predicate (flatten (convert 'list node)) rest))
+(defmethod count-if (predicate (node node)
+                     &key from-end end start key &allow-other-keys
+                     &aux (count 0))
+  (assert (notany #'identity from-end end start)
+          (from-end end start)
+          "TODO: implement support for ~a key in `find-if'"
+          (cdr (find-if #'car
+                        (mapcar #'cons
+                                (list from-end end start)
+                                '(from-end end start)))))
+  (when key-p (setf key (coerce key 'function)))
+  (do-tree (node node :value count)
+    (when (funcall predicate (if key (funcall key node) node))
+      (incf count))
+    nil))
 
 (defmethod count-if-not (predicate (node node)
-                         &rest rest &key &allow-other-keys)
-  (apply #'count-if-not predicate (flatten (convert 'list node)) rest))
+                         &key (key nil key-p) &allow-other-keys)
+  (multiple-value-call #'find-if (complement predicate) node
+                       (if key-p (values :key key) (values))))
 
-(defmethod position (item (node node) &key (test #'eql test-p)
-                                        (test-not nil test-not-p)
-                                        (key nil key-p)
-                                        &allow-other-keys)
+(defmethod count
+    (item (node node)
+     &key (test #'eql test-p) (test-not nil test-not-p) (key nil key-p)
+     &allow-other-keys &aux (count 0))
   (test-handler position)
-  (multiple-value-call #'position-if (curry test item) node
+  (multiple-value-call #'count-if (curry test item) node
                        (if key-p (values :key key) (values))))
 
 (defmethod position-if (predicate (node node)
@@ -1375,74 +1353,27 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                                 (list from-end end start)
                                 '(from-end end start)))))
   (when key (setf key (coerce key 'function)))
-  (labels
-      ((check (item) (funcall predicate (if key (funcall key item) item)))
-       (position- (predicate node path)
-         (nest (if (not (typep node 'node))
-                   (when (check node)
-                     (return-from position-if (values (nreverse path) t))))
-               (if (check node)
-                   (return-from position-if (values (nreverse path) t)))
-               (let* ((slots (child-slots node))
-                      (single-child (= 1 (length slots)))))
-               (mapc (lambda (slot)
-                       (let* ((slot (etypecase slot
-                                      (cons (car slot))
-                                      (symbol slot)))
-                              (children (slot-value node slot)))
-                         (if (listp children)
-                             (mapc (lambda (child index)
-                                     (nest
-                                      (position- predicate child)
-                                      (if single-child (cons index path))
-                                      (cons (cons (make-keyword slot) index)
-                                            path)))
-                                   children
-                                   (iota (length children)))
-                             (position- predicate children
-                                        (cons (make-keyword slot) path)))))
-                     slots))))
-    (position- (coerce predicate 'function) node nil)
-    (values nil nil)))
+  (do-tree (node node :index index)
+    (when (funcall predicate (if key (funcall key node) node))
+      (values t (nreverse index)))))
 
 (defmethod position-if-not (predicate (node node) &rest args
                             &key &allow-other-keys)
   (apply #'position-if (values (complement predicate)) node args))
 
-(defmethod remove (item (node node)
-                   &key (test #'eql test-p) (test-not nil test-not-p) key &allow-other-keys)
-  (test-handler remove)
-  (multiple-value-call #'remove-if (curry test item) node
-                       (if key (values :key key) (values))))
+(defmethod position (item (node node) &key (test #'eql test-p)
+                                        (test-not nil test-not-p)
+                                        (key nil key-p)
+                                        &allow-other-keys)
+  (test-handler position)
+  (multiple-value-call #'position-if (curry test item) node
+                       (if key-p (values :key key) (values))))
 
 (defmethod remove-if (predicate (node node) &key key &allow-other-keys)
   (when key (setf key (coerce key 'function)))
-  (labels
-      ((check (node)
-         (funcall predicate (if key (funcall (the function key) node) node)))
-       (remove- (predicate node)
-         (nest (if (not (typep node 'node))
-                   (if (check node)
-                       (values nil t)
-                       (values (list node) nil)))
-               (if (check node) (values nil t))
-               (let* ((modifiedp nil)
-                      (new-children
-                       (mappend
-                        (lambda (slot)
-                          (when-let ((children (slot-value node slot)))
-                            (list (make-keyword slot)
-                                  (mappend
-                                   (lambda (child)
-                                     (multiple-value-bind (new was-modified-p)
-                                         (remove- predicate child)
-                                       (when was-modified-p (setf modifiedp t))
-                                       new))
-                                   children))))
-                        (child-slots node)))))
-               (if (not modifiedp) (values (list node) nil))
-               (values (list (apply #'copy node new-children)) t))))
-    (car (remove- (coerce predicate 'function) node))))
+  (do-tree (node node :rebuild t)
+    (when (funcall predicate (if key (funcall key node) node))
+      (values t nil))))
 
 (defmethod remove-if :around (predicate (node node) &key &allow-other-keys)
   ;; Ensure that we set the old node as the original for subsequent transforms.
@@ -1454,25 +1385,18 @@ checking and normalization of :TEST and :TEST-NOT arguments."
       #'remove-if (complement predicate) node
       (if key (values :key key) (values))))
 
-(defmethod substitute (newitem olditem (node node)
-                       &key (test #'eql test-p) (test-not nil test-not-p)
-                         key &allow-other-keys)
-  (test-handler substitute)
-  (multiple-value-call
-      #'substitute-if newitem (curry test olditem) node
-      (if key (values :key key) (values))))
+(defmethod remove (item (node node)
+                   &key (test #'eql test-p) (test-not nil test-not-p) key &allow-other-keys)
+  (test-handler remove)
+  (multiple-value-call #'remove-if (curry test item) node
+                       (if key (values :key key) (values))))
 
 (defmethod substitute-if (newitem predicate (node node)
                           &key (copy nil copy-p) key &allow-other-keys)
   (when copy-p (setf copy (coerce copy 'function)))
-  (setf predicate (coerce predicate 'function))
-  (multiple-value-call
-      #'substitute-with
-    (lambda (item)
-      (when (funcall predicate item)
-        (values (if copy-p (funcall copy newitem) newitem) t)))
-    node
-    (if key (values :key key) (values))))
+  (do-tree (node node :rebuilt t)
+    (when (funcall predicate (if key (funcall key node) node))
+      (values t newitem))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
                               &key key copy &allow-other-keys)
@@ -1480,6 +1404,14 @@ checking and normalization of :TEST and :TEST-NOT arguments."
       #'substitute-if newitem (values (complement predicate)) node
       (if key (values :key key) (values))
       (if copy (values :copy copy) (values))))
+
+(defmethod substitute (newitem olditem (node node)
+                       &key (test #'eql test-p) (test-not nil test-not-p)
+                         key &allow-other-keys)
+  (test-handler substitute)
+  (multiple-value-call
+      #'substitute-if newitem (curry test olditem) node
+      (if key (values :key key) (values))))
 
 (defgeneric subst (new old tree &key key test test-not)
   (:documentation "If TREE is a cons, this simply calls `cl:subst'.
