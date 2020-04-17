@@ -1135,23 +1135,6 @@ of a node.")
 
 
 ;;; FSET sequence operations (+ two) for functional tree.
-(defun map-children-w/index (node function)
-  (mapc
-   (lambda (child-slot)
-     (let* ((slot (if (consp child-slot)
-                      (car child-slot)
-                      child-slot))
-            (children (slot-value node slot))
-            (child-length (if (consp child-slot)
-                              (cdr child-slot)
-                              (length children))))
-       (mapc function
-             (if (and (consp child-slot) (= (cdr child-slot) 1))
-                 (list children)
-                 children)
-             (iota child-length))))
-   (child-slots node)))
-
 (defmacro do-tree ((var tree
                         &key
                         ;; (start nil startp) (end nil endp)
@@ -1159,18 +1142,17 @@ of a node.")
                         (index nil indexp) (rebuild)
                         (value nil))
                    &body body)
-  "A generalized tree traversal used to implement common lisp sequence functions.
-
-If REBUILD then return nodes are left on the stack and BODY should
-return two values (MODIFIEDP NEW-BLOCK) indicating if the node has
-been modified and if so, giving the new value to use (where NEW-BLOCK
-of NIL means to remove that block).
-
-If REBUILD is nil, then a non-nil return from body terminates
-recursion."
+  "Generalized tree traversal used to implement common lisp sequence functions.
+VALUE is the value to return upon completion.  INDEX may hold a
+variable bound in BODY to the *reversed* path leading to the current
+node.  If REBUILD then return nodes are left on the stack and BODY
+should return two values (MODIFIEDP NEW-BLOCK) indicating if the node
+has been modified and if so, giving the new value to use (where
+NEW-BLOCK of NIL means to remove that block).  If not REBUILD, then a
+non-nil return from body terminates recursion."
   (assert (not (and indexp rebuild))
           (indexp rebuild)
-          "Rebuilding a tree and tracking the running path are not both supported.")
+          "Simultaneous rebuilding and index accumulation are not supported.")
   (with-gensyms (block-name body-result)
     `(let ((,body-result))
        #+broken
@@ -1196,6 +1178,19 @@ recursion."
                `(mapc (lambda (child-slot)
                         (mapc #'do-tree- (child-list ,node child-slot)))
                       (child-slots ,node)))
+             (map-children/i (node index) ; Map children with updated index.
+               `(mapc
+                 (lambda (child-slot &aux (counter 0))
+                   (let ((name (slot-spec-slot child-slot)))
+                     (if (= 1 (slot-spec-arity child-slot))
+                         ;; Single arity just add slot name.
+                         (do-tree- (slot-value ,node name) (list* name ,index))
+                         ;; Otherwise add slot name and index into slot.
+                         (mapc (lambda (child)
+                                 (do-tree- child (list* counter name ,index))
+                                 (incf counter))
+                               (child-list ,node child-slot)))))
+                 (child-slots ,node)))
              (mapcar-children (node)
                ;; Return copy keys and values for any changed
                ;; child-slot or none for unchanged child-slots.
@@ -1218,16 +1213,16 @@ recursion."
                        (list (make-keyword (slot-spec-slot child-slot))
                              children))))
                  (child-slots ,node)))))
-        (setf ,body-result)
-        ,@(when rebuild '((second) (multiple-value-list)))
+        (setf ,body-result) (second) (multiple-value-list)
         (block ,block-name)
         (labels
-            ((do-tree- (node ,@(when indexp (list index)))
+            ((do-tree- (node ,@(when indexp '(index)))
                (typecase node           ; Ignore non-node children.
                  ,(if rebuild
                       `(node            ; Build a new tree on the stack.
-                        (multiple-value-bind (modified new) (let ((,var node))
-                                                              ,@body)
+                        (multiple-value-bind (modified new)
+                            (let ((,var node))
+                              ,@body)
                           (when modified (setf node new))
                           (if node
                               (if-let ((keys (mapcar-children node)))
@@ -1235,14 +1230,25 @@ recursion."
                                 (values modified node))
                               (values modified node))))
                       `(node            ; Don't rebuild a new tree.
-                        (when-let ((,body-result (let ((,var node)) ,@body)))
-                          (return-from ,block-name ,body-result))
-                        (map-children node)))))))
-        (do-tree- ,tree))
+                        (multiple-value-bind (exit result)
+                            (let ((,var node)
+                                  ,@(when indexp `((,index index))))
+                              ,@body)
+                          (when exit
+                            (return-from ,block-name (values exit result)))
+                          ,(if indexp
+                               '(map-children/i node index)
+                               '(map-children node)))))))))
+        (do-tree- ,tree ,@(when indexp '(nil))))
        ,(if value value body-result))))
 
 #+evaluation
 (progn
+(defun my-position (predicate tree)
+  (do-tree (node tree :index index)
+    (when (funcall predicate node)
+      (values t (nreverse index)))))
+
 (defun my-remove (predicate tree)
   (do-tree (node tree :rebuild t)
     (when (funcall predicate node)
@@ -1255,7 +1261,7 @@ recursion."
 
 (defun my-find (predicate tree)
   (do-tree (node tree)
-    (when (funcall predicate node) node)))
+    (when (funcall predicate node) (values t node))))
 
 (defun my-reduce (predicate tree &aux acc)
   (do-tree (node tree :value acc)
