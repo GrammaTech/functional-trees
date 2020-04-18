@@ -459,6 +459,7 @@ that FINGER is pointed through."))
 ;;; a set of rewrites (with var objects).  (Is this still relevant?)
 ;;  Also, conversion of the transform set to a trie.
 
+;;; TODO: Replace this with generic implementations of mapc and mapcar.
 (defgeneric map-tree (function tree)
   (:documentation
    "Map FUNCTION over TREE returning the result as a (potentially) new tree.")

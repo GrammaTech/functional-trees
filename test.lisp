@@ -482,8 +482,9 @@ bucket getting at least 1.  Return as a list."
 (deftest map-tree.1 ()
     (let* ((n1 (convert 'node-cons '(:a (:b) (:c) (:d))))
            (n2 (map-tree (lambda (n)
-                           (if (eql :c (data n))
-                               (make-instance 'node-cons :data :c)
+                           ;; FIXME: Should only be mapping over nodes.
+                           (if (eql :c (head n))
+                               (make-instance 'node-cons :head :c)
                                n))
                          n1)))
       (is (not (eql n1 n2)))
