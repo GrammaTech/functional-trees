@@ -258,14 +258,36 @@ Otherwise, it is NIL.")
               (etypecase i
                 (cons i)
                 (fixnum
-                 (unless (= 1 (length (child-slots node)))
-                   (error "numeric index ~a used with multiple child slots ~s"
-                          i (child-slots node)))
-                 (cons (first (child-slots node)) i)))
-            (let ((children (slot-value node slot)))
-              (unless (and (<= 0 index) (< index (length children)))
-                (error "~a not a valid child index for ~a" index node))
-              (setf node (elt children index)))))
+                 (cond
+                   ((= 1 (length (child-slots node)))
+                    (if (consp (first (child-slots node)))
+                        (if (>= i (cdr (first (child-slots node))))
+                            (error
+                             "numeric index ~a too large for child slot ~a"
+                             i (first (child-slots node)))
+                            (cons (car (first (child-slots node))) i))
+                        (cons (first (child-slots node)) i)))
+                   ((every (lambda (slot)
+                             (and (consp slot)
+                                  (typep (cdr slot) '(integer 1))))
+                           (child-slots node))
+                    (let ((index 0))
+                      (or (iter (for (slot . size) in (child-slots node))
+                                (when (> (+ index size) i)
+                                  (return (cons slot (- i index))))
+                                (incf index size))
+                          (error "numeric index ~a too large for child slots ~s"
+                                 i (child-slots node)))))
+                   (t
+                    (error "numeric index ~a used with ambiguous child slots ~s"
+                           i (child-slots node))))))
+            (let ((value (slot-value node slot)))
+              (if (eql (cdr (assoc slot (child-slots node))) 1)
+                  (setf node value)
+                  (progn
+                    (unless (and (<= 0 index) (< index (length value)))
+                      (error "~a not a valid child index for ~a" index node))
+                    (setf node (elt value index)))))))
     ;; This assignment is functionally ok, since it is assigned
     ;; only once when the cache is filled
     (setf (slot-value f 'cache) node)))
