@@ -14,5 +14,3 @@ one tree to its successors."
   :in-order-to ((test-op (load-op "functional-trees/test")))
   :perform
   (test-op (o c) (symbol-call :functional-trees/test '#:test)))
-
-(register-system-packages "misc-extensions" '(:gmap))

@@ -47,7 +47,6 @@ sub-class finalization process for sub-classes of `node`.
 - [X] Define a map-tree function.
 - [X] Replace `update-tree` with `map-tree`
 - [X] Ensure tests provide good coverage.
-- [X] Integrate with GMap.
 - [ ] Automatically define `convert` methods for subclasses of node.
 - [X] Consider hooking into the class definition mechanisms with the
       MOP to define copy-based setf setters for all fields on any
