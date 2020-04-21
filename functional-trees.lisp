@@ -153,11 +153,12 @@ specifies a specific number of children held in the slot.")
                 (cons form))
             `(defmethod (setf ,slot) (new (obj ,class))
                ,@(when (and arity (numberp arity))
-                   `(assert
+                   `((assert
                       (= ,arity (length new))
+                      ()
                       ,(format nil "New value for ~a has wrong arity ~~a not ~a."
                                slot arity)
-                      (length new)))
+                      (length new))))
                ;; TODO: Actually I'm not sure what we want here.
                (copy obj ,(make-keyword slot) new))))
         child-slots)))

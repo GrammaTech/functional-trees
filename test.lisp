@@ -611,13 +611,21 @@ bucket getting at least 1.  Return as a list."
   (let ((*print-readably* t)
         (n1 (convert 'node-cons '(:a)))
         (t1 (convert 'node-cons '(:a))))
+    (declare (ignorable t1))
     (flet ((%e (v)
              (handler-case (progn (prin1 v) nil)
                (error () t))))
-    (is (%e (convert 'node-cons '(:a))))
-    (is (%e (path-transform-of n1 n1)))
-    ;; Currently the following is nil which prints w/o issue.
-    #+broken (is (%e (finger t1))))))
+      (is (%e (convert 'node-cons '(:a))))
+      (is (%e (path-transform-of n1 n1))))))
+
+(deftest print.3 ()
+  (let* ((init-list '(:a "ab" (:b) "xy" (:c (:d) #\Z (:e "!"))))
+         (node (convert 'node-cons init-list))
+         (f (make-instance 'finger :node node
+                           :path '(1 0)))
+         (*print-readably* t))
+    (is (handler-case (progn (prin1 f) nil)
+          (error () t)))))
 
 (defun random-test-check (n1 n2)
   (when (and n1 n2)
@@ -1206,7 +1214,7 @@ diagnostic information on error or failure."
            (good (convert 'node-with-data `(:c ,n1 ,n2)))
            (bad (convert 'node-with-data `(:c ,n1a ,n2a))))
       (%f #'path-transform-of good bad)
-      (%f #'path-transform-of bad good))))          
+      (%f #'path-transform-of bad good))))
 
 (deftest prefix?.1 ()
   (is (prefix? nil nil))
