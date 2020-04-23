@@ -123,7 +123,8 @@ specifies a specific number of children held in the slot.")
 ;; `finalize-inheritance' above should always define something more
 ;; specific.
 (defmethod children ((node node))
-  (error "Somehow ~S doesn't have a `children' defmethod." (type-of node)))
+  (error "class ~S has no children, it should define `child-slots'"
+         (type-of node)))
 
 ;;; When we finalize sub-classes of node, define a children method on
 ;;; that class and also define functional copying setf writers.
