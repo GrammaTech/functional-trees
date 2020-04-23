@@ -388,18 +388,20 @@ that FINGER is pointed through."))
                      transform x))))))
       (%transform node))))
 
-(defun populate-fingers (root)
-  "Walk tree, creating fingers back to root."
-  (traverse-nodes-with-rpaths
-   root
-   (lambda (n rpath)
-     ;; This is the only place this slot should be
-     ;; assigned, which is why there's no writer method.
-     (unless (finger n)
-       (setf (slot-value n 'finger)
-             (make-instance 'finger :node root :path (reverse rpath))))
-     n))
-  root)
+(defgeneric populate-fingers (root)
+  (:documentation "Walk tree, creating fingers back to root.")
+  (:method ((root node))
+    (traverse-nodes-with-rpaths
+     root
+     (lambda (n rpath)
+       ;; This is the only place this slot should be
+       ;; assigned, which is why there's no writer method.
+       (unless (finger n)
+         (setf (slot-value n 'finger)
+               (make-instance 'finger :node root :path (reverse rpath))))
+       n))
+    root)
+  (:method ((root null)) nil))
 
 ;;; This expensive function is used in testing and in FSet
 ;;; compatibility functions.  It computes the path leading from ROOT
