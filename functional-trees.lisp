@@ -41,7 +41,7 @@
                 :class-slots)
   (:export :copy :node-equalp
            :node :transform :child-slots :finger
-           :path :transform-finger-to :residue
+           :path :transform-finger-to :populate-fingers :residue
            :children
            :do-tree :mapc :mapcar
            :swap)
