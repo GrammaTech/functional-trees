@@ -12,7 +12,7 @@
 ;;;; and no official endorsement should be inferred.
 (defpackage :functional-trees
   (:nicknames :ft :functional-trees/functional-trees)
-  (:use :common-lisp :alexandria :iterate)
+  (:use :common-lisp :alexandria :iterate :cl-store)
   (:shadowing-import-from :fset
                           :@ :do-seq :seq :lookup :alist :size
                           :unionf :appendf :with :less :splice :insert :removef
@@ -122,6 +122,16 @@ specifies a specific number of children held in the slot.")
              (collecting `(format t "~a = ~s~%"
                                   ,(format nil "~s" form)
                                   ,form)))))
+
+(defvar *node-obj-code* (register-code 45 'node))
+
+(defstore-cl-store (obj node stream)
+  (let ((*store-class-slots* nil))
+    (output-type-code *node-obj-code* stream)
+    (cl-store::store-type-object obj stream)))
+
+(defrestore-cl-store (node stream)
+  (cl-store::restore-type-object stream))
 
 (defgeneric children (node)
   (:documentation "Return all children of NODE."))

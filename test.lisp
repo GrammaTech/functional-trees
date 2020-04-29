@@ -19,8 +19,10 @@
         :curry-compose-reader-macros
         :stefil
         :iterate
+        :cl-store
         #+gt :testbot)
   (:import-from :uiop/utility :nest)
+  (:import-from :uiop/stream :with-temporary-file)
   (:shadowing-import-from :functional-trees
                           :dump
                           :lexicographic-<
@@ -1365,3 +1367,9 @@ diagnostic information on error or failure."
                              node))
                       (make-instance 'node-with-data
                                      :children '(3 2 1)))))))
+
+(deftest serialization-test ()
+  (with-temporary-file (:pathname store-file)
+    (let ((tree (make-random-tree 5)))
+      (store tree store-file)
+      (is (node-equalp tree (restore store-file))))))
