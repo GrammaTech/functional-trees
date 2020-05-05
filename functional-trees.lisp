@@ -214,8 +214,8 @@ specifies a specific number of children held in the slot.")
   (nest
    (apply #'make-instance (class-name (class-of node)))
    (apply #'append keys)
-   (mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
-   (mapcar #'slot-definition-name )
+   (cl:mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
+   (cl:mapcar #'slot-definition-name )
    (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
    (class-slots (class-of node))))
 
@@ -241,19 +241,27 @@ Otherwise, it is NIL.")
          :documentation "Internal slot used to cache the lookup of a node."))
   (:documentation "A wrapper for a path to get to a node"))
 
+(declaim (inline slot-spec-slot slot-spec-arity child-list))
+
+(defun slot-spec-slot (slot-spec)
+  (if (consp slot-spec) (car slot-spec) slot-spec))
+
+(defun slot-spec-arity (slot-spec)
+  (or (and (consp slot-spec) (cdr slot-spec)) 0))
+
+(defun child-list (node slot-spec)
+  (let ((children (slot-value node (slot-spec-slot slot-spec))))
+    (if (eql 1 (slot-spec-arity slot-spec))
+        (list children)
+        children)))
+
 (defmacro do-tree ((var tree
                         &key
                         ;; (start nil startp) (end nil endp)
                         ;; (from-end nil from-end-p)
                         (index nil indexp) (rebuild)
-                        (value nil))
+                        (value nil valuep))
                    &body body)
-  ;; NOTE: Might want to rewrite most of the traversals using generic
-  ;;       functions.  This would make it easier for clients to
-  ;;       customize traversal logic.  Just keep `do-tree' for the
-  ;;       interface.  To do this see the `traverse-nodes'
-  ;;       functionality which is in older versions in version
-  ;;       control.
   "Generalized tree traversal used to implement common lisp sequence functions.
 VALUE is the value to return upon completion.  INDEX may hold a
 variable bound in BODY to the *reversed* path leading to the current
@@ -265,102 +273,137 @@ non-nil return from body terminates recursion."
   ;; (declare (ignorable start end from-end))
   ;; (when (or startp endp from-end-p)
   ;;   (warn "TODO: implement start end and from-end-p."))
-  (assert (not (and indexp rebuild))
-          (indexp rebuild)
-          "Simultaneous rebuilding and index accumulation are not supported.")
-  (with-gensyms (block-name body-result)
-    `(let ((,body-result))
-       #+broken
-       (assert (notany #'identity ,from-end ,end ,start)
-               (,from-end ,end ,start)
-               "TODO: implement support for ~a key"
-               (cdr (find-if #'car
-                             (mapcar #'cons
-                                     (list ,from-end ,end ,start)
-                                     '(from-end end start)))))
+  (when (and rebuild indexp)
+    (error "Does not support :index with :rebuild"))
+  (with-gensyms (block-name body-fn)
+    `(progn
        (nest
-        (macrolet
-            ((slot-spec-slot (slot-spec)
-               `(if (consp ,slot-spec) (car ,slot-spec) ,slot-spec))
-             (slot-spec-arity (slot-spec) ; 0 for infinit arity.
-               `(or (and (consp ,slot-spec) (cdr ,slot-spec)) 0))
-             (child-list (node slot-spec) ; Ensure children are a list.
-               `(let ((children (slot-value ,node (slot-spec-slot ,slot-spec))))
-                  (if (= 1 (slot-spec-arity ,slot-spec))
-                      (list children)
-                      children)))
-             (map-children (node)
-               `(cl:mapc (lambda (child-slot)
-                           (cl:mapc #'do-tree- (child-list ,node child-slot)))
-                      (child-slots ,node)))
-             (map-children/i (node index) ; Map children with updated index.
-               `(let ((num-slots (length (child-slots ,node))))
-                  (cl:mapc
-                   (lambda (child-slot &aux (counter 0))
-                     (let ((name (slot-spec-slot child-slot)))
-                       (if (= 1 (slot-spec-arity child-slot))
-                           ;; Single arity just add slot name.
-                           (do-tree- (slot-value ,node name)
-                             (list* (make-keyword name) ,index))
-                           ;; Otherwise add slot name and index into slot.
-                           (cl:mapc
-                            (lambda (child)
-                              (do-tree- child (if (= 1 num-slots)
-                                                  (list* counter ,index)
-                                                  (list* counter name ,index)))
-                              (incf counter))
-                            (child-list ,node child-slot)))))
-                   (child-slots ,node))))
-             (mapcar-children (node)
-               ;; Return copy keys and values for any changed
-               ;; child-slot or none for unchanged child-slots.
-               `(mappend
-                 (lambda (child-slot &aux modifiedp)
-                   (let ((children
-                          (cl:mapcar (lambda (child)
-                                       (multiple-value-bind (modified new)
-                                           (do-tree- child)
-                                         (when modified (setf modifiedp t))
-                                         (if modified new child)))
-                                     (child-list ,node child-slot))))
-                     ;; Adjust the children list for special arities.
-                     (case (slot-spec-arity child-slot)
-                       ;; Unpack a single-arity child from the list.
-                       (1 (setf children (car children)))
-                       ;; Remove nils from flexible-arity child lists.
-                       (0 (setf children (remove nil children))))
-                     (when modifiedp
-                       (list (make-keyword (slot-spec-slot child-slot))
-                             children))))
-                 (child-slots ,node)))))
-        (setf ,body-result) (second) (multiple-value-list)
+        (nth-value 1)
         (block ,block-name)
-        (labels
-            ((do-tree- (node ,@(when indexp '(index)))
-               (typecase node           ; Ignore non-node children.
-                 ,(if rebuild
-                      `(node            ; Build a new tree on the stack.
-                        (multiple-value-bind (modified new)
-                            (let ((,var node))
-                              ,@body)
-                          (when modified (setf node new))
-                          (if node
-                              (if-let ((keys (mapcar-children node)))
-                                (values t (apply #'copy node keys))
-                                (values modified node))
-                              (values modified node))))
-                      `(node            ; Don't rebuild a new tree.
-                        (multiple-value-bind (exit result)
-                            (let ((,var node)
-                                  ,@(when indexp `((,index index))))
-                              ,@body)
-                          (when exit
-                            (return-from ,block-name (values exit result)))
-                          ,(if indexp
-                               '(map-children/i node index)
-                               '(map-children node)))))))))
-        (do-tree- ,tree ,@(when indexp '(nil))))
-       ,(if value value body-result))))
+        (flet ((,body-fn (,var ,@(when indexp (list index)))
+                 ,@(if rebuild
+                       body
+                       `((multiple-value-bind (exit result)
+                             (let () ,@body)
+                           (when exit (return-from ,block-name
+                                        (values exit result))))
+                         nil))))
+          (declare (dynamic-extent #',body-fn)))
+        ,(cond
+           (rebuild `(traverse-tree ,tree #',body-fn))
+           (indexp `(pure-traverse-tree/i ,tree nil #',body-fn))
+           (t `(pure-traverse-tree ,tree #',body-fn))))
+       ,@(when valuep (list value)))))
+
+(defgeneric pure-traverse-tree/i (node index fn)
+  (:documentation "Traverse tree below NODE in preorder, calling
+FN on each node (and with the reversed path INDEX to that node).
+If the call returns true, terminate the traversal and return
+the two values.  Otherwise, return NIL NIL."))
+
+(defmethod pure-traverse-tree/i ((node t) (index list) (fn function)) nil)
+
+(defmethod pure-traverse-tree/i ((node node) (index list) (fn function))
+  (funcall fn node index)
+  (map-children/i node index fn))
+
+(defgeneric pure-traverse-tree (node fn)
+  (:documentation "Traverse tree at and below NODE in preorder,
+calling FN on each node.  If the first value returned by FN is
+true, terminate the traversal and return the two values returned
+by the call."))
+
+(defmethod pure-traverse-tree ((node t) (fn function)) nil)
+
+(defmethod pure-traverse-tree ((node node) (fn function))
+  (funcall fn node)
+  (map-children node fn))
+
+(defgeneric traverse-tree (node fn)
+  (:documentation "Traverse tree rooted at NODE in preorder.
+At each node, call FN.  If the first value returned is true,
+replaced node by the second returned value and continued the
+traversal.  If any child is replaced also replace the parent
+node (as the trees are applicative.)"))
+
+(defmethod traverse-tree ((node t) (fn function)) nil)
+
+(defmethod traverse-tree ((node node) (fn function))
+  (block nil
+    (multiple-value-bind (modified new)
+        (funcall fn node)
+      (when modified
+        (if new
+            (setf node new)
+            (return (values modified nil))))
+      (if-let ((keys (mapcar-children node fn)))
+        (values t (apply #'copy node keys))
+        (values modified node)))))
+
+(defgeneric map-children/i (node index fn)
+  (:documentation "Call FN on each child of NODE, along with the INDEX
+augmented by the label of that child"))
+
+(defmethod map-children/i ((node node) (index list) (fn function))
+  (let* ((child-slots (child-slots node))
+         (num-slots (length child-slots))
+         (counter 0))
+    (declare (type fixnum counter))
+    (dolist (child-slot child-slots)
+      (let ((name (slot-spec-slot child-slot)))
+        (if (eql 1 (slot-spec-arity child-slot))
+            ;; Single arity just add slot name.
+            (pure-traverse-tree/i (slot-value node name)
+                                  ;; TODO: precompute this keyword in slot-spec
+                                  (list* (make-keyword name) index)
+                                  fn)
+            ;; Otherwise add slot name and index into slot.
+            (let ((child-list (child-list node child-slot)))
+              (if (eql 1 num-slots)
+                  (dolist (child child-list)
+                    (pure-traverse-tree/i child (list* counter index) fn)
+                    (incf counter))
+                  (dolist (child child-list)
+                    (pure-traverse-tree/i child (list* counter name index) fn)
+                    (incf counter)))))))
+    child-slots))
+
+(defmethod map-children ((node t) (fn function)) nil)
+
+(defmethod map-children ((node node) (fn function))
+  (let ((child-slots (child-slots node)))
+    (dolist (child-slot child-slots)
+      (dolist (child (child-list node child-slot))
+        (pure-traverse-tree child fn)))
+    child-slots))
+
+(defgeneric mapcar-children (node fn)
+  (:documentation "Apply traverse-children recursively to children of NODE,
+returning a plist suitable for passing to COPY"))
+
+(defmethod mapcar-children ((node t) (fn function)) nil)
+
+(defmethod mapcar-children ((node node) (fn function))
+  (mappend
+   (lambda (child-slot &aux modifiedp)
+      (let ((children
+             (cl:mapcar (lambda (child)
+                          (multiple-value-bind (modified new)
+                              (traverse-tree child fn)
+                            (when modified (setf modifiedp t))
+                            (if modified new child)))
+                        (child-list node child-slot))))
+        ;; Adjust the children list for special arities.
+        (case (slot-spec-arity child-slot)
+          ;; Unpack a single-arity child from the list.
+          (1 (setf children (car children)))
+          ;; Remove nils from flexible-arity child lists.
+          (0 (setf children (remove nil children))))
+        (when modifiedp
+          ;; TODO: precompute keyword in slot spec
+          (list (make-keyword (slot-spec-slot child-slot))
+                children))))
+   (child-slots node)))
 
 ;;; The Path should hold
 ;;; - a raw index into the children
@@ -910,8 +953,8 @@ are compared with each other using fset:compare"
         (make-instance
          'path-transform
          :from orig-from
-         :transforms (mapcar (lambda (p) (append p (list :live)))
-                             sorted-result))))))
+         :transforms (cl:mapcar (lambda (p) (append p (list :live)))
+                                sorted-result))))))
 
 ;;; TODO: enhance this compression so that paths that differ
 ;;; only in the final index are compressed into "range" paths.
@@ -1210,6 +1253,12 @@ of a node.")
     (funcall function node)
     nil))
 
+(defmethod new-mapc (function (tree node) &rest more)
+  (fset::check-two-arguments more 'mapc 'node)
+  (new-do-tree (node tree :value tree)
+    (funcall function node)
+    nil))
+
 (defgeneric mapcar (function container &rest more)
   (:documentation "Map FUNCTION over CONTAINER.")
   (:method (function (nothing null) &rest more)
@@ -1282,7 +1331,7 @@ checking and normalization of :TEST and :TEST-NOT arguments."
 
 (defmethod find-if (predicate (node node)
                     &key from-end end start key)
-  (assert (notany #'identity from-end end start)
+  (assert (not (or from-end end start))
           (from-end end start)
           "TODO: implement support for ~a key in `find-if'"
           (cdr (find-if #'car
@@ -1308,7 +1357,7 @@ checking and normalization of :TEST and :TEST-NOT arguments."
 (defmethod count-if (predicate (node node)
                      &key from-end end start key &allow-other-keys
                      &aux (count 0))
-  (assert (notany #'identity from-end end start)
+  (assert (not (or from-end end start))
           (from-end end start)
           "TODO: implement support for ~a key in `find-if'"
           (cdr (find-if #'car
@@ -1337,7 +1386,7 @@ checking and normalization of :TEST and :TEST-NOT arguments."
 (defmethod position-if (predicate (node node)
                         &key from-end end start
                           (key nil))
-  (assert (notany #'identity from-end end start)
+  (assert (not (or from-end end start))
           (from-end end start)
           "TODO: implement support for ~a key in `position-if'"
           (cdr (find-if #'car
