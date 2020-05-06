@@ -1261,9 +1261,7 @@ of a node.")
 (defmethod mapcar (function (tree node) &rest more)
   (fset::check-two-arguments more 'mapcar 'node)
   (do-tree (node tree :rebuild t)
-    (multiple-value-bind (modified new)
-        (funcall function node)
-      (if modified new node))))
+    (funcall function node)))
 
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
