@@ -265,20 +265,17 @@ Otherwise, it is NIL.")
   "Generalized tree traversal used to implement common lisp sequence functions.
 VALUE is the value to return upon completion.  INDEX may hold a
 variable bound in BODY to the *reversed* path leading to the current
-node.  If REBUILD then return nodes are left on the stack and BODY
-should return two values (MODIFIEDP NEW-BLOCK) indicating if the node
-has been modified and if so, giving the new value to use (where
-NEW-BLOCK of NIL means to remove that block).  If not REBUILD, then a
-non-nil return from body terminates recursion."
+node.  If REBUILD then the body should return the new node that will
+replace NODE, NODE itself if it is not to be replaced, and NIL if NODE
+is to be deleted (from a variable arity list of children in its parent."
   ;; (declare (ignorable start end from-end))
   ;; (when (or startp endp from-end-p)
   ;;   (warn "TODO: implement start end and from-end-p."))
   (when (and rebuild indexp)
     (error "Does not support :index with :rebuild"))
-  (with-gensyms (block-name body-fn)
+  (with-gensyms (block-name body-fn tree-var)
     `(progn
        (nest
-        (nth-value 1)
         (block ,block-name)
         (flet ((,body-fn (,var ,@(when indexp (list index)))
                  ,@(if rebuild
@@ -289,17 +286,16 @@ non-nil return from body terminates recursion."
                                         (values exit result))))
                          nil))))
           (declare (dynamic-extent #',body-fn)))
+        (let ((,tree-var ,tree)))
         ,(cond
-           (rebuild `(traverse-tree ,tree #',body-fn))
-           (indexp `(pure-traverse-tree/i ,tree nil #',body-fn))
-           (t `(pure-traverse-tree ,tree #',body-fn))))
+           (rebuild `(traverse-tree ,tree-var #',body-fn))
+           (indexp `(pure-traverse-tree/i ,tree-var nil #',body-fn))
+           (t `(pure-traverse-tree ,tree-var #',body-fn))))
        ,@(when valuep (list value)))))
 
 (defgeneric pure-traverse-tree/i (node index fn)
   (:documentation "Traverse tree below NODE in preorder, calling
-FN on each node (and with the reversed path INDEX to that node).
-If the call returns true, terminate the traversal and return
-the two values.  Otherwise, return NIL NIL."))
+FN on each node (and with the reversed path INDEX to that node)."))
 
 (defmethod pure-traverse-tree/i ((node t) (index list) (fn function)) nil)
 
@@ -309,9 +305,7 @@ the two values.  Otherwise, return NIL NIL."))
 
 (defgeneric pure-traverse-tree (node fn)
   (:documentation "Traverse tree at and below NODE in preorder,
-calling FN on each node.  If the first value returned by FN is
-true, terminate the traversal and return the two values returned
-by the call."))
+calling FN on each node."))
 
 (defmethod pure-traverse-tree ((node t) (fn function)) nil)
 
@@ -326,23 +320,19 @@ replaced node by the second returned value and continued the
 traversal.  If any child is replaced also replace the parent
 node (as the trees are applicative.)"))
 
-(defmethod traverse-tree ((node t) (fn function)) nil)
+(defmethod traverse-tree ((node t) (fn function)) node)
 
 (defmethod traverse-tree ((node node) (fn function))
   (block nil
-    (multiple-value-bind (modified new)
-        (funcall fn node)
-      (when modified
-        (if new
-            (setf node new)
-            (return (values modified nil))))
-      (if-let ((keys (mapcar-children node fn)))
-        (values t (apply #'copy node keys))
-        (values modified node)))))
+    (let ((new (funcall fn node)))
+      (when (null new) (return nil))
+      (if-let ((keys (mapcar-children new fn)))
+        (apply #'copy new keys)
+        new))))
 
 (defgeneric map-children/i (node index fn)
   (:documentation "Call FN on each child of NODE, along with the INDEX
-augmented by the label of that child"))
+augmented by the label of that child."))
 
 (defmethod map-children/i ((node node) (index list) (fn function))
   (let* ((child-slots (child-slots node))
@@ -365,8 +355,7 @@ augmented by the label of that child"))
                     (incf counter))
                   (dolist (child child-list)
                     (pure-traverse-tree/i child (list* counter name index) fn)
-                    (incf counter)))))))
-    child-slots))
+                    (incf counter)))))))))
 
 (defmethod map-children ((node t) (fn function)) nil)
 
@@ -374,8 +363,7 @@ augmented by the label of that child"))
   (let ((child-slots (child-slots node)))
     (dolist (child-slot child-slots)
       (dolist (child (child-list node child-slot))
-        (pure-traverse-tree child fn)))
-    child-slots))
+        (pure-traverse-tree child fn)))))
 
 (defgeneric mapcar-children (node fn)
   (:documentation "Apply traverse-children recursively to children of NODE,
@@ -388,10 +376,9 @@ returning a plist suitable for passing to COPY"))
    (lambda (child-slot &aux modifiedp)
       (let ((children
              (cl:mapcar (lambda (child)
-                          (multiple-value-bind (modified new)
-                              (traverse-tree child fn)
-                            (when modified (setf modifiedp t))
-                            (if modified new child)))
+                          (let ((new (traverse-tree child fn)))
+                            (unless (eql new child) (setf modifiedp t))
+                            new))
                         (child-list node child-slot))))
         ;; Adjust the children list for special arities.
         (case (slot-spec-arity child-slot)
@@ -740,7 +727,7 @@ are compared with each other using fset:compare"
   (declare (type node-heap nh))
   (nest
    (with-slots (heap count) nh)
-   (if (= count 0) nil)
+   (if (eql count 0) nil)
    (let ((d (aref heap 0)))
      (decf count)
      (when (> count 0)
@@ -1045,7 +1032,7 @@ if NEW replaces the target or is added alongside the target.  SPLICE
 is a boolean flagging if NEW is inserted or spliced.  CHECKS allows
 for the specification of checks to run at the beginning of the
 functions."
-  (flet ((arg-values (args) (cl:mapcar #'car (remove '&optional args))))
+  (flet ((arg-values (args) (cl:mapcar #'car (cl:remove '&optional args))))
     `(progn
        (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
          ,@checks (values ,@new))
@@ -1194,7 +1181,7 @@ of a node.")
              (declare (type function value-fn))
              (if (typep node 'node)
                  (append (multiple-value-list (funcall value-fn node))
-                         (mapcar #'convert- (children node)))
+                         (cl:mapcar #'convert- (children node)))
                  node)))
     (convert- node)))
 
@@ -1212,21 +1199,22 @@ of a node.")
    (if value-fn-p value-fn
        (let ((slots
               (nest
-               (remove-if
+               (cl:remove-if
                 (rcurry #'member (append '(serial-number transform finger
                                            child-slots size)
-                                         (mapcar (lambda (slot)
-                                                   (etypecase slot
-                                                     (symbol slot)
-                                                     (cons (car slot))))
-                                                 (child-slots node)))))
-               (mapcar #'slot-definition-name (class-slots (class-of node))))))
+                                         (cl:mapcar (lambda (slot)
+                                                      (etypecase slot
+                                                        (symbol slot)
+                                                        (cons (car slot))))
+                                                    (child-slots node)))))
+               (cl:mapcar #'slot-definition-name
+                          (class-slots (class-of node))))))
          (lambda (node)
            (apply #'append
-                  (mapcar (lambda (slot)
-                            (when-let ((val (slot-value node slot)))
-                              (list (cons (make-keyword slot) val))))
-                          slots)))))))
+                  (cl:mapcar (lambda (slot)
+                               (when-let ((val (slot-value node slot)))
+                                         (list (cons (make-keyword slot) val))))
+                             slots)))))))
 
 
 ;;; FSET sequence operations (+ two) for functional tree.
@@ -1253,12 +1241,6 @@ of a node.")
     (funcall function node)
     nil))
 
-(defmethod new-mapc (function (tree node) &rest more)
-  (fset::check-two-arguments more 'mapc 'node)
-  (new-do-tree (node tree :value tree)
-    (funcall function node)
-    nil))
-
 (defgeneric mapcar (function container &rest more)
   (:documentation "Map FUNCTION over CONTAINER.")
   (:method (function (nothing null) &rest more)
@@ -1279,7 +1261,9 @@ of a node.")
 (defmethod mapcar (function (tree node) &rest more)
   (fset::check-two-arguments more 'mapcar 'node)
   (do-tree (node tree :rebuild t)
-    (funcall function node)))
+    (multiple-value-bind (modified new)
+        (funcall function node)
+      (if modified new node))))
 
 (defgeneric substitute-with (predicate sequence &key &allow-other-keys)
   (:documentation
@@ -1305,7 +1289,8 @@ with primary value even if it is nil.")
     (when key (setf key (coerce key 'function)))
     (do-tree (node node :rebuild t)
       (multiple-value-bind (new force) (funcall function node)
-        (values (or new force) new)))))
+        ;; (values (or new force) new)
+        (if force new (or new node))))))
 
 (defmethod substitute-with :around (function (node node) &key &allow-other-keys)
   ;; Ensure that we set the old node as the original for subsequent transforms.
@@ -1335,13 +1320,14 @@ checking and normalization of :TEST and :TEST-NOT arguments."
           (from-end end start)
           "TODO: implement support for ~a key in `find-if'"
           (cdr (find-if #'car
-                        (mapcar #'cons
-                                (list from-end end start)
-                                '(from-end end start)))))
+                        (cl:mapcar #'cons
+                                   (list from-end end start)
+                                   '(from-end end start)))))
   (when key (setf key (coerce key 'function)))
-  (do-tree (node node)
-    (when (funcall predicate (if key (funcall key node) node))
-      (values t node))))
+  (block done
+    (do-tree (node node)
+      (when (funcall predicate (if key (funcall key node) node))
+        (return-from done node)))))
 
 (defmethod find-if-not
     (predicate (node node) &key (key nil key-p) &allow-other-keys)
@@ -1361,9 +1347,9 @@ checking and normalization of :TEST and :TEST-NOT arguments."
           (from-end end start)
           "TODO: implement support for ~a key in `find-if'"
           (cdr (find-if #'car
-                        (mapcar #'cons
-                                (list from-end end start)
-                                '(from-end end start)))))
+                        (cl:mapcar #'cons
+                                   (list from-end end start)
+                                   '(from-end end start)))))
   (when key (setf key (coerce key 'function)))
   (do-tree (node node :value count)
     (when (funcall predicate (if key (funcall key node) node))
@@ -1390,9 +1376,9 @@ checking and normalization of :TEST and :TEST-NOT arguments."
           (from-end end start)
           "TODO: implement support for ~a key in `position-if'"
           (cdr (find-if #'car
-                        (mapcar #'cons
-                                (list from-end end start)
-                                '(from-end end start)))))
+                        (cl:mapcar #'cons
+                                   (list from-end end start)
+                                   '(from-end end start)))))
   (when key (setf key (coerce key 'function)))
   (do-tree (node node :index index)
     (when (funcall predicate (if key (funcall key node) node))
@@ -1413,8 +1399,8 @@ checking and normalization of :TEST and :TEST-NOT arguments."
 (defmethod remove-if (predicate (node node) &key key &allow-other-keys)
   (when key (setf key (coerce key 'function)))
   (do-tree (node node :rebuild t)
-    (when (funcall predicate (if key (funcall key node) node))
-      (values t nil))))
+    (and (not (funcall predicate (if key (funcall key node) node)))
+         node)))
 
 (defmethod remove-if :around (predicate (node node) &key &allow-other-keys)
   ;; Ensure that we set the old node as the original for subsequent transforms.
@@ -1436,8 +1422,9 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                           &key (copy nil copy-p) key &allow-other-keys)
   (when copy-p (setf copy (coerce copy 'function)))
   (do-tree (node node :rebuild t)
-    (when (funcall predicate (if key (funcall key node) node))
-      (values t (if copy-p (funcall copy newitem) newitem)))))
+    (if (funcall predicate (if key (funcall key node) node))
+        (if copy-p (funcall copy newitem) newitem)
+        node)))
 
 (defmethod substitute-if-not (newitem predicate (node node)
                               &key key copy &allow-other-keys)
