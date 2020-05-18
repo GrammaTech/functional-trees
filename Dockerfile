@@ -1,9 +1,8 @@
-ARG LISP
-FROM archlinux/base
+FROM ubuntu:20.04
 
-RUN pacman --noconfirm -Sy  archlinux-keyring && \
-    pacman --noconfirm -Syu autoconf base-devel make wget git && \
-    pacman --noconfirm -Syu sbcl
+RUN apt-get -y update && \
+    apt-get -y install autoconf build-essential git wget && \
+    apt-get -y install sbcl
 
 # Install quicklisp
 RUN cd /tmp/ && \
@@ -12,7 +11,7 @@ RUN cd /tmp/ && \
          --eval '(quicklisp-quickstart:install)'
 
 # Install CCL
-RUN echo -e '#!/bin/sh\n\
+RUN echo '#!/bin/sh\n\
 export CCL_DEFAULT_DIRECTORY=/usr/lib/ccl\n\
 exec ${CCL_DEFAULT_DIRECTORY}/lx86cl64 "$@"\n\
 ' > /usr/bin/ccl && \
@@ -28,9 +27,4 @@ exec ${CCL_DEFAULT_DIRECTORY}/lx86cl64 "$@"\n\
     cp -pr /tmp/ccl/* /usr/lib/ccl && \
     rm -rf /tmp/ccl
 
-COPY . /root/quicklisp/local-projects/functional-trees
-WORKDIR /root/quicklisp/local-projects/functional-trees
-ENV LISP=$LISP \
-    QUICK_LISP=/root/quicklisp/ \
-    LISP_HEAP=32678
-CMD /bin/bash
+WORKDIR /root/quicklisp/local-projects
