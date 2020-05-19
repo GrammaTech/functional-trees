@@ -148,6 +148,13 @@ which may be more nodes, or other values.")
    (child-slots :initform '((head . 1) (tail . 1)) :allocation :class))
   (:documentation "Functional replacement for cons."))
 
+(defclass node-list (node)
+  ((child-slots :initform '(child-list) :allocation :class)
+   (child-list :reader node-list-child-list
+               :initarg :child-list
+               :initform nil))
+  (:documentation "Functional replacement for LIST."))
+
 (defmethod convert ((to-type (eql 'node-cons)) (sequence list)
                     &key &allow-other-keys)
   (flet ((next (it)
@@ -165,6 +172,13 @@ which may be more nodes, or other values.")
              (node-cons (convert 'list it))
              (t it))))
     (cons (next (head node)) (next (tail node)))))
+
+(defmethod convert ((to-type (eql 'node-list)) (value t) &key) value)
+(defmethod convert ((to-type (eql 'node-list)) (sequence list) &key)
+  (make-instance 'node-list :child-list (mapcar {convert 'node-list} sequence)))
+(defmethod convert ((to-type (eql 'list)) (node node-list) &key)
+  (mapcar (lambda (x) (if (typep x 'node) (convert 'list x) x))
+          (node-list-child-list node)))
 
 (defclass node-with-fields (node)
   ((child-slots :initform '((a . 1) (b . 1)) :allocation :class)
@@ -227,6 +241,8 @@ to subtrees."))
                                   (child-slots node)))
                  node)))
     (convert- node)))
+
+
 
 (defun swap-random-nodes (root)
   (let ((node1 (random-node root))
@@ -396,12 +412,12 @@ bucket getting at least 1.  Return as a list."
 (deftest transform-path.2 ()
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:c (:x))))
-         (node1 (convert 'node-cons l1))
+         (node1 (convert 'node-list l1))
          (pt (make-instance 'path-transform
                             :from node1
-                            :transforms '(((0) nil :dead)
-                                          ((1) (0) :live))))
-         (node2 (convert 'node-cons l2)))
+                            :transforms '(((1) nil :dead)
+                                          ((2) (1) :live))))
+         (node2 (convert 'node-list l2)))
     (setf (slot-value node2 'transform) pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
@@ -412,32 +428,32 @@ bucket getting at least 1.  Return as a list."
         (is (null (residue f2)))
         (is (equal (convert 'list f2) l2))))
 
-    (let ((f3 (make-instance 'finger :node node1 :path '(1 0))))
-      (is (equal (path f3) '(1 0)))
-      (is (equal (convert 'list f3) (cadr l1)))
-
+    (let ((f3 (make-instance 'finger :node node1 :path '(2 1))))
+      (is (equal (path f3) '(2 1)))
+      (is (equal (convert 'list f3) (second (third l1))))
+      
       (let ((f4 (transform-finger-to f3 pt node2)))
-        (is (equal (path f4) '(0 0)))
+        (is (equal (path f4) '(1 1)))
         (is (null (residue f4)))
-        #+broken (is (equal (convert 'list f4) l2))))
+        (is (equal (convert 'list f4) (second (second l2))))))
 
-    (let ((f5 (make-instance 'finger :node node1 :path '(1 1 0))))
-      (is (equal (path f5) '(1 1 0)))
-      (is (equal (convert 'list f5) (third l1)))
+    (let ((f5 (make-instance 'finger :node node1 :path '(2 1))))
+      (is (equal (path f5) '(2 1)))
+      (is (equal (convert 'list f5) (second (third l1))))
       (let ((f6 (transform-finger-to f5 pt node2)))
-        (is (equal (path f6) '(0 1 0)))
+        (is (equal (path f6) '(1 1)))
         (is (null (residue f6)))
-        #+broken (is (equal (convert 'list f6) (second l2)))))))
+        (is (equal (convert 'list f6) (second (second l2))))))))
 
 (deftest transform-path.3 ()
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:b) (:d) (:c (:z) (:x) (:y))))
-         (node1 (convert 'node-cons l1))
+         (node1 (convert 'node-list l1))
          (pt (make-instance 'path-transform
                             :from node1
-                            :transforms '(((1 0) (2 1) :live)
-                                          ((1) (2) :live))))
-         (node2 (convert 'node-cons l2)))
+                            :transforms '(((2 1) (2 0) :live)
+                                          ((2) (3) :live))))
+         (node2 (convert 'node-list l2)))
     (setf (slot-value node2 'transform) pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
@@ -448,21 +464,21 @@ bucket getting at least 1.  Return as a list."
         (is (null (residue f2)))
         (is (equal (convert 'list f2) l2))))
 
-    (let ((f3 (make-instance 'finger :node node1 :path '(1 0))))
-      (is (equal (path f3) '(1 0)))
-      (is (equal (convert 'list f3) (cadr l1)))
+    (let ((f3 (make-instance 'finger :node node1 :path '(2 1))))
+      (is (equal (path f3) '(2 1)))
+      (is (equal (convert 'list f3) (second (third l1))))
       (let ((f4 (transform-finger-to f3 pt node2)))
-        (is (equal (path f4) '(2 1)))
+        (is (equal (path f4) '(2 0)))
         (is (null (residue f4)))
-        #+broken (is (equal (convert 'list f4) (cadr l2)))))
+        (is (equal (convert 'list f4) (first (third l2))))))
 
-    (let ((f5 (make-instance 'finger :node node1 :path '(1 1 0 1 0))))
-      (is (equal (path f5) '(1 1 0 1 0)))
-      (is (equal (convert 'list f5) (second (third l1))))
+    (let ((f5 (make-instance 'finger :node node1 :path '(2 0))))
+      (is (equal (path f5) '(2 0)))
+      (is (equal (convert 'list f5) (first (third l1))))
       (let ((f6 (transform-finger-to f5 pt node2)))
-        (is (equal (path f6) '(2 1 0 1 0)))
+        (is (equal (path f6) '(3 0)))
         (is (null (residue f6)))
-        #+broken (is (equal (convert 'list f6) (third (fourth l2))))))))
+        (is (equal (convert 'list f6) (first (fourth l2))))))))
 
 (deftest transform-path.error ()
   (let* ((l1 '(:a 1))
@@ -649,7 +665,8 @@ bucket getting at least 1.  Return as a list."
                                    (serial-number n3))
                         (return-from random-test-check
                           (list n1 n2 n3 n (serial-number n)
-                                (serial-number n3))))))))))
+                                (serial-number n3)
+                                f)))))))))
         (error (e)
           (return-from random-test-check
             (list n1 n2 pt e))))))
@@ -673,6 +690,7 @@ diagnostic information on error or failure."
   (remove-if (lambda (n) (declare (ignore n)) (<= (random 1.0) p)) root))
 
 (deftest swap.1 ()
+  ;; Swap (:d 26) and (:b 54 84)
   (let* ((l1 '(:i 17 17 (:d 26) (:m (:b 54 84))))
          (n1 (convert 'node-cons l1))
          (p2 '(:tail :tail :tail :head))
@@ -697,8 +715,44 @@ diagnostic information on error or failure."
     (is (eql n2 (@ n1 f2)))
     (is (eql n3 (@ n1 f3)))
     ;; Fingers find the new nodes at the new locations.
+    ;; This does not work yet, as path transforms are not working
+    ;; on non-numeric path entries
     #+broken (is (equal n2 (@ n4 f2)))
-    #+broken (is (equal n3 (@ n4 f3)))))
+    #+broken (is (equal n3 (@ n4 f3)))
+    ))
+
+;; Same as swap.1, but with 0/1 in place of :head/:tail
+(deftest swap.2 ()
+  ;; Swap (:d 26) and (:b 54 84)
+  (let* ((l1 '(:i 17 17 (:d 26) (:m (:b 54 84))))
+         (n1 (convert 'node-cons l1))
+         ;; (p2 '(:tail :tail :tail :head))
+         (p2 '(1 1 1 0))
+         (n2 (@ n1 p2))
+         (f2 (make-instance 'finger :node n1 :path p2))
+         ;; (p3 '(:tail :tail :tail :tail :head :tail :head))
+         (p3 '(1 1 1 1 0 1 0))
+         (n3 (@ n1 p3))
+         (f3 (make-instance 'finger :node n1 :path p3))
+         (n4 (swap n1 n2 n3)))
+    (is (equal (transform n1) nil))
+    (is (typep (transform n4) 'path-transform))
+    (is (equal (convert 'list n1) l1))
+    (is (equal (convert 'list n2) '(:d 26)))
+    (is (equal (convert 'list n3) '(:b 54 84)))
+    (is (equal (convert 'list n4) '(:i 17 17 (:b 54 84) (:m (:d 26)))))
+    ;; Swap moves the nodes as expected.
+    (is (eql (serial-number (@ n1 p2)) (serial-number (@ n4 p3))))
+    (is (eql (@ n1 p2) (@ n4 p3)))
+    (is (eql n2 (@ n4 p3)))
+    (is (eql n3 (@ n4 p2)))
+    ;; Fingers find original nodes in original.
+    (is (eql n2 (@ n1 f2)))
+    (is (eql n3 (@ n1 f3)))
+    ;; Fingers find the new nodes at the new locations.
+    (is (equal n2 (@ n4 f2)))
+    (is (equal n3 (@ n4 f3)))
+    ))
 
 (deftest path-of-node.0 ()
   (let ((it (convert 'node-cons '(:i 17 17 (:d 26) (:m (:b 54 84))))))
@@ -755,6 +809,7 @@ diagnostic information on error or failure."
     (t nil)))
 
 (deftest new/old.path-transform.1 ()
+  ;; Likely related to symbolic paths not working in path transforms
   #+broken
   (let* ((l1 '(a 65 (g 39 82) 23 (a 68 51)))
          (n1 (convert 'node-cons l1))
@@ -946,8 +1001,7 @@ diagnostic information on error or failure."
                     (convert 'node-with-data (iota 100)) :key #'data)))
     (is (= 0 (count 20 no-twenty :key #'data)))
     (is (= 2 (count 40 no-twenty :key #'data)))
-    ;; I don't know what `transform' is or does.
-    #+broken (is (transform no-twenty)))
+    (is (transform no-twenty)))
   (let ((it (convert 'node-with-data (iota 6))))
     (is (equal (convert 'list (substitute
                                (make-instance 'node-with-data :data :x) nil it
@@ -996,8 +1050,7 @@ diagnostic information on error or failure."
                           :key #'data)))
     (is (= 0 (count 20 no-twenty :key #'data)))
     (is (= 2 (count 40 no-twenty :key #'data)))
-    ;; I don't know what `transform' is or does.
-    #+broken (is (transform no-twenty)))
+    (is (transform no-twenty)))
   (is (equal (subst :y :x '(:a :x :y :z))
              '(:a :y :y :z)))
   (is (equal (subst :y t '(0 1 2 3 4) :key {typep _ '(eql 2)})
@@ -1192,24 +1245,22 @@ diagnostic information on error or failure."
 
 (deftest bad-tree ()
   ;; Test where a tree has a node twice
-  #+broken
   (flet ((%f (f x y)
-           (assert
+           (is
             (handler-case
                 (progn (funcall f x y) nil)
               (error (e) (declare (ignorable e))
                      ;; (format t "Expected error: ~a~%" e)
                      t))
-            ()
             "PATH-TRANSFORM-OF on tree with duplicate SN did not signal an error: ~a, ~a"
             x y)))
     (let* ((sn 261237163)
-           (n1 (convert 'node-with-data '(:a 1)))
+           (n1 (convert 'node-list '(:a 1)))
            (n1a (copy n1 :serial-number sn))
-           (n2 (convert 'node-with-data '(:b 2)))
+           (n2 (convert 'node-list '(:b 2)))
            (n2a (copy n2 :serial-number sn))
-           (good (convert 'node-with-data `(:c ,n1 ,n2)))
-           (bad (convert 'node-with-data `(:c ,n1a ,n2a))))
+           (good (convert 'node-list`(:c ,n1 ,n2)))
+           (bad (convert 'node-list`(:c ,n1a ,n2a))))
       (%f #'path-transform-of good bad)
       (%f #'path-transform-of bad good))))
 

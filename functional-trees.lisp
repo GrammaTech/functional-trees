@@ -288,7 +288,7 @@ is to be deleted (from a variable arity list of children in its parent."
           (declare (dynamic-extent #',body-fn)))
         (let ((,tree-var ,tree)))
         ,(cond
-           (rebuild `(traverse-tree ,tree-var #',body-fn))
+           (rebuild `(update-predecessor-tree ,tree-var (traverse-tree ,tree-var #',body-fn)))
            (indexp `(pure-traverse-tree/i ,tree-var nil #',body-fn))
            (t `(pure-traverse-tree ,tree-var #',body-fn))))
        ,@(when valuep (list value)))))
@@ -312,6 +312,17 @@ calling FN on each node."))
 (defmethod pure-traverse-tree ((node node) (fn function))
   (funcall fn node)
   (map-children node fn))
+
+(defgeneric update-predecessor-tree (old-tree new-tree)
+  (:documentation "Sets the back pointer of NEW-TREE to be OLD-TREE,
+if NEW-TREE lacks a back pointer.  Returns NEW-TREE."))
+
+(defmethod update-predecessor-tree ((old-tree t) (new-tree t)) new-tree)
+
+(defmethod update-predecessor-tree ((old-tree node) (new-tree node))
+  (or (slot-value new-tree 'transform)
+      (setf (slot-value new-tree 'transform) old-tree))
+  new-tree)
 
 (defgeneric traverse-tree (node fn)
   (:documentation "Traverse tree rooted at NODE in preorder.
@@ -432,12 +443,23 @@ returning a plist suitable for passing to COPY"))
                     (error "numeric index ~a used with ambiguous child slots ~s"
                            i (child-slots node))))))
             (let ((value (slot-value node slot)))
-              (if (eql (cdr (assoc slot (child-slots node))) 1)
-                  (setf node value)
-                  (progn
-                    (unless (and (<= 0 index) (< index (length value)))
-                      (error "~a not a valid child index for ~a" index node))
-                    (setf node (elt value index)))))))
+              (dolist (p (child-slots node) (error "Child slot not found: ~a" slot))
+                (if (consp p)
+                    (when (eql (car p) slot)
+                      (return
+                        (if (eql (cdr p) 1)
+                            (setf node value)
+                            (progn
+                              (unless (and (<= 0 index) (< index (length value)))
+                                (error "~a not a valid child index for ~a" index node))
+                              (setf node (elt value index))))))
+                    (when (eql p slot)
+                      (return
+                        (progn
+                          (unless (and (<= 0 index) (< index (length value)))
+                            (error "~a not a valid child index for ~a" index node))
+                          (setf node (elt value index))))))))))
+
     ;; This assignment is functionally ok, since it is assigned
     ;; only once when the cache is filled
     (setf (slot-value f 'cache) node)))
@@ -559,15 +581,20 @@ that FINGER is pointed through."))
 (defmethod transform-finger ((f finger) (node node) &key (error-p t))
   (declare (ignore error-p)) ;; for now
 
+  ;; (format t "~%~%Enter TRANSFORM-FINGER on ~a, ~a~%" f node)
   ;;; TODO: cache PATH-TRANSFORM-OF
 
   #+brute-force-transform-finger
   (let ((node-of-f (node f)))
+    ;; (format t "(TRANSFORM (NODE F)) = ~a~%" (transform (node f)))
+    ;; (format t "(TRANSFORM NODE) = ~a~%" (transform node))
     (transform-finger-to f (path-transform-of node-of-f node) node))
 
   #-brute-force-transform-finger
   (let ((node-of-f (node f)))
+    ;; (format t "NODE-OF-F = ~a~%" node-of-f)
     (labels ((%transform (x)
+               ;; (format t "%transform ~a~%" x)
                (cond
                  ((eql x node-of-f) f)
                  ((null x)
@@ -578,10 +605,13 @@ that FINGER is pointed through."))
                          node-of-f node))
                  (t
                   (let ((transform (transform x)))
+                    ;; (format t "(TRANSFORM x) = ~a~%" transform)
                     (transform-finger-to
                      (%transform (from transform))
                      transform x))))))
-      (%transform node))))
+      (let ((result (%transform node)))
+        ;; (format t "Leave TRANSFORM-FINGER returing ~a~%" result)
+        result))))
 
 (defgeneric populate-fingers (root)
   (:documentation "Walk tree, creating fingers back to root.")
