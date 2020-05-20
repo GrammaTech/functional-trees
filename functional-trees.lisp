@@ -1288,6 +1288,13 @@ of a node.")
   ;;         (mapcar function (cdr cons))))
   (:method (function (sequence sequence) &rest more)
     (apply #'cl:mapcar function sequence more))
+  (:method (predicate (seq seq) &rest more &aux result)
+    ;; TODO: handle MORE.
+    (declare (ignorable more))
+    (let ((predicate (coerce predicate 'function)))
+      (do-seq (element seq)
+        (push (funcall predicate element) result))
+      (convert 'seq (nreverse result))))
   (:method (function (sequence list) &rest more)
     (apply #'cl:mapcar function sequence more)))
 
@@ -1295,37 +1302,6 @@ of a node.")
   (fset::check-two-arguments more 'mapcar 'node)
   (do-tree (node tree :rebuild t)
     (funcall function node)))
-
-(defgeneric substitute-with (predicate sequence &key &allow-other-keys)
-  (:documentation
-   "Substitute elements of SEQUENCE with result of PREDICATE when non-nil.
-If secondary return value of PREDICATE is non-nil force substitution
-with primary value even if it is nil.")
-  (:method (predicate (sequence sequence) &key &allow-other-keys )
-    (let ((predicate (coerce predicate 'function)))
-      (map (type-of sequence)
-           (lambda (element)
-             (multiple-value-bind (value force)
-                 (funcall predicate element)
-               (if force value (or value element))))
-           sequence)))
-  (:method (predicate (seq seq) &key &allow-other-keys &aux result)
-    (let ((predicate (coerce predicate 'function)))
-      (do-seq (element seq)
-        (multiple-value-bind (value force)
-            (funcall predicate element)
-          (push (if force value (or value element)) result)))
-      (convert 'seq (nreverse result))))
-  (:method (function (node node) &key key &allow-other-keys)
-    (when key (setf key (coerce key 'function)))
-    (do-tree (node node :rebuild t)
-      (multiple-value-bind (new force) (funcall function node)
-        ;; (values (or new force) new)
-        (if force new (or new node))))))
-
-(defmethod substitute-with :around (function (node node) &key &allow-other-keys)
-  ;; Ensure that we set the old node as the original for subsequent transforms.
-  (when-let ((it (call-next-method))) (copy it :transform node)))
 
 (defmethod reduce
     (fn (node node)

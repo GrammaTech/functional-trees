@@ -43,7 +43,6 @@
                           :subst
                           :subst-if
                           :subst-if-not
-                          :substitute-with
                           :transform-finger
                           :with-encapsulation)
   (:shadowing-import-from :fset
@@ -762,10 +761,10 @@ diagnostic information on error or failure."
   (let ((it (convert 'node-cons '(:i 17 17 (:d 26) (:m (:b 54 84))))))
     (is (= 12 (size it)))))
 
-(deftest substitute-with.0 ()
-  (is (equalp (substitute-with (lambda (n) (case n (3 :eric))) '(1 2 3 4))
+(deftest mapcar.3 ()
+  (is (equalp (mapcar (lambda (n) (case n (3 :eric) (t n))) '(1 2 3 4))
               '(1 2 :eric 4)))
-  (is (equalp (substitute-with (lambda (n) (case n (3 :eric))) (fset:seq 1 2 3 4))
+  (is (equalp (mapcar (lambda (n) (case n (3 :eric) (t n))) (fset:seq 1 2 3 4))
               (fset::seq 1 2 :eric 4))))
 
 (deftest random.1 ()
