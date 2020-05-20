@@ -39,7 +39,8 @@
                 :slot-definition-allocation
                 :slot-definition-initform
                 :class-slots)
-  (:export :copy :node-equalp
+  (:export :copy :tree-copy
+           :node-equalp
            :node :transform :child-slots :finger
            :path :transform-finger-to :populate-fingers :residue
            :children
@@ -80,6 +81,11 @@
   (:method ((obj list) &key &allow-other-keys) (copy-list obj))
   (:method ((obj sequence) &key &allow-other-keys) (copy-seq obj))
   (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
+
+(defgeneric tree-copy (obj)
+  (:documentation "Copy method that descends into a tree and copies all
+its nodes.")
+  (:method ((obj t)) obj))
 
 (defclass node (identity-ordering-mixin)
   ((transform :reader transform
@@ -218,6 +224,31 @@ specifies a specific number of children held in the slot.")
    (cl:mapcar #'slot-definition-name )
    (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
    (class-slots (class-of node))))
+
+(defmethod tree-copy ((node node))
+  (let* ((child-slots (slot-value node 'child-slots))
+         (slots (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot)))
+                           (class-slots (class-of node))))
+         (slot-names (remove 'serial-number
+                             (cl:mapcar #'slot-definition-name slots)))
+         (initializers (mappend (lambda (slot) (list (make-keyword slot)
+                                                     (slot-value node slot)))
+                                slot-names))
+         (new-node (apply #'make-instance (class-name (class-of node))
+                          initializers)))
+    ;; Now write over the child slots
+    (iter (for c in child-slots)
+          (if (consp c)
+              (destructuring-bind (child-slot-name . arity) c
+                (if (eql arity 1)
+                    ;; Special case: a singleton child
+                    (setf (slot-value new-node child-slot-name)
+                          (tree-copy (slot-value new-node child-slot-name)))
+                    (setf (slot-value new-node child-slot-name)
+                          (cl:mapcar #'tree-copy (slot-value new-node child-slot-name)))))
+              (setf (slot-value new-node c)
+                    (cl:mapcar #'tree-copy (slot-value new-node child-slot-name)))))
+    new-node))    
 
 (defclass finger ()
   ((node :reader node :initarg :node

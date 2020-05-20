@@ -325,11 +325,12 @@ bucket getting at least 1.  Return as a list."
 ;;; Simple Copy Tests
 (deftest simple-copy-tests ()
   (flet ((copy-is-equal (it)
-           (is (funcall (typecase it
-                          (symbol (lambda (a b)
-                                    (string= (symbol-name a) (symbol-name b))))
-                          (t #'equalp))
-                        it (copy it)))))
+           (dolist (fn '(copy tree-copy))
+             (is (funcall (typecase it
+                            (symbol (lambda (a b)
+                                      (string= (symbol-name a) (symbol-name b))))
+                            (t #'equalp))
+                          it (funcall fn it))))))
     (every #'copy-is-equal
            (list 0
                  #(1 2 3 4)
@@ -597,6 +598,19 @@ bucket getting at least 1.  Return as a list."
          (n2 (copy n :data :b)))
     (is (not (nodes-disjoint (convert 'node-cons `(:c ,n))
                              (convert 'node-cons `(:d ,n2)))))))
+
+(deftest tree-copy.1 ()
+  (let* ((l '(:a (:b) ((:c) :d . :e)))
+         (n (convert 'node-cons l))
+         (n2 (tree-copy n))
+         (nodes nil)
+         (nodes2 nil))
+    (do-tree (x n) (push x nodes))
+    (do-tree (x n2) (push x nodes2))
+    (is (null (intersection nodes nodes2)))
+    (is (equal (convert 'list n) l))
+    (is (equal (convert 'list n2) l))
+    (is (nodes-disjoint n n2))))    
 
 (deftest node-equalp.1 ()
   (is (node-equalp nil nil))
