@@ -1064,6 +1064,9 @@ for the specification of checks to run at the beginning of the
 functions."
   (flet ((arg-values (args) (cl:mapcar #'car (cl:remove '&optional args))))
     `(progn
+       (defmethod
+           ,name :around ((tree node) (path t) ,@other-args ,@extra-args)
+           (with-encapsulation tree (call-next-method)))
        (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
          ,@checks (values ,@new))
        (defmethod ,name ((tree node) (location node) ,@other-args ,@extra-args)
