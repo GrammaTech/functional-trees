@@ -247,7 +247,7 @@ specifies a specific number of children held in the slot.")
                     (setf (slot-value new-node child-slot-name)
                           (cl:mapcar #'tree-copy (slot-value new-node child-slot-name)))))
               (setf (slot-value new-node c)
-                    (cl:mapcar #'tree-copy (slot-value new-node child-slot-name)))))
+                    (cl:mapcar #'tree-copy (slot-value new-node c)))))
     new-node))    
 
 (defclass finger ()
