@@ -1061,7 +1061,8 @@ are compared with each other using fset:compare"
   "Apply REWRITE-FN to TREE, producing a new tree.  The new
 tree has its predecessor set to TREE."
   (let ((new-tree (funcall rewrite-fn tree)))
-    (if (eql tree (from (transform new-tree)))
+    (if (or (not (typep new-tree 'node))
+            (eql tree (from (transform new-tree))))
         new-tree
         (copy new-tree :transform tree))))
 
