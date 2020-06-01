@@ -1027,6 +1027,8 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
+(defmethod lookup ((node node) (slot null))
+  node)
 (defmethod lookup ((node node) (slot symbol))
   (slot-value node slot))
 (defmethod lookup ((node node) (i integer))

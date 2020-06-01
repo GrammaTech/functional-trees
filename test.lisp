@@ -149,6 +149,11 @@ which may be more nodes, or other values.")
    (child-slots :initform '((head . 1) (tail . 1)) :allocation :class))
   (:documentation "Functional replacement for cons."))
 
+(defmethod lookup ((node node-cons) (slot (eql :head)))
+  (slot-value node 'head))
+(defmethod lookup ((node node-cons) (slot (eql :tail)))
+  (slot-value node 'tail))
+
 (defclass node-list (node)
   ((child-slots :initform '(child-list) :allocation :class)
    (child-list :reader node-list-child-list
@@ -198,6 +203,11 @@ which may be more nodes, or other values.")
   (:documentation "Example class with two fields, a and b,
 that are made available (in addition to children) as links
 to subtrees."))
+
+(defmethod lookup ((node node-with-fields) (slot (eql :a)))
+  (slot-value node 'a))
+(defmethod lookup ((node node-with-fields) (slot (eql :b)))
+  (slot-value node 'b))
 
 (defmethod node-values ((node node-with-fields)) (data node))
 
