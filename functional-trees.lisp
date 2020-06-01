@@ -34,7 +34,6 @@
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop
-                :finalize-inheritance
                 :slot-definition-name
                 :slot-definition-allocation
                 :slot-definition-initform
@@ -134,76 +133,17 @@ specifies a specific number of children held in the slot.")
   (cl-store::restore-type-object stream))
 
 (defgeneric children (node)
-  (:documentation "Return all children of NODE."))
-;; Default method should never be called as the customization of
-;; `finalize-inheritance' above should always define something more
-;; specific.
-(defmethod children ((node node))
-  (error "class ~S has no children, it should define `child-slots'"
-         (type-of node)))
-
-;;; When we finalize sub-classes of node, define a children method on
-;;; that class and also define functional copying setf writers.
-(defun expand-children-defmethod (class child-slots)
-  `(defmethod children ((node ,class))
-     ;; NOTE: For now just append everything together wrapping
-     ;; singleton arity slots in `(list ...)'.  Down the line
-     ;; perhaps something smarter that takes advantage of the
-     ;; known size of some--maybe all--slots would be better.
-     (append ,@(cl:mapcar (lambda (form)
-                            (destructuring-bind (slot . arity)
-                                (etypecase form
-                                  (symbol (cons form nil))
-                                  (cons form))
-                              (if (and arity (= (the fixnum arity) 1))
-                                  `(list (slot-value node ',slot))
-                                  `(slot-value node ',slot))))
-                          child-slots))))
-
-(defun expand-copying-setf-writers (class child-slots)
-  `(progn
-     ,@(cl:mapcar
-        (lambda (form)
-          (destructuring-bind (slot . arity)
-              (etypecase form
-                (symbol (cons form nil))
-                (cons form))
-            `(defmethod (setf ,slot) (new (obj ,class))
-               ,@(when (and arity (numberp arity))
-                   `((assert
-                      (= ,arity (length new))
-                      ()
-                      ,(format nil "New value for ~a has wrong arity ~~a not ~a."
-                               slot arity)
-                      (length new))))
-               ;; TODO: Actually I'm not sure what we want here.
-               (copy obj ,(make-keyword slot) new))))
-        child-slots)))
-
-(defun expand-lookup-specialization (class child-slots)
-  `(progn
-     ,@(cl:mapcar (lambda (form)
-                    (let ((slot (etypecase form
-                                  (symbol form)
-                                  (cons (car form)))))
-                      `(defmethod lookup
-                           ((obj ,class) (key (eql ,(make-keyword slot))))
-                         (slot-value obj ',slot))))
-                  child-slots)))
-
-(defmethod finalize-inheritance :after (class)
-  (when (subtypep class 'node)
-    (let ((child-slots
-           (nest (eval) (slot-definition-initform)
-                 (find-if
-                  (lambda (slot)
-                    (and (eql 'child-slots (slot-definition-name slot))
-                         (eql :class (slot-definition-allocation slot)))))
-                 (class-slots class))))
-      ;; Define a custom `children' method given the value of child-slots.
-      (eval (expand-children-defmethod class child-slots))
-      (eval (expand-lookup-specialization class child-slots))
-      (eval (expand-copying-setf-writers class child-slots)))))
+  (:documentation "Return all children of NODE.")
+  (:method ((node node))
+    (mappend (lambda (slot)
+               (destructuring-bind (name . arity)
+                   (etypecase slot
+                     (cons slot)
+                     (symbol (cons slot 0)))
+                 (if (= 1 arity)
+                     (list (slot-value node name))
+                     (slot-value node name))))
+             (child-slots node))))
 
 ;;; NOTE: We might want to propos a patch to FSet to allow setting
 ;;; serial-number with an initialization argument.
@@ -1087,8 +1027,8 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
-;; (defmethod lookup ((node node) (slot symbol))
-;;   (slot-value node slot))
+(defmethod lookup ((node node) (slot symbol))
+  (slot-value node slot))
 (defmethod lookup ((node node) (i integer))
   (elt (children node) i))
 
