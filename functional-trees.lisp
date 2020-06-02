@@ -44,7 +44,8 @@
            :path :transform-finger-to :populate-fingers :residue
            :children
            :do-tree :mapc :mapcar
-           :swap)
+           :swap
+           :define-node-class :define-methods-for-node-class)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -114,6 +115,12 @@ specifies a specific number of children held in the slot.")
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
+(defmacro define-node-class (&whole whole name &rest rest)
+  `(progn
+     (eval-when (:load-toplevel :compile-toplevel :execute)
+       (defclass ,name ,@rest))
+     (define-methods-for-node-class ,name)))
+
 ;; debug macro
 (defmacro dump (&body forms)
   `(progn
@@ -145,7 +152,72 @@ specifies a specific number of children held in the slot.")
                      (slot-value node name))))
              (child-slots node))))
 
-;;; NOTE: We might want to propos a patch to FSet to allow setting
+(defun expand-children-defmethod (class child-slots)
+  `(defmethod children ((node ,class))
+     ;; NOTE: For now just append everything together wrapping
+     ;; singleton arity slots in `(list ...)'.  Down the line
+     ;; perhaps something smarter that takes advantage of the
+     ;; known size of some--maybe all--slots would be better.
+     (append ,@(cl:mapcar (lambda (form)
+                            (destructuring-bind (slot . arity)
+                                (etypecase form
+                                  (symbol (cons form nil))
+                                  (cons form))
+                              (if (and arity (= (the fixnum arity) 1))
+                                  `(list (slot-value node ',slot))
+                                  `(slot-value node ',slot))))
+                          child-slots))))
+
+(defun expand-copying-setf-writers (class child-slots)
+  `(progn
+     ,@(cl:mapcar
+        (lambda (form)
+          (destructuring-bind (slot . arity)
+              (etypecase form
+                (symbol (cons form nil))
+                (cons form))
+            `(defmethod (setf ,slot) (new (obj ,class))
+               ,@(when (and arity (numberp arity))
+                   `((assert
+                      (= ,arity (length new))
+                      ()
+                      ,(format nil "New value for ~a has wrong arity ~~a not ~a."
+                               slot arity)
+                      (length new))))
+               ;; TODO: Actually I'm not sure what we want here.
+               (copy obj ,(make-keyword slot) new))))
+        child-slots)))
+
+(defun expand-lookup-specialization (class child-slots)
+  `(progn
+     ,@(cl:mapcar (lambda (form)
+                    (let ((slot (etypecase form
+                                  (symbol form)
+                                  (cons (car form)))))
+                      `(defmethod lookup
+                           ((obj ,class) (key (eql ,(make-keyword slot))))
+                         (slot-value obj ',slot))))
+                  child-slots)))
+
+(defmacro define-methods-for-node-class (class-name &environment env)
+  (let ((class (find-class class-name env)))
+    (assert class () "No class found for ~s" class-name)
+    ;; create an instance to cause the class to be finalized
+    (make-instance class-name)
+    (let ((child-slots
+           (nest (eval)
+                 (slot-definition-initform)
+                 (find-if
+                  (lambda (slot)
+                    (and (eql 'child-slots (slot-definition-name slot))
+                         (eql :class (slot-definition-allocation slot)))))
+                 (class-slots class))))
+      `(progn
+         ,(expand-children-defmethod class child-slots)
+         ,(expand-lookup-specialization class child-slots)
+         ,(expand-copying-setf-writers class child-slots)))))
+
+;;; NOTE: We might want to propose a patch to FSet to allow setting
 ;;; serial-number with an initialization argument.
 (defmethod initialize-instance :after
   ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
