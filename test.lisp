@@ -234,7 +234,7 @@ to subtrees."))
                                     (assert (consp child-slot))
                                     (destructuring-bind
                                           (slot . size) child-slot
-                                      (assert (= size 1))
+                                      (assert (eql size 1))
                                       (when-let ((children
                                                   (slot-value node slot)))
                                         (list (make-keyword slot)
@@ -360,7 +360,7 @@ bucket getting at least 1.  Return as a list."
   (is (typep (convert 'node-cons '(:a)) 'node))
   (is (null (transform (convert 'node-cons '(:b (:c))))))
   (is (equal (convert 'list (convert 'node-cons '(:a))) '(:a)))
-  (is (= 4 (serial-number (make-instance 'node :serial-number 4)))))
+  (is (eql 4 (serial-number (make-instance 'node :serial-number 4)))))
 
 (deftest finger.1 ()
   (let* ((init-list '(:a "ab" (:b) "xy" (:c (:d) #\Z (:e "!"))))
@@ -494,8 +494,8 @@ bucket getting at least 1.  Return as a list."
 
 ;;; Tests of path-transform-of, mapcar
 (deftest mapcar.0 ()
-  (is (= (mapcar #'identity 1) 1))
-  (is (= (mapcar #'1+ 1) 2))
+  (is (eql (mapcar #'identity 1) 1))
+  (is (eql (mapcar #'1+ 1) 2))
   (is (equalp (mapcar (lambda (x) (if (integerp x) (1+ x) x)) '(0 1 (2 . 3)))
               ;; Because we call cl:mapcar on regular lists.
               '(1 2 (2 . 3)))))
@@ -775,7 +775,7 @@ diagnostic information on error or failure."
 
 (deftest size.0 ()
   (let ((it (convert 'node-cons '(:i 17 17 (:d 26) (:m (:b 54 84))))))
-    (is (= 12 (size it)))))
+    (is (eql 12 (size it)))))
 
 (deftest mapcar.3 ()
   (is (equalp (mapcar (lambda (n) (case n (3 :eric) (t n))) '(1 2 3 4))
@@ -889,27 +889,29 @@ diagnostic information on error or failure."
 
 (deftest reduce-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
-    (is (= (reduce #'+ (iota 10))
-           (reduce (lambda (acc node)
-                     (+ (or (data node) 0)
-                        (reduce #'+ (remove-if {typep _ 'node} (children node)))
-                        acc))
-                   tree :initial-value 0)))))
+    (is (eql (reduce #'+ (iota 10))
+             (reduce (lambda (acc node)
+                       (+ (or (data node) 0)
+                          (reduce #'+ (remove-if {typep _ 'node} (children node)))
+                          acc))
+                     tree :initial-value 0)))))
 
 (deftest find-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
-    (is (= (data (find 4 tree :key #'data)) 4))
+    (is (eql (data (find 4 tree :key #'data)) 4))
     (is (not (find 10 tree)))))
 
 (deftest find-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
-    (is (= (data (find-if «and #'integerp [#'zerop {mod _ 3}] {< 4 }» tree :key #'data)) 6))
+    (declare (optimize (speed 0)))
+    (is (eql (data (find-if «and #'integerp [#'zerop {mod _ 3}] {< 4 }» tree :key #'data)) 6))
     (is (not (find-if (constantly nil) tree :key #'data)))
     (is (not (find-if (constantly nil) tree)))))
 
 (deftest find-if-not-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
-    (is (= (data (find-if-not [#'not «and #'integerp [#'zerop {mod _ 3}] {< 4 }»] tree :key #'data)) 6))
+    (declare (optimize (speed 0)))
+    (is (eql (data (find-if-not [#'not «and #'integerp [#'zerop {mod _ 3}] {< 4 }»] tree :key #'data)) 6))
     (is (not (find-if-not (constantly t) tree :key #'data)))
     (is (not (find-if-not #'identity tree)))))
 
@@ -928,15 +930,17 @@ diagnostic information on error or failure."
 
 (deftest count-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
-    (is (= (count 3 tree :key #'data) 1))))
+    (is (eql (count 3 tree :key #'data) 1))))
 
 (deftest count-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
+    (declare (optimize (speed 0)))
     (is (= (count-if [#'zerop {mod _ 3}] tree :key #'data) 3))
     (is (zerop (count-if (constantly nil) tree :key #'data)))))
 
 (deftest count-if-not-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
+    (declare (optimize (speed 0)))
     (is (= (count-if-not [#'zerop {mod _ 3}] tree :key #'data) 6))
     (is (not (zerop (count-if-not (constantly nil) tree :key #'data))))))
 
@@ -954,6 +958,7 @@ diagnostic information on error or failure."
 
 (deftest position-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
+    (declare (optimize (speed 0)))
     (is (= (data (@ tree (position-if «and [#'zerop {mod _ 3}] {< 4 }» tree
                                       :key #'data)))
            6))
@@ -962,6 +967,7 @@ diagnostic information on error or failure."
 
 (deftest position-if-not-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
+    (declare (optimize (speed 0)))
     (is (= (data (@ tree (position-if-not
                           [#'not «and [#'zerop {mod _ 3}] {< 4 }»]
                           tree :key #'data)))
@@ -970,6 +976,7 @@ diagnostic information on error or failure."
     (is (not (position-if-not #'not tree :key (constantly nil))))))
 
 (deftest remove-tree ()
+  (declare (optimize (speed 0)))
   (is (= (size (remove 24 (convert 'node-with-data (iota 100)) :key #'data))
          99))
   (is (transform (remove 24 (convert 'node-with-data (iota 100)) :key #'data)))
