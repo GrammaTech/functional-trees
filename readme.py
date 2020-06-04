@@ -13,10 +13,10 @@ errors in an SBCL REPL and their outputs match the given outputs. Such
 output can be specified in a language-less code block immediately
 following the Lisp code block.
 
-The whole REPL session is printed to stdout. If an error occurs, a
-Pexpect timeout exception is thrown. Otherwise, if output doesn't match,
-an Exception is thrown containing the input code, expected output, and
-actual output, respectively.
+The whole REPL session is printed to stdout. If the REPL session exits
+unexpectedly, or any evaluation takes longer than one second, or an
+error occurs, or the output doesn't match, then a descriptive error
+message is printed to stderr and an exit code of 1 is returned.
 """
 
 import sys
@@ -94,15 +94,24 @@ repl = pexpect.spawn('sbcl', echo=False, timeout=1, encoding='utf-8')
 repl.logfile = sys.stdout
 # regex matching the default SBCL prompt
 prompt = r'\* '
+# possibilities when we eval
+patterns = [prompt, pexpect.EOF, pexpect.TIMEOUT]
+# nothing should go wrong before we eval anything
 repl.expect(prompt)
 for example in examples:
     code = example['code']
     repl.send(code)
-    repl.expect(prompt)
+    index = repl.expect(patterns)
+    if index == patterns.index(pexpect.EOF):
+        sys.exit('Exited REPL unexpectedly.')
+    elif index == patterns.index(pexpect.TIMEOUT):
+        # the error is shown in the log to stdout
+        sys.exit('Timeout: either took too long or an error occurred.')
     if 'output' in example:
         expected = example['output']
         # Pexpect returns CR/LF
         actual = repl.before.replace('\r\n', '\n')
         if expected != actual:
-            raise Exception(code, expected, actual)
+            # the actual output is shown in the log to stdout
+            sys.exit(f'Expected:\n\n{expected}')
 repl.sendline('(cl-user::quit)')
