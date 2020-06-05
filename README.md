@@ -85,28 +85,10 @@ Thus if we create a node using our new class and give values to its
 according to the the order of the `child-slots` list:
 
 ```lisp
-(defvar my-node (make-instance 'if-then-else-node))
-```
-```
-MY-NODE
-```
-
-```lisp
-(setf (slot-value my-node 'else) '(:foo :bar))
-```
-```
-(:FOO :BAR)
-```
-
-```lisp
-(setf (slot-value my-node 'then) :baz)
-```
-```
-:BAZ
-```
-
-```lisp
-(ft:children my-node)
+(let ((my-node (make-instance 'if-then-else-node)))
+  (setf (slot-value my-node 'else) '(:foo :bar))
+  (setf (slot-value my-node 'then) :baz)
+  (ft:children my-node))
 ```
 ```
 (:BAZ :FOO :BAR)
