@@ -19,6 +19,7 @@ error occurs, or the output doesn't match, then a descriptive error
 message is printed to stderr and an exit code of 1 is returned.
 """
 
+import pathlib
 import sys
 
 import marko.block as block
@@ -86,11 +87,14 @@ def slurp(filename):
 
 
 examples = lisp_examples(gfm.gfm.parse(slurp('README.md')))
+# Quicklisp isn't present by default in a raw SBCL in the Docker image,
+# but it is installed already so we just need to load it
+args = ['--load', f'{pathlib.Path.home()}/quicklisp/setup.lisp']
 # having echo would mean we have to strip the input code out of
 # repl.before; each code example must take less than one second, so that
 # when there's an error we only have to wait one second; encoding must
 # be set so that repl.before doesn't return binary strings
-repl = pexpect.spawn('sbcl', echo=False, timeout=1, encoding='utf-8')
+repl = pexpect.spawn('sbcl', args, echo=False, timeout=1, encoding='utf-8')
 repl.logfile = sys.stdout
 # regex matching the default SBCL prompt
 prompt = r'\* '
