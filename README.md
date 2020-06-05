@@ -108,6 +108,69 @@ an unbound slot to be a mutation of the object. So rather than immutability
 meaning that the object never changes, it instead means that the object can only
 ever go upward in a lattice ordered by boundness of slots.
 
+The reason we don't have referential transparency is that each newly created
+`node` has a unique serial number:
+
+```lisp
+(ft::serial-number (make-instance 'ft:node))
+```
+```
+3
+```
+
+These serial numbers increase monotonically, and are used internally in the
+library for various algorithmic tasks. One important thing to note is that these
+serial numbers must be unique in any given tree in addition to being unique per
+node. That is, if you transform a tree by copying one of its subtrees to another
+location in the tree, you must clone that entire subtree to ensure that the new
+tree does not contain any duplicate serial numbers.
+
+### Constructing trees
+
+As the above examples show, `make-instance` is fairly barebones: it sets the
+`serial-number` but not much else. Because this library incorporates FSet,
+though, we can extend the generic `convert` function to provide an easier way to
+construct our nodes.
+
+```lisp
+(defmethod fset:convert ((to-type (eql 'if-then-else-node)) (sequence list)
+                         &key &allow-other-keys)
+  (flet ((inner (x)
+           (etypecase x
+             (cons (fset:convert 'if-then-else-node x))
+             (t (make-instance 'ft:node)))))
+    (let ((node (make-instance 'if-then-else-node)))
+      (with-slots ((then then) (else else)) node
+        (setf then (inner (first sequence)))
+        (setf else (mapcar #'inner (rest sequence))))
+      node)))
+```
+
+Now we can round-trip from a `list` to an `if-then-else-node` and back, because
+this library already defines an `fset:convert` method to convert from nodes to
+lists, essentially a recursive version of `ft:children`:
+
+```lisp
+(let ((my-node (fset:convert 'if-then-else-node '((nil) nil))))
+  (describe my-node)
+  (fset:convert 'list my-node))
+```
+```
+#<IF-THEN-ELSE-NODE 4 ((NIL) NIL)>
+  [standard-object]
+
+Slots with :CLASS allocation:
+  CHILD-SLOTS                    = ((THEN . 1) ELSE)
+Slots with :INSTANCE allocation:
+  SERIAL-NUMBER                  = 4
+  TRANSFORM                      = NIL
+  SIZE                           = #<unbound slot>
+  FINGER                         = NIL
+  THEN                           = #<IF-THEN-ELSE-NODE 5 (NIL)>
+  ELSE                           = (#<FUNCTIONAL-TREES:NODE 7 NIL>)
+((NIL) NIL)
+```
+
 ## Tasks
 - [X] Eliminate hard-coded children.
 - [X] Address all FIXMEs
