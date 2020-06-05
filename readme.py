@@ -91,10 +91,9 @@ examples = lisp_examples(gfm.gfm.parse(slurp('README.md')))
 # but it is installed already so we just need to load it
 args = ['--load', f'{pathlib.Path.home()}/quicklisp/setup.lisp']
 # having echo would mean we have to strip the input code out of
-# repl.before; each code example must take less than one second, so that
-# when there's an error we only have to wait one second; encoding must
-# be set so that repl.before doesn't return binary strings
-repl = pexpect.spawn('sbcl', args, echo=False, timeout=1, encoding='utf-8')
+# repl.before; encoding must be set so that repl.before doesn't return
+# binary strings
+repl = pexpect.spawn('sbcl', args, echo=False, encoding='utf-8')
 repl.logfile = sys.stdout
 # regex matching the default SBCL prompt
 prompt = r'\* '
