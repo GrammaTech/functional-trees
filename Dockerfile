@@ -27,7 +27,7 @@ exec ${CCL_DEFAULT_DIRECTORY}/lx86cl64 "$@"\n\
     cp -pr /tmp/ccl/* /usr/lib/ccl && \
     rm -rf /tmp/ccl
 
-# Install Python dependencies
-RUN pip3 install -r requirements.txt
+# Install Python dependencies for readme.py
+RUN pip3 install marko pexpect
 
 WORKDIR /root/quicklisp/local-projects
