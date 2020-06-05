@@ -1,7 +1,7 @@
 FROM ubuntu:20.04
 
 RUN apt-get -y update && \
-    apt-get -y install autoconf build-essential git wget && \
+    apt-get -y install autoconf build-essential git wget python3-pip && \
     apt-get -y install sbcl
 
 # Install quicklisp
@@ -26,5 +26,8 @@ exec ${CCL_DEFAULT_DIRECTORY}/lx86cl64 "$@"\n\
     echo "(ccl:rebuild-ccl :full t)" | ./lx86cl64 --no-init --quiet --batch; \
     cp -pr /tmp/ccl/* /usr/lib/ccl && \
     rm -rf /tmp/ccl
+
+# Install Python dependencies
+RUN pip3 install -r requirements.txt
 
 WORKDIR /root/quicklisp/local-projects

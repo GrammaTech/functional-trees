@@ -24,6 +24,13 @@ test-ccl:
     LISP: 'ccl'
   <<: *test
 
+readme:
+  stage: test
+  script:
+    - ./readme.py
+  except:
+    - schedules
+
 dependents:
   stage: deploy
   inherit:
