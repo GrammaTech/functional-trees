@@ -108,6 +108,12 @@ an unbound slot to be a mutation of the object. So rather than immutability
 meaning that the object never changes, it instead means that the object can only
 ever go upward in a lattice ordered by boundness of slots.
 
+There is one exception to this definition of immutability: fingers. As shown by
+our first `node` example, the `finger` slot is initially set to `nil` when a
+node is created, and should only be set by the `ft:populate-fingers` function
+(see below). Thus, a more accurate version of our definition of immutability
+would replace "unbound" with "`nil`" in the case of the `finger` slot.
+
 The reason we don't have referential transparency is that each newly created
 `node` has a unique serial number:
 
@@ -130,20 +136,20 @@ tree does not contain any duplicate serial numbers.
 As the above examples show, `make-instance` is fairly barebones: it sets the
 `serial-number` but not much else. Because this library incorporates FSet,
 though, we can extend the generic `convert` function to provide an easier way to
-construct our nodes.
+construct our nodes (we will discuss `ft:populate-fingers` in the next section):
 
 ```lisp
 (defmethod fset:convert ((to-type (eql 'if-then-else-node)) (sequence list)
                          &key &allow-other-keys)
-  (flet ((inner (x)
-           (etypecase x
-             (cons (fset:convert 'if-then-else-node x))
-             (t (make-instance 'ft:node)))))
-    (let ((node (make-instance 'if-then-else-node)))
-      (with-slots ((then then) (else else)) node
-        (setf then (inner (first sequence)))
-        (setf else (mapcar #'inner (rest sequence))))
-      node)))
+  (labels ((construct (form)
+             (if (consp form)
+                 (let ((node (make-instance 'if-then-else-node)))
+                   (with-slots ((then then) (else else)) node
+                     (setf then (construct (first form)))
+                     (setf else (mapcar #'construct (rest form))))
+                   node)
+                 (make-instance 'ft:node))))
+    (ft:populate-fingers (construct sequence))))
 ```
 
 Now we can round-trip from a `list` to an `if-then-else-node` and back, because
@@ -151,7 +157,8 @@ this library already defines an `fset:convert` method to convert from nodes to
 lists, essentially a recursive version of `ft:children`:
 
 ```lisp
-(let ((my-node (fset:convert 'if-then-else-node '((nil) nil))))
+(progn
+  (defvar my-node (fset:convert 'if-then-else-node '((nil) nil)))
   (describe my-node)
   (fset:convert 'list my-node))
 ```
@@ -165,11 +172,63 @@ Slots with :INSTANCE allocation:
   SERIAL-NUMBER                  = 4
   TRANSFORM                      = NIL
   SIZE                           = #<unbound slot>
-  FINGER                         = NIL
+  FINGER                         = #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> NIL>
   THEN                           = #<IF-THEN-ELSE-NODE 5 (NIL)>
   ELSE                           = (#<FUNCTIONAL-TREES:NODE 7 NIL>)
 ((NIL) NIL)
 ```
+
+### Fingers
+
+In the previous example, we constructed a small tree and then called
+`ft:populate-fingers` on it. Let's take a look at one of these fingers:
+
+```lisp
+(describe (ft:finger (then (then my-node))))
+```
+```
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> (THEN THE..
+  [standard-object]
+
+Slots with :INSTANCE allocation:
+  NODE                           = #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)>
+  PATH                           = (:THEN :THEN)
+  RESIDUE                        = NIL
+  CACHE                          = #<unbound slot>
+```
+
+From this we can see that a finger includes a pointer to the root of a tree (in
+`node`) and a `path` to another node in that tree. From these two pieces, it is
+straightforward to follow `path`, starting from the root `node`, to find the
+original node which held this `finger`; once this lookup has been computed once,
+finger can store the resulting `node` in its `cache` slot. The `residue` relates
+to path transformations, which we will discuss in the next section.
+
+Now let's look at one more finger:
+
+```lisp
+(describe (ft:finger (first (else my-node))))
+```
+```
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> (ELSE 0)>
+  [standard-object]
+
+Slots with :INSTANCE allocation:
+  NODE                           = #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)>
+  PATH                           = (ELSE 0)
+  RESIDUE                        = NIL
+  CACHE                          = #<unbound slot>
+```
+
+Because these two fingers were both created in the context of the same tree,
+they both point to the same root `node`. However, this one has a different
+`path` to it: we took the first node in the the `else` branch.
+
+### Transformations and paths
+
+This library differs from a naive implementation of functional trees by
+efficiently handling the relationship between transformations on trees and
+transformations on paths.
 
 ## Tasks
 - [X] Eliminate hard-coded children.
