@@ -49,12 +49,18 @@ should be initialized to hold the names of these fields and should be
 allocated on the class itself.  See the following example.
 
 ```lisp
-(defclass if-then-else-node (ft:node)
+(ft:define-node-class if-then-else-node (ft:node)
   ((ft:child-slots :initform '((then . 1) else) :allocation :class)
    (then :reader then :type ft:node)
    (else :reader else :type '(list ft:node)))
   (:documentation "An if-then-else subtree of a program AST."))
 ```
+
+Note that we used `ft:define-node-class` instead of just `defclass`. The latter
+would work, but the former also sets up some additional useful infrastructure
+for our new `node` subclass. This infrastructure is already defined generically
+for all nodes, but the `ft:define-node-class` macro defines it more efficiently
+for a specific class of nodes.
 
 Each child slot should hold children nodes.  Child slots may hold a
 single node or multiple nodes.  It is possible to specify the arity of
