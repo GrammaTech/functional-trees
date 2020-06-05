@@ -16,16 +16,8 @@ To start, load this library (system name `:functional-trees`) using Quicklisp:
 ```
 
 This library defines one package, `:functional-trees`, which we will refer to by
-its nickname `:ft`. The main thing provided by `:ft` is the `node` class:
-
-```lisp
-(find-class 'ft:node)
-```
-```
-#<STANDARD-CLASS FUNCTIONAL-TREES:NODE>
-```
-
-The `node` class represents a node in a tree. Here are its slots:
+its nickname `:ft`. The main thing provided by `:ft` is the `node` class, an
+object of which represents a node in a tree. Here are its slots:
 
 ```lisp
 (describe (make-instance 'ft:node))
@@ -62,9 +54,6 @@ allocated on the class itself.  See the following example.
    (then :reader then :type ft:node)
    (else :reader else :type '(list ft:node)))
   (:documentation "An if-then-else subtree of a program AST."))
-```
-```
-#<STANDARD-CLASS COMMON-LISP-USER::IF-THEN-ELSE-NODE>
 ```
 
 Each child slot should hold children nodes.  Child slots may hold a
