@@ -14,7 +14,7 @@ output can be specified in a language-less code block immediately
 following the Lisp code block.
 
 The whole REPL session is printed to stdout. If the REPL session exits
-unexpectedly, or any evaluation takes longer than one second, or an
+unexpectedly, or any evaluation takes longer than 30 seconds, or an
 error occurs, or the output doesn't match, then a descriptive error
 message is printed to stderr and an exit code of 1 is returned.
 """
