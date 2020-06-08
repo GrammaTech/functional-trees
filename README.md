@@ -184,7 +184,9 @@ In the previous example, we constructed a small tree and then called
 `ft:populate-fingers` on it. Let's take a look at one of these fingers:
 
 ```lisp
-(describe (ft:finger (then (then my-node))))
+(progn
+  (defvar finger1 (ft:finger (then (then my-node))))
+  (describe finger1))
 ```
 ```
 #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> (THEN THE..
@@ -207,7 +209,9 @@ to path transformations, which we will discuss in the next section.
 Now let's look at one more finger:
 
 ```lisp
-(describe (ft:finger (first (else my-node))))
+(progn
+  (defvar finger2 (ft:finger (first (else my-node))))
+  (describe finger2))
 ```
 ```
 #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> (ELSE 0)>
@@ -223,6 +227,64 @@ Slots with :INSTANCE allocation:
 Because these two fingers were both created in the context of the same tree,
 they both point to the same root `node`. However, this one has a different
 `path` to it: we took the first node in the the `else` branch.
+
+The `ft:populate-fingers` function produces fingers whose paths follow a
+somewhat different format from the paths used in other parts of the library; see
+the next section, for instance. Specifically, an `ft:populate-fingers` path is a
+list where
+
+- a keyword (e.g. `:then`) means to follow the child whose slot name is the same
+  as that keyword;
+- a number means that there is only one slot, so follow the child with that
+  index in that one slot; and
+- a non-keyword symbol followed by a number means to follow the child with the
+  given number as its index, in the slot whose name is the given symbol.
+
+
+Using the particular `child-slots` of our `if-then-else-node` class, we could
+write a function to translate these `ft:populate-fingers` paths to simple lists
+of child indices:
+
+```lisp
+(defun simplify-path (path)
+  (mapcar (lambda (x)
+            (if (eq x :then)
+                0
+                (1+ x)))
+          (remove 'else path)))
+```
+
+We could then also write a function that transforms entire finger objects to use
+this alternate path format:
+
+```lisp
+(defun simplify (finger)
+  (with-accessors ((node ft:node)
+                   (path ft:path)
+                   (residue ft:residue))
+      finger
+    (let ((simplified (make-instance 'ft:finger
+                                     :node node
+                                     :path (simplify-path path)
+                                     :residue residue)))
+      (when (slot-boundp finger 'ft::cache)
+        (setf (ft::cache simplified) (ft::cache finger)))
+      simplified)))
+```
+
+A couple examples, using our existing fingers:
+
+```lisp
+(values-list (mapcar (alexandria:compose #'ft:path #'simplify)
+                     (list finger1 finger2)))
+```
+```
+(0 0)
+(1)
+```
+
+Note of course that these functions would not work for `ft:populate-fingers`
+paths in other node subclasses besides `if-then-else-node`.
 
 ### Transformations and paths
 
