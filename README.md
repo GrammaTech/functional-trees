@@ -286,7 +286,47 @@ A couple examples, using our existing fingers:
 Note of course that these functions would not work for `ft:populate-fingers`
 paths in other node subclasses besides `if-then-else-node`.
 
-### Transformations and paths
+### Transformations
+
+This library provides `ft:node` implementations for the following generic
+sequence functions from FSet:
+
+- `reduce`
+- `find-if`
+- `find-if-not`
+- `find`
+- `count-if`
+- `count-if-not`
+- `count`
+- `position-if`
+- `position-if-not`
+- `position`
+- `remove-if`
+- `remove-if-not`
+- `remove`
+- `substitute-if`
+- `substitute-if-not`
+- `substitute`
+
+It also provides a few additional generic methods, also with implementations for
+`ft:node`:
+
+- `mapc` takes as arguments a function and a node, respectively. It calls the
+  given function on every node in the tree of the given node, and then returns
+  `nil`.
+
+- `mapcar` does the same thing as `mapc`, except that it constructs a new tree
+  from the results of all those function calls, and returns the newly
+  constructed tree.
+
+- `subst` calls `cl:subst` on cons cells, and calls `fset:substitute` on nodes.
+
+- `subst-if` calls `cl:subst-if` on cons cells, and calls `fset:substitute-if`
+  on nodes.
+
+- `subst-if-not` is the opposite of `subst-if`.
+
+### Path transforms
 
 This library differs from a naive implementation of functional trees by
 efficiently handling the relationship between transformations on trees and
