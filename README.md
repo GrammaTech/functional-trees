@@ -51,8 +51,8 @@ allocated on the class itself.  See the following example.
 ```lisp
 (ft:define-node-class if-then-else-node (ft:node)
   ((ft:child-slots :initform '((then . 1) else) :allocation :class)
-   (then :reader then :type ft:node)
-   (else :reader else :type '(list ft:node)))
+   (then :reader then :initarg :then :type ft:node)
+   (else :reader else :initarg :else :type '(list ft:node)))
   (:documentation "An if-then-else subtree of a program AST."))
 ```
 
@@ -61,6 +61,11 @@ would work, but the former also sets up some additional useful infrastructure
 for our new `node` subclass. This infrastructure is already defined generically
 for all nodes, but the `ft:define-node-class` macro defines it more efficiently
 for a specific class of nodes.
+
+Note also that the `:initarg` keywords for `then` and `else` are necessary, as
+they are used by automatic tree-copying functions in this library. If they are
+omitted, many functions (including the FSet generic sequence transformation
+functions described below) will not work properly.
 
 Each child slot should hold children nodes.  Child slots may hold a
 single node or multiple nodes.  It is possible to specify the arity of
@@ -80,10 +85,9 @@ Thus if we create a node using our new class and give values to its
 according to the the order of the `child-slots` list:
 
 ```lisp
-(let ((my-node (make-instance 'if-then-else-node)))
-  (setf (slot-value my-node 'else) '(:foo :bar))
-  (setf (slot-value my-node 'then) :baz)
-  (ft:children my-node))
+(ft:children (make-instance 'if-then-else-node
+                            :else '(:foo :bar)
+                            :then :baz))
 ```
 ```
 (:BAZ :FOO :BAR)
@@ -143,11 +147,9 @@ construct our nodes (we will discuss `ft:populate-fingers` in the next section):
                          &key &allow-other-keys)
   (labels ((construct (form)
              (if (consp form)
-                 (let ((node (make-instance 'if-then-else-node)))
-                   (with-slots ((then then) (else else)) node
-                     (setf then (construct (first form)))
-                     (setf else (mapcar #'construct (rest form))))
-                   node)
+                 (make-instance 'if-then-else-node
+                                :then (construct (first form))
+                                :else (mapcar #'construct (rest form)))
                  (make-instance 'ft:node))))
     (ft:populate-fingers (construct sequence))))
 ```
@@ -163,18 +165,18 @@ lists, essentially a recursive version of `ft:children`:
   (fset:convert 'list my-node))
 ```
 ```
-#<IF-THEN-ELSE-NODE 4 ((NIL) NIL)>
+#<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
   [standard-object]
 
 Slots with :CLASS allocation:
   CHILD-SLOTS                    = ((THEN . 1) ELSE)
 Slots with :INSTANCE allocation:
-  SERIAL-NUMBER                  = 4
+  SERIAL-NUMBER                  = 7
   TRANSFORM                      = NIL
   SIZE                           = #<unbound slot>
-  FINGER                         = #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> NIL>
+  FINGER                         = #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)> NIL>
   THEN                           = #<IF-THEN-ELSE-NODE 5 (NIL)>
-  ELSE                           = (#<FUNCTIONAL-TREES:NODE 7 NIL>)
+  ELSE                           = (#<FUNCTIONAL-TREES:NODE 6 NIL>)
 ((NIL) NIL)
 ```
 
@@ -189,11 +191,11 @@ In the previous example, we constructed a small tree and then called
   (describe finger1))
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> (THEN THE..
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)> (THEN THE..
   [standard-object]
 
 Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)>
+  NODE                           = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
   PATH                           = (:THEN :THEN)
   RESIDUE                        = NIL
   CACHE                          = #<unbound slot>
@@ -214,11 +216,11 @@ Now let's look at one more finger:
   (describe finger2))
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)> (ELSE 0)>
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)> (ELSE 0)>
   [standard-object]
 
 Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 4 ((NIL) NIL)>
+  NODE                           = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
   PATH                           = (ELSE 0)
   RESIDUE                        = NIL
   CACHE                          = #<unbound slot>
