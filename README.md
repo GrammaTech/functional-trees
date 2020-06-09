@@ -321,11 +321,113 @@ for `ft:node`:
   from the results of all those function calls, and returns the newly
   constructed tree.
 
+  For example, we could expand an `if-then-else-node` by adding an extra
+  `ft:node` to every `else` branch:
+
+  ```lisp
+  (progn
+    (defvar expanded
+      (ft:mapcar (lambda (n)
+                   (if (typep n 'if-then-else-node)
+                       (make-instance 'if-then-else-node
+                                      :then (then n)
+                                      :else (list* (make-instance 'ft:node)
+                                                   (else n)))
+                       n))
+                 my-node))
+    (describe expanded))
+  ```
+  ```
+  #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)>
+    [standard-object]
+
+  Slots with :CLASS allocation:
+    CHILD-SLOTS                    = ((THEN . 1) ELSE)
+  Slots with :INSTANCE allocation:
+    SERIAL-NUMBER                  = 9
+    TRANSFORM                      = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
+    SIZE                           = #<unbound slot>
+    FINGER                         = NIL
+    THEN                           = #<IF-THEN-ELSE-NODE 11 (NIL NIL)>
+    ELSE                           = (#<FUNCTIONAL-TREES:NODE 8 NIL> #<FUNCTIONAL-TREES:NODE 6 NIL>)
+  ```
+
 ### Path transforms
 
 This library differs from a naive implementation of functional trees by
 efficiently handling the relationship between transformations on trees and
 transformations on paths.
+
+When you transform a tree into another tree using this library, the latter
+retains knowledge of the relationship to the former (its "predecessor") via its
+`transform` slot:
+
+```lisp
+(describe (ft:transform expanded))
+```
+```
+#<FUNCTIONAL-TREES::PATH-TRANSFORM (((0 0) (0 0) LIVE) ((1) (2) LIVE))..
+  [standard-object]
+
+Slots with :INSTANCE allocation:
+  FROM                           = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
+  TRANSFORMS                     = (((0 0) (0 0) :LIVE) ((1) (2) :LIVE))
+```
+
+Here we see that `expanded` knows which tree it originally came `from` (the
+predecessor), and also stores some additional `transforms` information. Since
+`expanded` shares some structure with `my-node`, these `transforms` enable us to
+take a path (that is, a finger) to a node in the `my-node` tree and translate it
+into a path (finger) to the same node in the `expanded` tree:
+
+```lisp
+(defun show-expanded-finger (finger)
+  (describe (ft:transform-finger-to (simplify finger)
+                                    (ft:transform expanded)
+                                    expanded)))
+```
+
+Here's an example:
+
+```lisp
+(show-expanded-finger finger1)
+```
+```
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> ..
+  [standard-object]
+
+Slots with :INSTANCE allocation:
+  NODE                           = #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)>
+  PATH                           = (0 0)
+  RESIDUE                        = NIL
+  CACHE                          = #<unbound slot>
+```
+
+That example isn't particularly exciting, because the path to this node is the
+same as it was before: it's still just the first child of the first child. We do
+see that the root `node` of the finger was changed to our new tree, though. But
+we can also translate other paths:
+
+```lisp
+(show-expanded-finger finger2)
+```
+```
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> ..
+  [standard-object]
+
+Slots with :INSTANCE allocation:
+  NODE                           = #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)>
+  PATH                           = (2)
+  RESIDUE                        = NIL
+  CACHE                          = #<unbound slot>
+```
+
+This path actually did change, because we added an extra `ft:node` in the else
+branch right before it.
+
+This library is able to very efficiently compute these path transform objects:
+it only takes time _O_(_n_ log _n_), where _n_ is the number of newly allocated
+nodes in the transformed tree.
 
 ## Tasks
 - [X] Eliminate hard-coded children.
