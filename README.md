@@ -308,8 +308,8 @@ sequence functions from FSet:
 - `substitute-if-not`
 - `substitute`
 
-It also provides a few additional generic methods, also with implementations for
-`ft:node`:
+It also provides a couple additional generic methods, also with implementations
+for `ft:node`:
 
 - `mapc` takes as arguments a function and a node, respectively. It calls the
   given function on every node in the tree of the given node, and then returns
@@ -318,13 +318,6 @@ It also provides a few additional generic methods, also with implementations for
 - `mapcar` does the same thing as `mapc`, except that it constructs a new tree
   from the results of all those function calls, and returns the newly
   constructed tree.
-
-- `subst` calls `cl:subst` on cons cells, and calls `fset:substitute` on nodes.
-
-- `subst-if` calls `cl:subst-if` on cons cells, and calls `fset:substitute-if`
-  on nodes.
-
-- `subst-if-not` is the opposite of `subst-if`.
 
 ### Path transforms
 
