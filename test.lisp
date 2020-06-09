@@ -131,7 +131,7 @@ which may be more nodes, or other values.")
             (mapcar (lambda (child)
                       (if (typep child 'node)
                           (convert 'list child :value-fn value-fn)
-                          (convert 'list child)))
+                          child))
                     (children node)))
       (funcall value-fn node)))
 
@@ -199,6 +199,7 @@ which may be more nodes, or other values.")
 that are made available (in addition to children) as links
 to subtrees."))
 
+
 (defmethod node-values ((node node-with-fields)) (data node))
 
 (defmethod lookup ((node node-with-fields) (i (eql :data))) (data node))
@@ -244,6 +245,35 @@ to subtrees."))
     (convert- node)))
 
 
+(define-node-class node-with-arity2 (node)
+  ((child-slots :initform '((a . 2)) :allocation :class)
+   (a :reader node-a
+      :initarg :a
+      :initform '(nil nil)
+      :type list
+      :documentation "Example of a field of arity 2")
+   (data :reader data
+         :initarg :data
+         :initform nil
+         :documentation "Data that is attached to the node"))
+  (:documentation "Example of a class with a single child slot of arity 2"))
+
+(defmethod convert ((to-type (eql 'node-with-arity2)) (seq list) &key &allow-other-keys)
+  (if (null seq)
+      (call-next-method)
+      (progn
+        (assert (consp (cdr seq)))
+        (make-instance 'node-with-arity2 :a (list (convert 'node-with-arity2 (car seq))
+                                                  (convert 'node-with-arity2 (cadr seq)))
+                       :data (cddr seq)))))
+
+(defmethod convert ((to-type (eql 'node-with-arity2)) x &key &allow-other-keys) x)
+
+(defmethod convert ((to-type (eql 'list)) (node node-with-arity2) &key &allow-other-keys)
+  (append (mapcar (lambda (c)
+                    (if (typep c 'node) (convert 'list c) c))
+                  (slot-value node 'a))
+          (slot-value node 'data)))
 
 (defun swap-random-nodes (root)
   (let ((node1 (random-node root))
@@ -899,14 +929,22 @@ diagnostic information on error or failure."
 (deftest find-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
     (is (eql (data (find 4 tree :key #'data)) 4))
-    (is (not (find 10 tree)))))
+    (is (not (find 10 tree))))
+  (let ((tree (convert 'node-with-arity2 '((a b 1) (c d 2) 3))))
+    (is (equal (convert 'list (find 1 tree :key [#'car #'data])) '(a b 1)))
+    (is (equal (convert 'list (find 2 tree :key [#'car #'data])) '(c d 2)))
+    (is (equal (convert 'list (find 3 tree :key [#'car #'data])) '((a b 1) (c d 2) 3)))
+    (is (null (convert 'list (find 0 tree :key [#'car #'data]))))))
 
 (deftest find-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
     (declare (optimize (speed 0)))
     (is (eql (data (find-if «and #'integerp [#'zerop {mod _ 3}] {< 4 }» tree :key #'data)) 6))
     (is (not (find-if (constantly nil) tree :key #'data)))
-    (is (not (find-if (constantly nil) tree)))))
+    (is (not (find-if (constantly nil) tree))))
+  (let ((tree (convert 'node-with-arity2 '((a b 1) (c d 2) 3))))
+    (is (equal (data (find-if #'evenp tree :key [#'car #'data])) '(2)))
+    (is (null (find-if {< 4} tree :key [#'car #'data])))))
 
 (deftest find-if-not-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
