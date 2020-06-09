@@ -393,7 +393,7 @@ Here's an example:
 (show-expanded-finger finger1)
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> ..
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> (..
   [standard-object]
 
 Slots with :INSTANCE allocation:
@@ -412,7 +412,7 @@ we can also translate other paths:
 (show-expanded-finger finger2)
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> ..
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> (..
   [standard-object]
 
 Slots with :INSTANCE allocation:
