@@ -30,6 +30,7 @@
                           ;; Additional stuff
                           :identity-ordering-mixin :serial-number
                           :compare :convert)
+  (:shadowing-import-from :metabang-bind :bind)
   (:shadow :subst :subst-if :subst-if-not :assert :mapc :mapcar)
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
@@ -42,6 +43,9 @@
            :node-equalp
            :node :transform :child-slots :finger
            :path :transform-finger-to :populate-fingers :residue
+           :path-equalp
+           :path-equalp-butlast
+           :path-later-p
            :children
            :do-tree :mapc :mapcar
            :swap
@@ -73,6 +77,33 @@
              (t nil)))
          list))
 
+(defgeneric path-equalp (path-a path-b)
+  (:documentation "Are path-a and path-b the same path?")
+  (:method ((path-a t) (path-b t)) (equalp path-a path-b)))
+
+(defgeneric path-equalp-butlast (path-a path-b)
+  (:documentation "Are path-a and path-b the same, except possibly
+for their last entries?")
+  (:method ((path-a t) (path-b t)) (equalp (butlast path-a) (butlast path-b))))
+
+(defgeneric path-later-p (path-a path-b)
+  (:documentation "Does PATH-A represent an AST path after PATH-B?
+Use this to sort AST asts for mutations that perform multiple
+operations.")
+  (:method ((path-a list) (path-b list))
+    (cond
+      ;; Consider longer paths to be later, so in case of nested ASTs we
+      ;; will sort inner one first. Mutating the outer AST could
+      ;; invalidate the inner ast.
+      ((null path-a) nil)
+      ((null path-b) t)
+      (t (bind (((head-a . tail-a) path-a)
+                ((head-b . tail-b) path-b))
+               (cond
+                 ((> head-a head-b) t)
+                 ((> head-b head-a) nil)
+                 (t (path-later-p tail-a tail-b))))))))
+
 (defgeneric copy (obj &key &allow-other-keys)
   (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
   (:method ((obj t) &key &allow-other-keys) obj)
@@ -93,7 +124,7 @@ its nodes.")
               :initform nil
               ;; TODO: change the back pointer to a weak vector
               ;; containing the pointer.
-              :type (or null node path-transform)
+              :type (or null node path-transform #+sbcl sb-ext:weak-pointer)
               :documentation "If non-nil, is either a PATH-TRANSFORM object
 to this node, or the node that led to this node.")
    (size :reader size
@@ -228,7 +259,9 @@ specifies a specific number of children held in the slot.")
   ;; Compute the PT lazily, when TRANSFORM is a node
   (let ((tr (call-next-method)))
     (if (typep tr 'node)
-        (setf (slot-value n 'transform) (path-transform-of tr n))
+        (progn
+          ; (format t "Compute path transform from ~a to ~a~%" tr n)
+          (setf (slot-value n 'transform) (path-transform-of tr n)))
         tr)))
 
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
@@ -270,7 +303,7 @@ specifies a specific number of children held in the slot.")
                           (cl:mapcar #'tree-copy (slot-value new-node child-slot-name)))))
               (setf (slot-value new-node c)
                     (cl:mapcar #'tree-copy (slot-value new-node c)))))
-    new-node))    
+    new-node))
 
 (defclass finger ()
   ((node :reader node :initarg :node
@@ -533,6 +566,15 @@ from the source/target node pair, if possible."))
   (:documentation "An object used to rewrite fingers from one
 tree to another."))
 
+(defgeneric predecessor-chain (n)
+  (:documentation "REturns the list of predecessor trees of N"))
+
+(defmethod predecessor-chain ((n node))
+  (let ((tr (slot-value n 'transform)))
+    (typecase tr
+      (node (cons tr (predecessor-chain tr)))
+      (path-transform (cons (from tr) (predecessor-chain (from tr)))))))
+
 (defmethod from ((x null)) x)
 
 (defgeneric transform-finger-to (f p to)
@@ -634,50 +676,62 @@ that FINGER is pointed through."))
 (defmethod transform-finger ((f finger) (node node) &key (error-p t))
   (declare (ignore error-p)) ;; for now
 
-  ;; (format t "~%~%Enter TRANSFORM-FINGER on ~a, ~a~%" f node)
   ;;; TODO: cache PATH-TRANSFORM-OF
 
-  #+brute-force-transform-finger
-  (let ((node-of-f (node f)))
-    ;; (format t "(TRANSFORM (NODE F)) = ~a~%" (transform (node f)))
-    ;; (format t "(TRANSFORM NODE) = ~a~%" (transform node))
-    (transform-finger-to f (path-transform-of node-of-f node) node))
+  ;; When placing a subtree with nonempty FINGER slot into another
+  ;; tree, we may end up with paths that require brute force
+  ;; computation of the path transform.  Do that if we cannot
+  ;; find the transform in the predecessor chain.  TODO: cache
+  ;; these with weak key hash tables to avoid recomputation.
 
-  #-brute-force-transform-finger
-  (let ((node-of-f (node f)))
-    ;; (format t "NODE-OF-F = ~a~%" node-of-f)
-    (labels ((%transform (x)
-               ;; (format t "%transform ~a~%" x)
-               (cond
-                 ((eql x node-of-f) f)
-                 ((null x)
-                  ;; As an alternative, create a fresh path transform
-                  ;; from the root for f to node, and use that instead
-                  ;; However, we'd want to cache that somehow.
-                  (error "Cannot find path from ~a to ~a"
-                         node-of-f node))
-                 (t
-                  (let ((transform (transform x)))
-                    ;; (format t "(TRANSFORM x) = ~a~%" transform)
-                    (transform-finger-to
-                     (%transform (from transform))
-                     transform x))))))
-      (let ((result (%transform node)))
-        ;; (format t "Leave TRANSFORM-FINGER returing ~a~%" result)
-        result))))
+  (flet ((%brute-force ()
+           (return-from transform-finger
+             (let ((node-of-f (node f)))
+               #+ft-debug-transform-finger
+               (progn (format t "(TRANSFORM (NODE F)) = ~a~%" (transform (node f)))
+                      (format t "(TRANSFORM NODE) = ~a~%" (transform node)))
+               (transform-finger-to f (path-transform-of node-of-f node) node)))))
 
-(defgeneric populate-fingers (root)
-  (:documentation "Walk tree, creating fingers back to root.")
-  (:method ((root node))
+    #+brute-force-transform-finger
+    (%brute-force)
+
+    #-brute-force-transform-finger
+    (let* ((f f) (node-of-f (node f)))
+      #+ft-debug-transform-finger
+      (format t "NODE-OF-F = ~a~%" node-of-f)
+      (labels ((%transform (x)
+                 #+ft-debug-transform-finger
+                 (format t "%transform ~a~%" x)
+                 (cond
+                   ((eql x node-of-f) f)
+                   ((null x)
+                    (%brute-force))
+                   (t
+                    (let ((transform (transform x)))
+                      #+ft-debug-transform-finger
+                      (format t "(TRANSFORM x) = ~a~%" transform)
+                      (transform-finger-to
+                       (%transform (from transform))
+                       transform x))))))
+        (%transform node)))))
+
+(defgeneric populate-fingers (root &optional initial-rpath)
+  (:documentation "Walk tree, creating fingers back to root.  RPATH
+is a reversed list of nodes to be prepended to each path.")
+  (:method ((root node) &optional initial-rpath)
     (do-tree (n root :index rpath :value root)
       ;; This is the only place this slot should be
       ;; assigned, which is why there's no writer method.
       (unless (finger n)
         (prog1 nil
           (setf (slot-value n 'finger)
-                (make-instance 'finger :node root :path (reverse rpath))))))
+                (make-instance 'finger :node root
+                               :path (nreconc initial-rpath
+                                              (reverse rpath)))))))
     root)
-  (:method ((root null)) nil))
+  (:method ((root null) &optional initial-rpath)
+    (declare (ignore initial-rpath))
+    nil))
 
 ;;; This expensive function is used in testing and in FSet
 ;;; compatibility functions.  It computes the path leading from ROOT
