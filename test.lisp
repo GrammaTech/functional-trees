@@ -512,15 +512,15 @@ bucket getting at least 1.  Return as a list."
         (is (null (residue f6)))
         (is (equal (convert 'list f6) (first (fourth l2))))))))
 
-(deftest transform-path.error ()
+(deftest transform-path.not-error ()
   (let* ((l1 '(:a 1))
          (l2 '(:b 2))
          (node1 (convert 'node-cons l1))
          (node2 (convert 'node-cons l2))
          (f1 (make-instance 'finger :node node1 :path nil)))
     (is (handler-case
-            (progn (transform-finger f1 node2) nil)
-          (error () t)))))
+            (progn (transform-finger f1 node2) t)
+          (error () nil)))))
 
 ;;; Tests of path-transform-of, mapcar
 (deftest mapcar.0 ()
