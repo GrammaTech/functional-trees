@@ -30,7 +30,6 @@
                           ;; Additional stuff
                           :identity-ordering-mixin :serial-number
                           :compare :convert)
-  (:shadowing-import-from :metabang-bind :bind)
   (:shadow :subst :subst-if :subst-if-not :assert :mapc :mapcar)
   (:shadowing-import-from :alexandria :compose)
   (:import-from :uiop/utility :nest)
@@ -97,8 +96,8 @@ operations.")
       ;; invalidate the inner ast.
       ((null path-a) nil)
       ((null path-b) t)
-      (t (bind (((head-a . tail-a) path-a)
-                ((head-b . tail-b) path-b))
+      (t (nest (destructuring-bind (head-a . tail-a) path-a)
+               (destructuring-bind (head-b . tail-b) path-b)
                (cond
                  ((> head-a head-b) t)
                  ((> head-b head-a) nil)
