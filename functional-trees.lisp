@@ -691,6 +691,9 @@ that FINGER is pointed through."))
                       (format t "(TRANSFORM NODE) = ~a~%" (transform node)))
                (transform-finger-to f (path-transform-of node-of-f node) node)))))
 
+    ;; This feature is intended for testing, and is not part of the normal
+    ;; public API.  If you suspect a problem with finger/path tranform
+    ;; computation enable this feature and see if your issue goes away.
     #+brute-force-transform-finger
     (%brute-force)
 
