@@ -39,7 +39,7 @@
                 :slot-definition-initform
                 :class-slots)
   (:export :copy :tree-copy
-           :node-equalp
+           :equal?
            :node :transform :child-slots :finger
            :path :transform-finger-to :populate-fingers :residue
            :path-equalp
@@ -1109,15 +1109,16 @@ are compared with each other using fset:compare"
                     (push (list old new) stack)))))
     (stable-sort (revappend stack result) #'> :key #'(lambda (x) (length (car x))))))
 
-(defgeneric node-equalp (node1 node2)
-  (:documentation "Check that two nodes are the same tree")
+(defgeneric equal? (a b)
+  (:documentation "Test equality of A and B.")
+  (:method ((a t) (b t)) (fset:equal? a b))
   (:method ((node1 node) (node2 node))
     (and (eql (serial-number node1) (serial-number node2))
          (let ((c1 (children node1))
                (c2 (children node2)))
            (and (eql (length c1) (length c2))
-                (every #'node-equalp c1 c2)))))
-  (:method (node1 node2) (equal node1 node2)))
+                (every #'equal? c1 c2))))))
+
 
 ;;; Rewrite encapsulation
 ;;; The idea here is to allow grouping of several changes to a tree

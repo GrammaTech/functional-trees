@@ -24,6 +24,7 @@
   (:import-from :uiop/utility :nest)
   (:import-from :uiop/stream :with-temporary-file)
   (:shadowing-import-from :functional-trees
+                          :equal?
                           :dump
                           :lexicographic-<
                           :make-node-heap-data
@@ -644,18 +645,18 @@ bucket getting at least 1.  Return as a list."
     (is (equal (convert 'list n2) l))
     (is (nodes-disjoint n n2))))    
 
-(deftest node-equalp.1 ()
-  (is (node-equalp nil nil))
-  (is (node-equalp 1 1))
-  (is (node-equalp '(1) '(1)))
-  (is (not (node-equalp 1 2)))
+(deftest node-equal?.1 ()
+  (is (equal? nil nil))
+  (is (equal? 1 1))
+  (is (equal? '(1) '(1)))
+  (is (not (equal? 1 2)))
   (let ((n (convert 'node-cons '(:a))))
-    (is (node-equalp n n))
-    (is (node-equalp n (copy n :data :b)))
-    (is (not (node-equalp n (convert 'node-cons '(:a)))))
-    (is (not (node-equalp n (convert 'node-cons '(:a (:b))))))
+    (is (equal? n n))
+    (is (equal? n (copy n :data :b)))
+    (is (not (equal? n (convert 'node-cons '(:a)))))
+    (is (not (equal? n (convert 'node-cons '(:a (:b))))))
     (let ((it (convert 'node-cons '(:b))))
-      (is (not (node-equalp n (copy n :head (head it) :tail (tail it))))))))
+      (is (not (equal? n (copy n :head (head it) :tail (tail it))))))))
 
 (deftest print.1 ()
   (let ((*print-readably* nil)
@@ -1417,4 +1418,4 @@ diagnostic information on error or failure."
   (with-temporary-file (:pathname store-file)
     (let ((tree (make-random-tree 5)))
       (store tree store-file)
-      (is (node-equalp tree (restore store-file))))))
+      (is (equal? tree (restore store-file))))))
