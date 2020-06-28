@@ -441,7 +441,7 @@ augmented by the label of that child."))
             ;; Single arity just add slot name.
             (pure-traverse-tree/i (slot-value node name)
                                   ;; TODO: precompute this keyword in slot-spec
-                                  (list* (make-keyword name) index)
+                                  (list* name index)
                                   fn)
             ;; Otherwise add slot name and index into slot.
             (let ((child-list (child-list node child-slot)))

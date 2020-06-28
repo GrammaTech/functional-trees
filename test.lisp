@@ -579,9 +579,9 @@ bucket getting at least 1.  Return as a list."
         (n2 (convert 'node-cons '(:a (:b) (:b (:c) (:d) (:e)) (:d)))))
     (is (handler-case (progn (path-of-node n2 n1) nil)
           (error () t)))
-    (is (equal (path-of-node n2 (second (children n2))) '(:tail)))
+    (is (equal (path-of-node n2 (second (children n2))) '(tail)))
     (is (equal (path-of-node n1 n1) nil))
-    (is (equal (path-of-node n2 (head (tail n2))) '(:tail :head)))))
+    (is (equal (path-of-node n2 (head (tail n2))) '(tail head)))))
 
 (deftest node-can-implant.1 ()
   (let* ((n1 (convert 'node-cons '(:a (:b) (:b (:c) (:d) (:e)) (:d))))
@@ -802,7 +802,7 @@ diagnostic information on error or failure."
 
 (deftest path-of-node.0 ()
   (let ((it (convert 'node-cons '(:i 17 17 (:d 26) (:m (:b 54 84))))))
-    (is (equalp (path-of-node it (@ it '(:tail :tail :tail))) '(:tail :tail :tail)))))
+    (is (equalp (path-of-node it (@ it '(tail tail tail))) '(tail tail tail)))))
 
 (deftest size.0 ()
   (let ((it (convert 'node-cons '(:i 17 17 (:d 26) (:m (:b 54 84))))))
@@ -993,7 +993,7 @@ diagnostic information on error or failure."
   (is (equalp (position 1 (convert 'node-with-fields
                                    '(:data :foo :a (:data 1) :b (:data 2)))
                         :key #'data)
-              '(:a))))
+              '(a))))
 
 (deftest position-if-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))

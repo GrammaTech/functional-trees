@@ -196,7 +196,7 @@ In the previous example, we constructed a small tree and then called
 
 Slots with :INSTANCE allocation:
   NODE                           = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
-  PATH                           = (:THEN :THEN)
+  PATH                           = (THEN THEN)
   RESIDUE                        = NIL
   CACHE                          = #<unbound slot>
 ```
@@ -250,7 +250,7 @@ of child indices:
 ```lisp
 (defun simplify-path (path)
   (mapcar (lambda (x)
-            (if (eq x :then)
+            (if (eq x 'then)
                 0
                 (1+ x)))
           (remove 'else path)))
