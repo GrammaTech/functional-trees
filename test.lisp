@@ -1419,3 +1419,18 @@ diagnostic information on error or failure."
     (let ((tree (make-random-tree 5)))
       (store tree store-file)
       (is (equal? tree (restore store-file))))))
+
+;;; Named children test.
+(defclass js-block-statement (node)
+  ((acorn-slot-name :initform :block-statement :allocation :class)
+   (child-slots :initform '((js-body . 0)) :allocation :class)
+   (js-body :reader js-body :initform nil :initarg :js-body :type list))
+  (:documentation "javascript ast node class for block-statement acorn asts."))
+
+(deftest test-index-into-named-child ()
+  (let ((it (make-instance 'js-block-statement
+                           :js-body (list 1 2 3))))
+    (is (equal? (@ it '(js-body)) '(1 2 3)))
+    (is (equal? (@ it '(js-body 0)) 1))
+    (is (equal? (js-body (less it '(js-body 0)))
+                '(2 3)))))
