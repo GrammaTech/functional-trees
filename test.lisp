@@ -1439,3 +1439,7 @@ diagnostic information on error or failure."
   (let ((it (make-instance 'js-block-statement
                            :js-body (list 1 2 3))))
     (is (equal? (children (less it 0)) '(2 3)))))
+
+(deftest path-later-p-handles-named-children ()
+  (is (path-later-p '(js-body 1 js-body 3 js-expression)
+                    '(js-body 1 js-body 0))))
