@@ -1202,24 +1202,30 @@ functions."
                (symbol
                 (copy tree
                       (make-keyword (car path))
-                      (if (and (second path) (typep (second path) 'number))
-                          ;; If we're at the end of the path then take
-                          ;; the same approach as (null (cdr path))
-                          ;; above,
-                          (if (null (cddr path))
-                              ;; and just handle the last element of
-                              ;; the path as an atom.
-                              (,name (lookup tree (first path)) (second path)
-                                     ,@(arg-values other-args))
-                              ;; Otherwise, if we're part way through
-                              ;; the path handle both child named and
-                              ;; index in one go and then continue.
-                              (,name (lookup (lookup tree (first path))
-                                             (second path))
-                                     (cddr path)
-                                     ,@(arg-values other-args)))
-                          (,name (lookup tree (car path)) (cdr path)
-                                 ,@(arg-values other-args)))))
+                      ;; Handle different methods separately in terms
+                      ;; of how we recurse (name index) subseqs.
+                      ,(case name
+                         (insert `(,name (lookup tree (car path)) (cdr path)
+                                         ,@(arg-values other-args)))
+                         (t
+                          `(if (and (second path) (typep (second path) 'number))
+                               ;; If we're at the end of the path then take
+                               ;; the same approach as (null (cdr path))
+                               ;; above,
+                               (if (null (cddr path))
+                                   ;; and just handle the last element of
+                                   ;; the path as an atom.
+                                   (,name (lookup tree (first path)) (cadr path)
+                                          ,@(arg-values other-args))
+                                   ;; Otherwise, if we're part way through
+                                   ;; the path handle both child named and
+                                   ;; index in one go and then continue.
+                                   (,name (lookup (lookup tree (first path))
+                                                  (second path))
+                                          (cddr path)
+                                          ,@(arg-values other-args)))
+                               (,name (lookup tree (car path)) (cdr path)
+                                      ,@(arg-values other-args)))))))
                ((integer 0)
                 (reduce
                  (lambda (i child-slot)
