@@ -52,7 +52,7 @@ allocated on the class itself.  See the following example.
 (ft:define-node-class if-then-else-node (ft:node)
   ((ft:child-slots :initform '((then . 1) else) :allocation :class)
    (then :reader then :initarg :then :type ft:node)
-   (else :reader else :initarg :else :type '(list ft:node)))
+   (else :reader else :initarg :else :type list))
   (:documentation "An if-then-else subtree of a program AST."))
 ```
 
