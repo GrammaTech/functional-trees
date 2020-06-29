@@ -1210,8 +1210,9 @@ functions."
                       ;; Handle different methods separately in terms
                       ;; of how we recurse (name index) subseqs.
                       ,(case name
-                         (insert `(,name (lookup tree (car path)) (cdr path)
-                                         ,@(arg-values other-args)))
+                         ((with insert)
+                          `(,name (lookup tree (car path)) (cdr path)
+                                  ,@(arg-values other-args)))
                          (t
                           `(if (and (second path) (typep (second path) 'number))
                                ;; If we're at the end of the path then take
