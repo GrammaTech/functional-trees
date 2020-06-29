@@ -90,18 +90,23 @@ for their last entries?")
 Use this to sort AST asts for mutations that perform multiple
 operations.")
   (:method ((path-a list) (path-b list))
-    (cond
-      ;; Consider longer paths to be later, so in case of nested ASTs we
-      ;; will sort inner one first. Mutating the outer AST could
-      ;; invalidate the inner ast.
-      ((null path-a) nil)
-      ((null path-b) t)
-      (t (nest (destructuring-bind (head-a . tail-a) path-a)
-               (destructuring-bind (head-b . tail-b) path-b)
-               (cond
-                 ((> head-a head-b) t)
-                 ((> head-b head-a) nil)
-                 (t (path-later-p tail-a tail-b))))))))
+    (flet ((path-element-> (a b)
+             (and (numberp a) (numberp b) (> a b)))
+           (path-element-= (a b)
+             (eql a b)))
+      (cond
+        ;; Consider longer paths to be later, so in case of nested ASTs we
+        ;; will sort inner one first. Mutating the outer AST could
+        ;; invalidate the inner ast.
+        ((null path-a) nil)
+        ((null path-b) t)
+        (t (nest (destructuring-bind (head-a . tail-a) path-a)
+                 (destructuring-bind (head-b . tail-b) path-b)
+                 (cond
+                   ((path-element-> head-a head-b) t)
+                   ((path-element-> head-b head-a) nil)
+                   ((path-element-= head-a head-b)
+                    (path-later-p tail-a tail-b)))))))))
 
 (defgeneric copy (obj &key &allow-other-keys)
   (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
