@@ -1209,8 +1209,7 @@ functions."
                           (if (null (cddr path))
                               ;; and just handle the last element of
                               ;; the path as an atom.
-                              (,name (lookup tree (first path))
-                                     (cadr path)
+                              (,name (lookup tree (first path)) (second path)
                                      ,@(arg-values other-args))
                               ;; Otherwise, if we're part way through
                               ;; the path handle both child named and
@@ -1251,7 +1250,10 @@ functions."
                           (account (cond
                                      ;; Explicit arity
                                      ((and (consp child-slot)
-                                           (typep (cdr child-slot) '(integer 0)))
+                                           ;; Explicit arity of 0
+                                           ;; means unspecified hence
+                                           ;; '(integer 1).
+                                           (typep (cdr child-slot) '(integer 1)))
                                       (cdr child-slot))
                                      ;; Populated children
                                      ((listp children) (length children))

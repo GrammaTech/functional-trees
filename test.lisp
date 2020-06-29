@@ -1434,3 +1434,8 @@ diagnostic information on error or failure."
     (is (equal? (@ it '(js-body 0)) 1))
     (is (equal? (js-body (less it '(js-body 0)))
                 '(2 3)))))
+
+(deftest index-into-child-test ()
+  (let ((it (make-instance 'js-block-statement
+                           :js-body (list 1 2 3))))
+    (is (equal? (children (less it 0)) '(2 3)))))
