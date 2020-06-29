@@ -1149,7 +1149,13 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (path cons))
   (etypecase path
     (proper-list
-     (lookup (lookup node (car path)) (cdr path)))
+     ;; If the path has a named child with an index,
+     (if (and (first path) (second path)
+              (typep (first path) 'symbol)
+              (typep (second path) 'number))
+         ;; then handle them both at once.
+         (lookup (lookup (lookup node (first path)) (second path)) (cddr path))
+         (lookup (lookup node (car path)) (cdr path))))
     (cons
      (destructuring-bind (slot . i) path
        (elt (slot-value node slot) i)))))
@@ -1196,8 +1202,25 @@ functions."
                (symbol
                 (copy tree
                       (make-keyword (car path))
-                      (,name (lookup tree (car path)) (cdr path)
-                             ,@(arg-values other-args))))
+                      (if (and (second path) (typep (second path) 'number))
+                          ;; If we're at the end of the path then take
+                          ;; the same approach as (null (cdr path))
+                          ;; above,
+                          (if (null (cddr path))
+                              ;; and just handle the last element of
+                              ;; the path as an atom.
+                              (,name (lookup tree (first path))
+                                     (cadr path)
+                                     ,@(arg-values other-args))
+                              ;; Otherwise, if we're part way through
+                              ;; the path handle both child named and
+                              ;; index in one go and then continue.
+                              (,name (lookup (lookup tree (first path))
+                                             (second path))
+                                     (cddr path)
+                                     ,@(arg-values other-args)))
+                          (,name (lookup tree (car path)) (cdr path)
+                                 ,@(arg-values other-args)))))
                ((integer 0)
                 (reduce
                  (lambda (i child-slot)
