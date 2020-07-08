@@ -121,7 +121,8 @@ operations.")
 (defgeneric tree-copy (obj)
   (:documentation "Copy method that descends into a tree and copies all
 its nodes.")
-  (:method ((obj t)) obj))
+  (:method ((obj t)) obj)
+  (:method ((obj list)) (mapcar #'tree-copy obj)))
 
 (defclass node (identity-ordering-mixin)
   ((transform :reader transform
