@@ -1156,6 +1156,7 @@ tree has its predecessor set to TREE."
 ;;; Define `lookup' methods to work with FSet's `@' macro.
 (defmethod lookup ((node t) (path null)) node)
 (defmethod lookup ((node t) (location node))
+  ;; FIXME: `path-of-node` is an expensive operation
   (lookup node (path-of-node node location)))
 (defmethod lookup ((node node) (path cons))
   (etypecase path
