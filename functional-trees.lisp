@@ -42,7 +42,6 @@
            :equal?
            :node :transform :child-slots :finger
            :path :transform-finger-to :populate-fingers :residue
-           :path-of-node
            :path-equalp
            :path-equalp-butlast
            :path-later-p
