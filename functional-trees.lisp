@@ -109,6 +109,11 @@ operations.")
                    ((path-element-= head-a head-b)
                     (path-later-p tail-a tail-b)))))))))
 
+;;; FIXME: Should we replace this with an explicit deep copy?  We
+;;; wouldn't be able to re-use `copy-array', `copy-seq', etc but we
+;;; could then remove `copy-tree' and just use this generic copy
+;;; universally instead.  It would also then more closely mimic the
+;;; behavior of the `equal?' method defined in GT and FSET.
 (defgeneric copy (obj &key &allow-other-keys)
   (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
   (:method ((obj t) &key &allow-other-keys) obj)
