@@ -37,6 +37,7 @@
                 :slot-definition-name
                 :slot-definition-allocation
                 :slot-definition-initform
+                :slot-definition-initargs
                 :class-slots)
   (:export :copy :tree-copy
            :equal?
@@ -253,6 +254,17 @@ specifies a specific number of children held in the slot.")
                     (and (eql 'child-slots (slot-definition-name slot))
                          (eql :class (slot-definition-allocation slot)))))
                  (class-slots class))))
+      ;; Confirm that all child slots have an initarg that is a keyword
+      ;; of the same name
+      (let ((slot-defs (class-slots class)))
+        (iter (for def in slot-defs)
+              (let ((name (slot-definition-name def)))
+                (when (member name child-slots)
+                  (let ((desired-initarg (make-keyword name))
+                        (actual-initargs (slot-definition-initargs def)))
+                    (unless (member desired-initarg actual-initargs)
+                      (error "Class ~a does not have initarg ~s for slot ~a"
+                             class-name desired-initarg name)))))))
       `(progn
          ,(expand-children-defmethod class child-slots)
          ,(expand-lookup-specialization class child-slots)

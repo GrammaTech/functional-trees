@@ -1443,3 +1443,15 @@ diagnostic information on error or failure."
 (deftest path-later-p-handles-named-children ()
   (is (path-later-p '(js-body 1 js-body 3 js-expression)
                     '(js-body 1 js-body 0))))
+
+(deftest define-node-class.bad-initarg-detected ()
+  (progn
+    (setf (find-class 'bad-node-class) nil)
+    (is (handler-case
+            (progn (eval '(define-node-class bad-node-class (node)
+                           ;; Node C does not have :C  as an initarg
+                           ((c :initarg :z :initform nil)
+                            (child-slots :allocation :class
+                                         :initform '(c)))))
+                   nil)
+          (error () t)))))
