@@ -1213,12 +1213,12 @@ handle lambda lists for method argments."
         (parse-specialized-lambda-list lambda-list)
       (declare (ignore allow-other-keys))
       (append req
-              (mapcar #'car opt)
-              (remove nil (mapcar #'caddr opt))
+              (cl:mapcar #'car opt)
+              (cl:remove nil (cl:mapcar #'caddr opt))
               (when rest (list rest))
-              (mapcar #'cadar key)
-              (remove nil (mapcar #'caddr key))
-              (mapcar #'car aux)))))
+              (cl:mapcar #'cadar key)
+              (cl:remove nil (cl:mapcar #'caddr key))
+              (cl:mapcar #'car aux)))))
 
 (defmacro descend ((name &key other-args extra-args replace splice checks)
                    &body new
