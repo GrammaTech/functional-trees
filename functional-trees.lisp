@@ -157,7 +157,7 @@ specifies a specific number of children held in the slot.")
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
-(defmacro define-node-class (&whole whole name &rest rest)
+(defmacro define-node-class (name &rest rest)
   `(progn
      (eval-when (:load-toplevel :compile-toplevel :execute)
        (defclass ,name ,@rest))
@@ -1193,8 +1193,38 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (i integer))
   (elt (children node) i))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun parse-specialized-lambda-list (lambda-list)
+    "Similar to Alexandria's PARSE-ORDINARY-LAMBDA-LIST, but can
+handle lambda lists for method argments."
+    (let ((args nil))
+      (iter (while (consp lambda-list))
+        (let ((p (car lambda-list)))
+          (while (or (consp p)
+                     (and (symbolp p)
+                          (not (member p lambda-list-keywords)))))
+          (push (if (symbolp p) p (car p)) args)
+          (pop lambda-list)))
+      (parse-ordinary-lambda-list (nreconc args lambda-list))))
+  
+  (defun vars-of-specialized-lambda-list (lambda-list)
+    "List of the variables bound by a lambda list"
+    (multiple-value-bind (req opt rest key allow-other-keys aux)
+        (parse-specialized-lambda-list lambda-list)
+      (declare (ignore allow-other-keys))
+      (append req
+              (mapcar #'car opt)
+              (remove nil (mapcar #'caddr opt))
+              (when rest (list rest))
+              (mapcar #'cadar key)
+              (remove nil (mapcar #'caddr key))
+              (mapcar #'car aux)))))
+
 (defmacro descend ((name &key other-args extra-args replace splice checks)
-                   &body new)
+                   &body new
+                     ;; VARS is used to generate IGNORABLE declarations to avoid
+                     ;; style warnings
+                   &aux (vars (vars-of-specialized-lambda-list (append other-args extra-args))))
   "Define generic functions which descend (and return) through functional trees.
 This is useful to define standard FSet functions such as `with',
 `less', etc...  Keyword arguments control specifics of how the
@@ -1209,15 +1239,20 @@ functions."
     `(progn
        (defmethod
            ,name :around ((tree node) (path t) ,@other-args ,@extra-args)
+           (declare (ignorable ,@vars))
            (with-encapsulation tree (call-next-method)))
        (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks (values ,@new))
        (defmethod ,name ((tree node) (location node) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks (,name tree (path-of-node tree location)
                          ,@(arg-values other-args)))
        (defmethod ,name ((tree node) (slot symbol) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks (copy tree (make-keyword slot) ,@new))
        (defmethod ,name ((tree node) (path cons) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks
          ;; At the end of the path, so act directly.
          (if (null (cdr path))
@@ -1272,6 +1307,7 @@ functions."
                  (child-slots tree)
                  :initial-value (car path))))))
        (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
+         (declare (ignorable ,@vars))
          ,@checks
          (reduce (lambda (i child-slot)
                    (let* ((slot (if (consp child-slot)
@@ -1303,6 +1339,7 @@ functions."
                  :initial-value i)
          (error ,(format nil "Cannot ~a beyond end of children." name)))
        (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
+         (declare (ignorable ,@vars))
          ,@checks
          (append (subseq list 0 i)
                  ,@(if splice `,new `((list ,@new)))
