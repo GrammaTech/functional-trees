@@ -523,6 +523,28 @@ bucket getting at least 1.  Return as a list."
             (progn (transform-finger f1 node2) t)
           (error () nil)))))
 
+#+nil
+(deftest transform-path.named-children ()
+  ;; Tests of path transforms on nodes with named child slots
+  (let* ((l1 '((a b 1) (c d 2) 3))
+         (node1 (convert 'node-with-arity2 l1))
+         (l2 `((a b 1) (e ,(second (node-a node1)) 4) 3))
+         (node2 (convert 'node-with-arity2 l2))
+         )
+    (is (equal (convert 'list node2)
+               '((a b 1) (e (c d 2) 4) 3)))
+    (let ((f1 (make-instance 'finger :node node1 :path nil)))
+      (is (null (path f1)))
+      (is (equal (convert 'list f1) l1))
+      (is (equal (convert 'list (lookup node1 '(:a 0))) '(a b 1)))
+      (is (equal (convert 'list (lookup node1 '(:a 1))) '(c d 2))))
+    (let ((pt (path-transform-of node1 node2)))
+      ;; (is (equal (transform-path nil pt) nil))
+      ;; (is (equal (transform-path '(:a 0) pt) '(:a 0)))
+      (is (equal pt nil)) ;; wrong
+      )))
+      
+
 ;;; Tests of path-transform-of, mapcar
 (deftest mapcar.0 ()
   (is (eql (mapcar #'identity 1) 1))
@@ -1431,8 +1453,8 @@ diagnostic information on error or failure."
   (let ((it (make-instance 'js-block-statement
                            :js-body (list 1 2 3))))
     (is (equal? (@ it '(js-body)) '(1 2 3)))
-    (is (equal? (@ it '(js-body 0)) 1))
-    (is (equal? (js-body (less it '(js-body 0)))
+    (is (equal? (@ it '((js-body . 0))) 1))
+    (is (equal? (js-body (less it '((js-body . 0))))
                 '(2 3)))))
 
 (deftest index-into-child-test ()
@@ -1441,8 +1463,8 @@ diagnostic information on error or failure."
     (is (equal? (children (less it 0)) '(2 3)))))
 
 (deftest path-later-p-handles-named-children ()
-  (is (path-later-p '(js-body 1 js-body 3 js-expression)
-                    '(js-body 1 js-body 0))))
+  (is (path-later-p '((js-body . 1)  (js-body . 3) js-expression)
+                    '((js-body . 1) (js-body . 0)))))
 
 (deftest define-node-class.bad-initarg-detected ()
   (progn

@@ -86,15 +86,43 @@
 for their last entries?")
   (:method ((path-a t) (path-b t)) (equalp (butlast path-a) (butlast path-b))))
 
+(defgeneric path-element-> (a b)
+  (:documentation "Ordering function for elements of paths")
+  (:method ((a real) (b real))
+    (> a b))
+  (:method ((a cons) (b cons))
+    (let ((ca (car a))
+          (cb (car b))
+          (na (or (cdr a) 0))
+          (nb (or (cdr b) 0)))
+      (assert (symbolp ca))
+      (assert (symbolp cb))
+      (cond
+        ((eql ca cb) (> na nb))
+        (t (string> (symbol-name ca) (symbol-name cb))))))
+  (:method ((a cons) (b real)) nil)
+  (:method ((a real) (b cons)) t))
+
+(defgeneric path-element-= (a b)
+  (:documentation "Equality function for elements of a path, taking
+into account the representation of named children")
+  (:method ((a real) (b real)) (eql a b))
+  (:method ((a cons) (b real)) nil)
+  (:method ((a real) (b cons)) nil)
+  (:method ((a cons) (b cons))
+    (and (eql (car a) (car b))
+         (eql (or (cdr a) 0)
+              (or (cdr b) 0)))))
+
 (defgeneric path-later-p (path-a path-b)
   (:documentation "Does PATH-A represent an AST path after PATH-B?
 Use this to sort AST asts for mutations that perform multiple
 operations.")
   (:method ((path-a list) (path-b list))
-    (flet ((path-element-> (a b)
+    (flet () #+nil((path-element-> (a b)
              (and (numberp a) (numberp b) (> a b)))
            (path-element-= (a b)
-             (eql a b)))
+             (equal a b)))
       (cond
         ;; Consider longer paths to be later, so in case of nested ASTs we
         ;; will sort inner one first. Mutating the outer AST could
@@ -127,7 +155,7 @@ operations.")
   (:documentation "Copy method that descends into a tree and copies all
 its nodes.")
   (:method ((obj t)) obj)
-  (:method ((obj list)) (mapcar #'tree-copy obj)))
+  (:method ((obj list)) (cl:mapcar #'tree-copy obj)))
 
 (defclass node (identity-ordering-mixin)
   ((transform :reader transform
@@ -1173,16 +1201,17 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (path cons))
   (etypecase path
     (proper-list
-     ;; If the path has a named child with an index,
+#|     ;; If the path has a named child with an index
      (if (and (first path) (second path)
               (typep (first path) 'symbol)
               (typep (second path) 'number))
          ;; then handle them both at once.
-         (lookup (lookup (lookup node (first path)) (second path)) (cddr path))
-         (lookup (lookup node (car path)) (cdr path))))
+         (lookup (lookup (lookup node (first path)) (second path)) (cddr path)) |#
+     (lookup (lookup node (car path)) (cdr path)))
+    ;; )
     (cons
      (destructuring-bind (slot . i) path
-       (elt (slot-value node slot) i)))))
+       (lookup (slot-value node slot) i)))))
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
@@ -1258,11 +1287,14 @@ functions."
          (if (null (cdr path))
              (,name tree (car path) ,@(arg-values other-args))
              (etypecase (car path)
-               (symbol
+               ((or symbol (cons symbol (integer 0)))
                 (copy tree
                       (make-keyword (car path))
+                      (,name (lookup tree (car path)) (cdr path)
+                             ,@(arg-values other-args))
                       ;; Handle different methods separately in terms
                       ;; of how we recurse (name index) subseqs.
+                      #|
                       ,(case name
                          ((with insert)
                           `(,name (lookup tree (car path)) (cdr path)
@@ -1285,7 +1317,9 @@ functions."
                                           (cddr path)
                                           ,@(arg-values other-args)))
                                (,name (lookup tree (car path)) (cdr path)
-                                      ,@(arg-values other-args)))))))
+                                      ,@(arg-values other-args)))))
+                      |#
+                      ))
                ((integer 0)
                 (reduce
                  (lambda (i child-slot)
