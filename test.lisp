@@ -523,7 +523,6 @@ bucket getting at least 1.  Return as a list."
             (progn (transform-finger f1 node2) t)
           (error () nil)))))
 
-#+nil
 (deftest transform-path.named-children ()
   ;; Tests of path transforms on nodes with named child slots
   (let* ((l1 '((a b 1) (c d 2) 3))
@@ -536,8 +535,8 @@ bucket getting at least 1.  Return as a list."
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
       (is (null (path f1)))
       (is (equal (convert 'list f1) l1))
-      (is (equal (convert 'list (lookup node1 '(:a 0))) '(a b 1)))
-      (is (equal (convert 'list (lookup node1 '(:a 1))) '(c d 2))))
+      (is (equal (convert 'list (lookup node1 '((a . 0)))) '(a b 1)))
+      (is (equal (convert 'list (lookup node1 '((a . 1)))) '(c d 2))))
     (let ((pt (path-transform-of node1 node2)))
       ;; (is (equal (transform-path nil pt) nil))
       ;; (is (equal (transform-path '(:a 0) pt) '(:a 0)))
