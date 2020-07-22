@@ -114,6 +114,8 @@ into account the representation of named children")
          (eql (or (cdr a) 0)
               (or (cdr b) 0)))))
 
+;;; TODO: determine if this may or should be combined with lexicographic-<
+
 (defgeneric path-later-p (path-a path-b)
   (:documentation "Does PATH-A represent an AST path after PATH-B?
 Use this to sort AST asts for mutations that perform multiple
@@ -273,7 +275,12 @@ specifies a specific number of children held in the slot.")
   (let ((class (find-class class-name env)))
     (assert class () "No class found for ~s" class-name)
     ;; create an instance to cause the class to be finalized
-    (make-instance class-name)
+    (let ((node (make-instance class-name)))
+      ;; Sort the child slots by child name
+      (let ((child-slots (slot-value node 'child-slots)))
+        (declare (notinline slot-spec-slot))
+        (setf (slot-value node 'child-slots)
+              (sort child-slots #'string< :key #'slot-spec-slot))))
     (let ((child-slots
            (nest (eval)
                  (slot-definition-initform)
@@ -330,6 +337,7 @@ specifies a specific number of children held in the slot.")
    (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
    (class-slots (class-of node))))
 
+;;; TODO -- specialize this in define-node-class
 (defmethod tree-copy ((node node))
   (let* ((child-slots (slot-value node 'child-slots))
          (slots (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot)))
@@ -483,9 +491,8 @@ augmented by the label of that child."))
 
 (defmethod map-children/i ((node node) (index list) (fn function))
   (let* ((child-slots (child-slots node))
-         (num-slots (length child-slots))
-         (counter 0))
-    (declare (type fixnum counter))
+         (num-slots (length child-slots)))
+    (declare (type fixnum))
     (dolist (child-slot child-slots)
       (let ((name (slot-spec-slot child-slot)))
         (if (eql 1 (slot-spec-arity child-slot))
@@ -495,13 +502,16 @@ augmented by the label of that child."))
                                   (list* name index)
                                   fn)
             ;; Otherwise add slot name and index into slot.
-            (let ((child-list (child-list node child-slot)))
-              (if (eql 1 num-slots)
+            (let ((child-list (child-list node child-slot))
+                  (counter 0))
+              (declare (type fixnum counter))
+              (if (and (eql 1 num-slots) (eql name 'children))
                   (dolist (child child-list)
                     (pure-traverse-tree/i child (list* counter index) fn)
                     (incf counter))
                   (dolist (child child-list)
-                    (pure-traverse-tree/i child (list* counter name index) fn)
+                    (pure-traverse-tree/i
+                     child (list* (cons name counter) index) fn)
                     (incf counter)))))))))
 
 (defmethod map-children ((node t) (fn function)) nil)
@@ -672,7 +682,7 @@ or NIL if no such segments end here.")
               (return))
             (let* ((map (trie-map node))
                    (i (car segment))
-                   (p (assoc i (trie-map node))))
+                   (p (assoc i (trie-map node) :test #'equal)))
               (if p
                   (setf node (cdr p)
                         segment (cdr segment))
@@ -702,7 +712,7 @@ in the transforms slot of PATH-TRANSFORMS objects."
                     deepest-match d)))
           (while path)
           (let* ((i (car path))
-                 (p (assoc i (trie-map node))))
+                 (p (assoc i (trie-map node) :test #'equal)))
             (unless p (return))
             (setf node (cdr p)
                   path (cdr path))))
@@ -849,7 +859,7 @@ below ROOT and produce a valid tree."))
           (return-from node-can-implant nil))))))
 
 (defun lexicographic-< (list1 list2)
-  "Lexicographic comparison of lists of reals or symbols
+  "Lexicographic comparison of lists of reals,  symbols, or pairs.
 Symbols are considered to be less than reals, and symbols
 are compared with each other using fset:compare"
   (loop
@@ -863,8 +873,22 @@ are compared with each other using fset:compare"
          ((symbolp c1)
           (unless (symbolp c2) (return t))
           (unless (eql c1 c2)
-            (return (eql (compare c1 c2) :less))))
+            (return (string< c1 c2))))
          ((symbolp c2) (return nil))
+         ((consp c1)
+          (unless (consp c2)
+            (return t))
+          (let ((c1a (car c1))
+                (c2a (car c2)))
+            (assert (symbolp c1a))
+            (assert (symbolp c2a))
+            (unless (eql c1a c2a)
+              (return (string< c1a c2a))))
+          (let ((c1d (cdr c1))
+                (c2d (cdr c2)))
+            (cond
+              ((< c1d c2d) (return t))
+              ((> c1d c2d) (return nil)))))
          ((<= c1 c2)
           (when (< c1 c2)
             (return t)))
@@ -1001,12 +1025,35 @@ are compared with each other using fset:compare"
       (incf count)))
   #+debug-node-heap (check-heap nh)
   nh)
-
+#|
 (defun node-heap-add-children (nh node path)
   (iter (for i from 0)
         (for c in (children node))
         (when (typep c 'node)
           (node-heap-insert nh c (append path (list i))))))
+|#
+
+(defgeneric node-heap-add-children (nh node path)
+  (:documentation "Add the children of NODE to the node heap NH.  PATH
+is the path to NODE.")
+  (:method ((nh t) (node node) (path list))
+    (let ((child-slots (child-slots node)))
+      (dolist (child-slot child-slots)
+        (let ((slot (slot-spec-slot child-slot))
+              (arity (slot-spec-arity child-slot)))
+          (iter (for c in (child-list node child-slot))
+                (for i from 0)
+                (when (typep c 'node)
+                  (let ((path-element
+                          (cond
+                            ((eql slot 'children) i)
+                            ((eql arity 1)
+                             (assert (eql i 0))
+                             slot)
+                            (t (cons slot i)))))
+                    (node-heap-insert nh c
+                                      (append path (list path-element)))))))))))
+
 
 ;;; The algorithm for computing the path transform finds all
 ;;; the nodes that are unique to either tree, and their immediate
@@ -1235,7 +1282,7 @@ handle lambda lists for method argments."
           (push (if (symbolp p) p (car p)) args)
           (pop lambda-list)))
       (parse-ordinary-lambda-list (nreconc args lambda-list))))
-  
+
   (defun vars-of-specialized-lambda-list (lambda-list)
     "List of the variables bound by a lambda list"
     (multiple-value-bind (req opt rest key allow-other-keys aux)
