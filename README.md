@@ -82,7 +82,7 @@ sub-class finalization process for sub-classes of `node`.
 
 Thus if we create a node using our new class and give values to its
 `child-slots`, the `children` function will return the list of those children
-according to the the order of the `child-slots` list:
+according to the order of the `child-slots` list:
 
 ```lisp
 (ft:children (make-instance 'if-then-else-node
@@ -228,7 +228,7 @@ Slots with :INSTANCE allocation:
 
 Because these two fingers were both created in the context of the same tree,
 they both point to the same root `node`. However, this one has a different
-`path` to it: we took the first node in the the `else` branch.
+`path` to it: we took the first node in the `else` branch.
 
 The `ft:populate-fingers` function produces fingers whose paths follow a
 somewhat different format from the paths used in other parts of the library; see
