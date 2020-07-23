@@ -74,6 +74,8 @@
              ((cons (integer 0)         ; Non-scalar child-slot w/index.
                     (cons integer null))
               (<= (first x) (second x)))
+             ((cons symbol null) t)
+             ((cons symbol (integer 0)) t)
              (t nil)))
          list))
 
