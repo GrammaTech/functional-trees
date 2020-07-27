@@ -37,6 +37,7 @@
                 :slot-definition-name
                 :slot-definition-allocation
                 :slot-definition-initform
+                :slot-definition-initargs
                 :class-slots)
   (:export :copy :tree-copy
            :equal?
@@ -73,6 +74,8 @@
              ((cons (integer 0)         ; Non-scalar child-slot w/index.
                     (cons integer null))
               (<= (first x) (second x)))
+             ((cons symbol null) t)
+             ((cons symbol (integer 0)) t)
              (t nil)))
          list))
 
@@ -85,24 +88,64 @@
 for their last entries?")
   (:method ((path-a t) (path-b t)) (equalp (butlast path-a) (butlast path-b))))
 
+(defgeneric path-element-> (a b)
+  (:documentation "Ordering function for elements of paths")
+  (:method ((a real) (b real))
+    (> a b))
+  (:method ((a cons) (b cons))
+    (let ((ca (car a))
+          (cb (car b))
+          (na (or (cdr a) 0))
+          (nb (or (cdr b) 0)))
+      (assert (symbolp ca))
+      (assert (symbolp cb))
+      (cond
+        ((eql ca cb) (> na nb))
+        (t (string> (symbol-name ca) (symbol-name cb))))))
+  (:method ((a cons) (b real)) nil)
+  (:method ((a real) (b cons)) t))
+
+(defgeneric path-element-= (a b)
+  (:documentation "Equality function for elements of a path, taking
+into account the representation of named children")
+  (:method ((a real) (b real)) (eql a b))
+  (:method ((a cons) (b real)) nil)
+  (:method ((a real) (b cons)) nil)
+  (:method ((a cons) (b cons))
+    (and (eql (car a) (car b))
+         (eql (or (cdr a) 0)
+              (or (cdr b) 0)))))
+
+;;; TODO: determine if this may or should be combined with lexicographic-<
+
 (defgeneric path-later-p (path-a path-b)
   (:documentation "Does PATH-A represent an AST path after PATH-B?
 Use this to sort AST asts for mutations that perform multiple
 operations.")
   (:method ((path-a list) (path-b list))
-    (cond
-      ;; Consider longer paths to be later, so in case of nested ASTs we
-      ;; will sort inner one first. Mutating the outer AST could
-      ;; invalidate the inner ast.
-      ((null path-a) nil)
-      ((null path-b) t)
-      (t (nest (destructuring-bind (head-a . tail-a) path-a)
-               (destructuring-bind (head-b . tail-b) path-b)
-               (cond
-                 ((> head-a head-b) t)
-                 ((> head-b head-a) nil)
-                 (t (path-later-p tail-a tail-b))))))))
+    (flet () #+nil((path-element-> (a b)
+             (and (numberp a) (numberp b) (> a b)))
+           (path-element-= (a b)
+             (equal a b)))
+      (cond
+        ;; Consider longer paths to be later, so in case of nested ASTs we
+        ;; will sort inner one first. Mutating the outer AST could
+        ;; invalidate the inner ast.
+        ((null path-a) nil)
+        ((null path-b) t)
+        (t (nest (destructuring-bind (head-a . tail-a) path-a)
+                 (destructuring-bind (head-b . tail-b) path-b)
+                 (cond
+                   ((path-element-> head-a head-b) t)
+                   ((path-element-> head-b head-a) nil)
+                   ((path-element-= head-a head-b)
+                    (path-later-p tail-a tail-b)))))))))
 
+;;; FIXME: Should we replace this with an explicit deep copy?  We
+;;; wouldn't be able to re-use `copy-array', `copy-seq', etc but we
+;;; could then remove `copy-tree' and just use this generic copy
+;;; universally instead.  It would also then more closely mimic the
+;;; behavior of the `equal?' method defined in GT and FSET.
 (defgeneric copy (obj &key &allow-other-keys)
   (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
   (:method ((obj t) &key &allow-other-keys) obj)
@@ -115,7 +158,8 @@ operations.")
 (defgeneric tree-copy (obj)
   (:documentation "Copy method that descends into a tree and copies all
 its nodes.")
-  (:method ((obj t)) obj))
+  (:method ((obj t)) obj)
+  (:method ((obj list)) (cl:mapcar #'tree-copy obj)))
 
 (defclass node (identity-ordering-mixin)
   ((transform :reader transform
@@ -145,7 +189,7 @@ specifies a specific number of children held in the slot.")
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
 
-(defmacro define-node-class (&whole whole name &rest rest)
+(defmacro define-node-class (name &rest rest)
   `(progn
      (eval-when (:load-toplevel :compile-toplevel :execute)
        (defclass ,name ,@rest))
@@ -233,7 +277,12 @@ specifies a specific number of children held in the slot.")
   (let ((class (find-class class-name env)))
     (assert class () "No class found for ~s" class-name)
     ;; create an instance to cause the class to be finalized
-    (make-instance class-name)
+    (let ((node (make-instance class-name)))
+      ;; Sort the child slots by child name
+      (let ((child-slots (slot-value node 'child-slots)))
+        (declare (notinline slot-spec-slot))
+        (setf (slot-value node 'child-slots)
+              (sort child-slots #'string< :key #'slot-spec-slot))))
     (let ((child-slots
            (nest (eval)
                  (slot-definition-initform)
@@ -242,6 +291,17 @@ specifies a specific number of children held in the slot.")
                     (and (eql 'child-slots (slot-definition-name slot))
                          (eql :class (slot-definition-allocation slot)))))
                  (class-slots class))))
+      ;; Confirm that all child slots have an initarg that is a keyword
+      ;; of the same name
+      (let ((slot-defs (class-slots class)))
+        (iter (for def in slot-defs)
+              (let ((name (slot-definition-name def)))
+                (when (member name child-slots)
+                  (let ((desired-initarg (make-keyword name))
+                        (actual-initargs (slot-definition-initargs def)))
+                    (unless (member desired-initarg actual-initargs)
+                      (error "Class ~a does not have initarg ~s for slot ~a"
+                             class-name desired-initarg name)))))))
       `(progn
          ,(expand-children-defmethod class child-slots)
          ,(expand-lookup-specialization class child-slots)
@@ -279,6 +339,7 @@ specifies a specific number of children held in the slot.")
    (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
    (class-slots (class-of node))))
 
+;;; TODO -- specialize this in define-node-class
 (defmethod tree-copy ((node node))
   (let* ((child-slots (slot-value node 'child-slots))
          (slots (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot)))
@@ -432,9 +493,8 @@ augmented by the label of that child."))
 
 (defmethod map-children/i ((node node) (index list) (fn function))
   (let* ((child-slots (child-slots node))
-         (num-slots (length child-slots))
-         (counter 0))
-    (declare (type fixnum counter))
+         (num-slots (length child-slots)))
+    (declare (type fixnum))
     (dolist (child-slot child-slots)
       (let ((name (slot-spec-slot child-slot)))
         (if (eql 1 (slot-spec-arity child-slot))
@@ -444,13 +504,16 @@ augmented by the label of that child."))
                                   (list* name index)
                                   fn)
             ;; Otherwise add slot name and index into slot.
-            (let ((child-list (child-list node child-slot)))
-              (if (eql 1 num-slots)
+            (let ((child-list (child-list node child-slot))
+                  (counter 0))
+              (declare (type fixnum counter))
+              (if (and (eql 1 num-slots) (eql name 'children))
                   (dolist (child child-list)
                     (pure-traverse-tree/i child (list* counter index) fn)
                     (incf counter))
                   (dolist (child child-list)
-                    (pure-traverse-tree/i child (list* counter name index) fn)
+                    (pure-traverse-tree/i
+                     child (list* (cons name counter) index) fn)
                     (incf counter)))))))))
 
 (defmethod map-children ((node t) (fn function)) nil)
@@ -621,7 +684,7 @@ or NIL if no such segments end here.")
               (return))
             (let* ((map (trie-map node))
                    (i (car segment))
-                   (p (assoc i (trie-map node))))
+                   (p (assoc i (trie-map node) :test #'equal)))
               (if p
                   (setf node (cdr p)
                         segment (cdr segment))
@@ -651,7 +714,7 @@ in the transforms slot of PATH-TRANSFORMS objects."
                     deepest-match d)))
           (while path)
           (let* ((i (car path))
-                 (p (assoc i (trie-map node))))
+                 (p (assoc i (trie-map node) :test #'equal)))
             (unless p (return))
             (setf node (cdr p)
                   path (cdr path))))
@@ -798,7 +861,7 @@ below ROOT and produce a valid tree."))
           (return-from node-can-implant nil))))))
 
 (defun lexicographic-< (list1 list2)
-  "Lexicographic comparison of lists of reals or symbols
+  "Lexicographic comparison of lists of reals,  symbols, or pairs.
 Symbols are considered to be less than reals, and symbols
 are compared with each other using fset:compare"
   (loop
@@ -812,8 +875,22 @@ are compared with each other using fset:compare"
          ((symbolp c1)
           (unless (symbolp c2) (return t))
           (unless (eql c1 c2)
-            (return (eql (compare c1 c2) :less))))
+            (return (string< c1 c2))))
          ((symbolp c2) (return nil))
+         ((consp c1)
+          (unless (consp c2)
+            (return t))
+          (let ((c1a (car c1))
+                (c2a (car c2)))
+            (assert (symbolp c1a))
+            (assert (symbolp c2a))
+            (unless (eql c1a c2a)
+              (return (string< c1a c2a))))
+          (let ((c1d (cdr c1))
+                (c2d (cdr c2)))
+            (cond
+              ((< c1d c2d) (return t))
+              ((> c1d c2d) (return nil)))))
          ((<= c1 c2)
           (when (< c1 c2)
             (return t)))
@@ -950,12 +1027,35 @@ are compared with each other using fset:compare"
       (incf count)))
   #+debug-node-heap (check-heap nh)
   nh)
-
+#|
 (defun node-heap-add-children (nh node path)
   (iter (for i from 0)
         (for c in (children node))
         (when (typep c 'node)
           (node-heap-insert nh c (append path (list i))))))
+|#
+
+(defgeneric node-heap-add-children (nh node path)
+  (:documentation "Add the children of NODE to the node heap NH.  PATH
+is the path to NODE.")
+  (:method ((nh t) (node node) (path list))
+    (let ((child-slots (child-slots node)))
+      (dolist (child-slot child-slots)
+        (let ((slot (slot-spec-slot child-slot))
+              (arity (slot-spec-arity child-slot)))
+          (iter (for c in (child-list node child-slot))
+                (for i from 0)
+                (when (typep c 'node)
+                  (let ((path-element
+                          (cond
+                            ((eql slot 'children) i)
+                            ((eql arity 1)
+                             (assert (eql i 0))
+                             slot)
+                            (t (cons slot i)))))
+                    (node-heap-insert nh c
+                                      (append path (list path-element)))))))))))
+
 
 ;;; The algorithm for computing the path transform finds all
 ;;; the nodes that are unique to either tree, and their immediate
@@ -1145,14 +1245,22 @@ tree has its predecessor set to TREE."
 ;;; Define `lookup' methods to work with FSet's `@' macro.
 (defmethod lookup ((node t) (path null)) node)
 (defmethod lookup ((node t) (location node))
+  ;; FIXME: `path-of-node` is an expensive operation
   (lookup node (path-of-node node location)))
 (defmethod lookup ((node node) (path cons))
   (etypecase path
     (proper-list
+#|     ;; If the path has a named child with an index
+     (if (and (first path) (second path)
+              (typep (first path) 'symbol)
+              (typep (second path) 'number))
+         ;; then handle them both at once.
+         (lookup (lookup (lookup node (first path)) (second path)) (cddr path)) |#
      (lookup (lookup node (car path)) (cdr path)))
+    ;; )
     (cons
      (destructuring-bind (slot . i) path
-       (elt (slot-value node slot) i)))))
+       (lookup (slot-value node slot) i)))))
 (defmethod lookup ((node node) (finger finger))
     (let ((new-finger (transform-finger finger node)))
       (values (lookup node (path new-finger)) (residue new-finger))))
@@ -1163,8 +1271,38 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (i integer))
   (elt (children node) i))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun parse-specialized-lambda-list (lambda-list)
+    "Similar to Alexandria's PARSE-ORDINARY-LAMBDA-LIST, but can
+handle lambda lists for method argments."
+    (let ((args nil))
+      (iter (while (consp lambda-list))
+        (let ((p (car lambda-list)))
+          (while (or (consp p)
+                     (and (symbolp p)
+                          (not (member p lambda-list-keywords)))))
+          (push (if (symbolp p) p (car p)) args)
+          (pop lambda-list)))
+      (parse-ordinary-lambda-list (nreconc args lambda-list))))
+
+  (defun vars-of-specialized-lambda-list (lambda-list)
+    "List of the variables bound by a lambda list"
+    (multiple-value-bind (req opt rest key allow-other-keys aux)
+        (parse-specialized-lambda-list lambda-list)
+      (declare (ignore allow-other-keys))
+      (append req
+              (cl:mapcar #'car opt)
+              (cl:remove nil (cl:mapcar #'caddr opt))
+              (when rest (list rest))
+              (cl:mapcar #'cadar key)
+              (cl:remove nil (cl:mapcar #'caddr key))
+              (cl:mapcar #'car aux)))))
+
 (defmacro descend ((name &key other-args extra-args replace splice checks)
-                   &body new)
+                   &body new
+                     ;; VARS is used to generate IGNORABLE declarations to avoid
+                     ;; style warnings
+                   &aux (vars (vars-of-specialized-lambda-list (append other-args extra-args))))
   "Define generic functions which descend (and return) through functional trees.
 This is useful to define standard FSet functions such as `with',
 `less', etc...  Keyword arguments control specifics of how the
@@ -1179,25 +1317,58 @@ functions."
     `(progn
        (defmethod
            ,name :around ((tree node) (path t) ,@other-args ,@extra-args)
+           (declare (ignorable ,@vars))
            (with-encapsulation tree (call-next-method)))
        (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks (values ,@new))
        (defmethod ,name ((tree node) (location node) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks (,name tree (path-of-node tree location)
                          ,@(arg-values other-args)))
        (defmethod ,name ((tree node) (slot symbol) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks (copy tree (make-keyword slot) ,@new))
        (defmethod ,name ((tree node) (path cons) ,@other-args ,@extra-args)
+          (declare (ignorable ,@vars))
          ,@checks
          ;; At the end of the path, so act directly.
          (if (null (cdr path))
              (,name tree (car path) ,@(arg-values other-args))
              (etypecase (car path)
-               (symbol
+               ((or symbol (cons symbol (integer 0)))
                 (copy tree
                       (make-keyword (car path))
                       (,name (lookup tree (car path)) (cdr path)
-                             ,@(arg-values other-args))))
+                             ,@(arg-values other-args))
+                      ;; Handle different methods separately in terms
+                      ;; of how we recurse (name index) subseqs.
+                      #|
+                      ,(case name
+                         ((with insert)
+                          `(,name (lookup tree (car path)) (cdr path)
+                                  ,@(arg-values other-args)))
+                         (t
+                          `(if (and (second path) (typep (second path) 'number))
+                               ;; If we're at the end of the path then take
+                               ;; the same approach as (null (cdr path))
+                               ;; above,
+                               (if (null (cddr path))
+                                   ;; and just handle the last element of
+                                   ;; the path as an atom.
+                                   (,name (lookup tree (first path)) (cadr path)
+                                          ,@(arg-values other-args))
+                                   ;; Otherwise, if we're part way through
+                                   ;; the path handle both child named and
+                                   ;; index in one go and then continue.
+                                   (,name (lookup (lookup tree (first path))
+                                                  (second path))
+                                          (cddr path)
+                                          ,@(arg-values other-args)))
+                               (,name (lookup tree (car path)) (cdr path)
+                                      ,@(arg-values other-args)))))
+                      |#
+                      ))
                ((integer 0)
                 (reduce
                  (lambda (i child-slot)
@@ -1219,6 +1390,7 @@ functions."
                  (child-slots tree)
                  :initial-value (car path))))))
        (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
+         (declare (ignorable ,@vars))
          ,@checks
          (reduce (lambda (i child-slot)
                    (let* ((slot (if (consp child-slot)
@@ -1228,7 +1400,10 @@ functions."
                           (account (cond
                                      ;; Explicit arity
                                      ((and (consp child-slot)
-                                           (typep (cdr child-slot) '(integer 0)))
+                                           ;; Explicit arity of 0
+                                           ;; means unspecified hence
+                                           ;; '(integer 1).
+                                           (typep (cdr child-slot) '(integer 1)))
                                       (cdr child-slot))
                                      ;; Populated children
                                      ((listp children) (length children))
@@ -1247,6 +1422,7 @@ functions."
                  :initial-value i)
          (error ,(format nil "Cannot ~a beyond end of children." name)))
        (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
+         (declare (ignorable ,@vars))
          ,@checks
          (append (subseq list 0 i)
                  ,@(if splice `,new `((list ,@new)))

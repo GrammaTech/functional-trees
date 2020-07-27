@@ -384,7 +384,14 @@ bucket getting at least 1.  Return as a list."
   (is (not (lexicographic-< '(b) '(a))))
   (is (lexicographic-< '(a) '(0)))
   (is (not (lexicographic-< '(0) '(a))))
-  (is (not (lexicographic-< '(a) '(a)))))
+  (is (not (lexicographic-< '(a) '(a))))
+  (is (lexicographic-< '((a . 1)) '(2)))
+  (is (lexicographic-< '((a . 1)) '((a . 2))))
+  (is (not (lexicographic-< '((a . 2)) '((a . 1)))))
+  (is (lexicographic-< '((a . 1) 3) '((a . 1) 10)))
+  (is (if (eql (fset:compare 'a 'b) :less)
+          (lexicographic-< '((a . 1)) '((b . 0)))
+          (not (lexicographic-< '((a . 1)) '((b . 0)))))))
 
 (deftest make-node.1 ()
   (is (not (convert 'node-cons nil)))
@@ -522,6 +529,34 @@ bucket getting at least 1.  Return as a list."
     (is (handler-case
             (progn (transform-finger f1 node2) t)
           (error () nil)))))
+
+(deftest transform-path.named-children ()
+  ;; Tests of path transforms on nodes with named child slots
+  (let* ((l1 '((a b 1) (c d 2) 3))
+         (node1 (convert 'node-with-arity2 l1))
+         (l2 `((a b 1) (e ,(second (node-a node1)) 4) 3))
+         (node2 (convert 'node-with-arity2 l2))
+         (f1 (make-instance 'finger :node node1 :path nil))
+         (f2 (make-instance 'finger :node node1 :path '((a . 0))))
+         (f3 (make-instance 'finger :node node1 :path '((a . 1))))
+         )
+    (is (equal (convert 'list node2)
+               '((a b 1) (e (c d 2) 4) 3)))
+    (is (null (path f1)))
+    (is (equal (convert 'list f1) l1))
+    (is (equal (convert 'list (lookup node1 '((a . 0)))) '(a b 1)))
+    (is (equal (convert 'list (lookup node1 '((a . 1)))) '(c d 2)))
+    (is (equal (convert 'list f1) l1))
+    (is (equal (convert 'list f2) (car l1)))
+    (is (equal (convert 'list f3) (cadr l1)))
+    (let ((pt (path-transform-of node1 node2)))
+      ;; (is (equal (transform-path nil pt) nil))
+      ;; (is (equal (transform-path '(:a 0) pt) '(:a 0)))
+      (is (eql (ft::from pt) node1))
+      (is (equal (ft::transforms pt)
+                 '((((a . 1)) ((a . 1) (a . 1)) :live))))
+      (let ((f4 (transform-finger-to f3 pt node2)))
+        (is (equal (path f4) '((a . 1) (a . 1))))))))
 
 ;;; Tests of path-transform-of, mapcar
 (deftest mapcar.0 ()
@@ -772,12 +807,14 @@ diagnostic information on error or failure."
   ;; Swap (:d 26) and (:b 54 84)
   (let* ((l1 '(:i 17 17 (:d 26) (:m (:b 54 84))))
          (n1 (convert 'node-cons l1))
-         ;; (p2 '(:tail :tail :tail :head))
-         (p2 '(1 1 1 0))
+         (p2 '(tail tail tail head))
+         ;; (p2 '((tail . 0) (tail . 0) (tail . 0) (head . 0)))
          (n2 (@ n1 p2))
          (f2 (make-instance 'finger :node n1 :path p2))
          ;; (p3 '(:tail :tail :tail :tail :head :tail :head))
-         (p3 '(1 1 1 1 0 1 0))
+         ;; (p3 '(1 1 1 1 0 1 0))
+         (p3 '(tail tail tail tail head tail head))
+         ; (p3 '((tail . 0) (tail . 0) (tail . 0) (tail . 0) (head . 0) (tail . 0) (head . 0)))
          (n3 (@ n1 p3))
          (f3 (make-instance 'finger :node n1 :path p3))
          (n4 (swap n1 n2 n3)))
@@ -1003,6 +1040,12 @@ diagnostic information on error or failure."
            6))
     (is (not (position-if (constantly nil) tree)))
     (is (not (position-if #'identity tree :key (constantly nil))))))
+
+(deftest position-if-tree.named-children ()
+    (let* ((l1 '((a b . 1) (c d . 2) . 3))
+           (node (convert 'node-with-arity2 l1)))
+      (is (equal (position-if #'evenp node :key #'data)
+                 '((a . 1))))))
 
 (deftest position-if-not-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
@@ -1419,3 +1462,55 @@ diagnostic information on error or failure."
     (let ((tree (make-random-tree 5)))
       (store tree store-file)
       (is (equal? tree (restore store-file))))))
+
+;;; Named children test.
+(defclass js-block-statement (node)
+  ((acorn-slot-name :initform :block-statement :allocation :class)
+   (child-slots :initform '((js-body . 0)) :allocation :class)
+   (js-body :reader js-body :initform nil :initarg :js-body :type list))
+  (:documentation "javascript ast node class for block-statement acorn asts."))
+
+(deftest test-index-into-named-child ()
+  (let ((it (make-instance 'js-block-statement
+                           :js-body (list 1 2 3))))
+    (is (equal? (@ it '(js-body)) '(1 2 3)))
+    (is (equal? (@ it '((js-body . 0))) 1))
+    (is (equal? (js-body (less it '((js-body . 0))))
+                '(2 3)))))
+
+(deftest index-into-child-test ()
+  (let ((it (make-instance 'js-block-statement
+                           :js-body (list 1 2 3))))
+    (is (equal? (children (less it 0)) '(2 3)))))
+
+(deftest path-later-p-handles-named-children ()
+  (is (path-later-p '((js-body . 1)  (js-body . 3) js-expression)
+                    '((js-body . 1) (js-body . 0)))))
+
+(deftest path-later-p.basics ()
+  (is (not (path-later-p nil nil)))
+  (is (not (path-later-p nil '(1))))
+  (is (path-later-p '(1) nil))
+  (is (path-later-p '(1 2) '(1)))
+  (is (not (path-later-p '(1) '(1 2))))
+  (is (path-later-p '(2) '(1)))
+  (is (not (path-later-p '(1) '(2))))
+  (is (not (path-later-p '(1) '(1)))))
+
+(deftest path-later-p.named-children ()
+  (is (path-later-p '((a . 2)) '((a . 1))))
+  (is (not (path-later-p '((a . 1)) '((a . 1)))))
+  (is (not (path-later-p '((a . 1)) '((a . 2)))))
+  (is (path-later-p '((b . 1)) '((a . 2)))))
+
+(deftest define-node-class.bad-initarg-detected ()
+  (progn
+    (setf (find-class 'bad-node-class) nil)
+    (is (handler-case
+            (progn (eval '(define-node-class bad-node-class (node)
+                           ;; Node C does not have :C  as an initarg
+                           ((c :initarg :z :initform nil)
+                            (child-slots :allocation :class
+                                         :initform '(c)))))
+                   nil)
+          (error () t)))))
