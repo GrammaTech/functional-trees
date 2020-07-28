@@ -40,7 +40,6 @@
                 :slot-definition-initargs
                 :class-slots)
   (:export :copy :tree-copy
-           :equal?
            :node :transform :child-slots :finger
            :path :transform-finger-to :populate-fingers :residue
            :path-equalp
