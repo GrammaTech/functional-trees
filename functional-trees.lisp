@@ -62,105 +62,6 @@
   `(cl:assert ,@(copy-tree body)))
 
 
-;;;; Core functional tree definitions.
-(deftype path ()
-  `(and list (satisfies path-p)))
-
-(defun path-p (list)
-  (every (lambda (x)
-           (typecase x
-             ((integer 0) t)            ; Index into `children'.
-             (symbol t)                 ; Name of scalar child-slot.
-             ((cons (integer 0)         ; Non-scalar child-slot w/index.
-                    (cons integer null))
-              (<= (first x) (second x)))
-             ((cons symbol null) t)
-             ((cons symbol (integer 0)) t)
-             (t nil)))
-         list))
-
-(defgeneric path-equalp (path-a path-b)
-  (:documentation "Are path-a and path-b the same path?")
-  (:method ((path-a t) (path-b t)) (equalp path-a path-b)))
-
-(defgeneric path-equalp-butlast (path-a path-b)
-  (:documentation "Are path-a and path-b the same, except possibly
-for their last entries?")
-  (:method ((path-a t) (path-b t)) (equalp (butlast path-a) (butlast path-b))))
-
-(defgeneric path-element-> (a b)
-  (:documentation "Ordering function for elements of paths")
-  (:method ((a real) (b real))
-    (> a b))
-  (:method ((a cons) (b cons))
-    (let ((ca (car a))
-          (cb (car b))
-          (na (or (cdr a) 0))
-          (nb (or (cdr b) 0)))
-      (assert (symbolp ca))
-      (assert (symbolp cb))
-      (cond
-        ((eql ca cb) (> na nb))
-        (t (string> (symbol-name ca) (symbol-name cb))))))
-  (:method ((a cons) (b real)) nil)
-  (:method ((a real) (b cons)) t))
-
-(defgeneric path-element-= (a b)
-  (:documentation "Equality function for elements of a path, taking
-into account the representation of named children")
-  (:method ((a real) (b real)) (eql a b))
-  (:method ((a cons) (b real)) nil)
-  (:method ((a real) (b cons)) nil)
-  (:method ((a cons) (b cons))
-    (and (eql (car a) (car b))
-         (eql (or (cdr a) 0)
-              (or (cdr b) 0)))))
-
-;;; TODO: determine if this may or should be combined with lexicographic-<
-
-(defgeneric path-later-p (path-a path-b)
-  (:documentation "Does PATH-A represent an AST path after PATH-B?
-Use this to sort AST asts for mutations that perform multiple
-operations.")
-  (:method ((path-a list) (path-b list))
-    (flet () #+nil((path-element-> (a b)
-             (and (numberp a) (numberp b) (> a b)))
-           (path-element-= (a b)
-             (equal a b)))
-      (cond
-        ;; Consider longer paths to be later, so in case of nested ASTs we
-        ;; will sort inner one first. Mutating the outer AST could
-        ;; invalidate the inner ast.
-        ((null path-a) nil)
-        ((null path-b) t)
-        (t (nest (destructuring-bind (head-a . tail-a) path-a)
-                 (destructuring-bind (head-b . tail-b) path-b)
-                 (cond
-                   ((path-element-> head-a head-b) t)
-                   ((path-element-> head-b head-a) nil)
-                   ((path-element-= head-a head-b)
-                    (path-later-p tail-a tail-b)))))))))
-
-;;; FIXME: Should we replace this with an explicit deep copy?  We
-;;; wouldn't be able to re-use `copy-array', `copy-seq', etc but we
-;;; could then remove `copy-tree' and just use this generic copy
-;;; universally instead.  It would also then more closely mimic the
-;;; behavior of the `equal?' method defined in GT and FSET.
-(defgeneric copy (obj &key &allow-other-keys)
-  (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
-  (:method ((obj t) &key &allow-other-keys) obj)
-  (:method ((obj array) &key &allow-other-keys) (copy-array obj))
-  (:method ((obj hash-table) &key &allow-other-keys) (copy-hash-table obj))
-  (:method ((obj list) &key &allow-other-keys) (copy-list obj))
-  (:method ((obj sequence) &key &allow-other-keys) (copy-seq obj))
-  (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
-
-(defgeneric tree-copy (obj)
-  (:documentation "Copy method that descends into a tree and copies all
-its nodes.")
-  (:method ((obj t)) obj)
-  (:method ((obj list)) (cl:mapcar #'tree-copy obj)))
-
 (defclass node (identity-ordering-mixin)
   ((transform :reader transform
               :initarg :transform
@@ -188,6 +89,121 @@ specifies a specific number of children held in the slot.")
            :type (or null node finger)
            :documentation "A finger back to the root of the (a?) tree."))
   (:documentation "A node in a tree."))
+
+(declaim (inline slot-spec-slot slot-spec-arity child-list))
+
+(defun slot-spec-slot (slot-spec)
+  (if (consp slot-spec) (car slot-spec) slot-spec))
+
+(defun slot-spec-arity (slot-spec)
+  (or (and (consp slot-spec) (cdr slot-spec)) 0))
+
+
+;;;; Core functional tree definitions.
+(deftype path ()
+  `(and list (satisfies path-p)))
+
+(defun path-p (list)
+  (every (lambda (x)
+           (typecase x
+             ((integer 0) t)            ; Index into `children'.
+             (symbol t)                 ; Name of scalar child-slot.
+             ((cons (integer 0)         ; Non-scalar child-slot w/index.
+                    (cons integer null))
+              (<= (first x) (second x)))
+             ((cons symbol null) t)
+             ((cons symbol (integer 0)) t)
+             (t nil)))
+         list))
+
+(defgeneric path-equalp (path-a path-b)
+  (:documentation "Are path-a and path-b the same path?")
+  (:method ((path-a t) (path-b t)) (equalp path-a path-b)))
+
+(defgeneric path-equalp-butlast (path-a path-b)
+  (:documentation "Are path-a and path-b the same, except possibly
+for their last entries?")
+  (:method ((path-a t) (path-b t)) (equalp (butlast path-a) (butlast path-b))))
+
+(defgeneric slot-position-in-node (node slot)
+  (:method ((node node) (slot symbol))
+    (cl:position slot (child-slots node) :key #'slot-spec-slot)))
+
+(defgeneric path-element-> (node a b)
+  (:documentation "Ordering function for elements of paths")
+  (:method ((node node) (a real) (b real))
+    (> a b))
+  (:method ((node node) (a cons) (b cons))
+    (let ((ca (car a))
+          (cb (car b))
+          (na (or (cdr a) 0))
+          (nb (or (cdr b) 0)))
+      (assert (symbolp ca))
+      (assert (symbolp cb))
+      (cond
+        ((eql ca cb) (> na nb))
+        ;; (t (string> (symbol-name ca) (symbol-name cb)))
+        (t
+         (> (slot-position-in-node node ca)
+            (slot-position-in-node node cb)))
+        )))
+  (:method ((node node) (a cons) (b real)) nil)
+  (:method ((node node) (a real) (b cons)) t))
+
+(defgeneric path-element-= (a b)
+  (:documentation "Equality function for elements of a path, taking
+into account the representation of named children")
+  (:method ((a real) (b real)) (eql a b))
+  (:method ((a cons) (b real)) nil)
+  (:method ((a real) (b cons)) nil)
+  (:method ((a cons) (b cons))
+    (and (eql (car a) (car b))
+         (eql (or (cdr a) 0)
+              (or (cdr b) 0)))))
+
+;;; TODO: determine if this may or should be combined with lexicographic-<
+
+(defgeneric path-later-p (node path-a path-b)
+  (:documentation "Does PATH-A from NODE represent an AST path after
+PATH-B from NODE?   Use this to sort AST asts for mutations that perform
+multiple operations.")
+  (:method ((node t) (path-a null) (path-b null)) nil)
+  (:method ((node node) (path-a null) (path-b null)) nil)
+  (:method ((node t) (path-a null) (path-b cons)) nil)
+  (:method ((node node) (path-a null) (path-b cons)) nil)
+  (:method ((node t) (path-a cons) (path-b null)) t)
+  (:method ((node node) (path-a cons) (path-b null)) t)
+  (:method ((node node) (path-a list) (path-b list))
+    ;; Consider longer paths to be later, so in case of nested ASTs we
+    ;; will sort inner one first. Mutating the outer AST could
+    ;; invalidate the inner ast.
+    (nest (destructuring-bind (head-a . tail-a) path-a)
+          (destructuring-bind (head-b . tail-b) path-b)
+          (cond
+            ((path-element-> node head-a head-b) t)
+            ((path-element-> node head-b head-a) nil)
+            ((path-element-= head-a head-b)
+             (path-later-p (@ node head-a) tail-a tail-b))))))
+
+;;; FIXME: Should we replace this with an explicit deep copy?  We
+;;; wouldn't be able to re-use `copy-array', `copy-seq', etc but we
+;;; could then remove `copy-tree' and just use this generic copy
+;;; universally instead.  It would also then more closely mimic the
+;;; behavior of the `equal?' method defined in GT and FSET.
+(defgeneric copy (obj &key &allow-other-keys)
+  (:documentation "Generic COPY method.") ; TODO: Extend from generic-cl?
+  (:method ((obj t) &key &allow-other-keys) obj)
+  (:method ((obj array) &key &allow-other-keys) (copy-array obj))
+  (:method ((obj hash-table) &key &allow-other-keys) (copy-hash-table obj))
+  (:method ((obj list) &key &allow-other-keys) (copy-list obj))
+  (:method ((obj sequence) &key &allow-other-keys) (copy-seq obj))
+  (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
+
+(defgeneric tree-copy (obj)
+  (:documentation "Copy method that descends into a tree and copies all
+its nodes.")
+  (:method ((obj t)) obj)
+  (:method ((obj list)) (cl:mapcar #'tree-copy obj)))
 
 (defmacro define-node-class (name &rest rest)
   `(progn
@@ -277,12 +293,7 @@ specifies a specific number of children held in the slot.")
   (let ((class (find-class class-name env)))
     (assert class () "No class found for ~s" class-name)
     ;; create an instance to cause the class to be finalized
-    (let ((node (make-instance class-name)))
-      ;; Sort the child slots by child name
-      (let ((child-slots (slot-value node 'child-slots)))
-        (declare (notinline slot-spec-slot))
-        (setf (slot-value node 'child-slots)
-              (sort child-slots #'string< :key #'slot-spec-slot))))
+    (make-instance class-name)
     (let ((child-slots
            (nest (eval)
                  (slot-definition-initform)
@@ -387,13 +398,7 @@ Otherwise, it is NIL.")
          :documentation "Internal slot used to cache the lookup of a node."))
   (:documentation "A wrapper for a path to get to a node"))
 
-(declaim (inline slot-spec-slot slot-spec-arity child-list))
 
-(defun slot-spec-slot (slot-spec)
-  (if (consp slot-spec) (car slot-spec) slot-spec))
-
-(defun slot-spec-arity (slot-spec)
-  (or (and (consp slot-spec) (cdr slot-spec)) 0))
 
 (defun child-list (node slot-spec)
   (let ((children (slot-value node (slot-spec-slot slot-spec))))

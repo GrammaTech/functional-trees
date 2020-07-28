@@ -259,6 +259,21 @@ to subtrees."))
          :documentation "Data that is attached to the node"))
   (:documentation "Example of a class with a single child slot of arity 2"))
 
+(define-node-class node-with-arity2/2 (node)
+  ((child-slots :initform '((a . 2) (b . 2)) :allocation :class)
+   (a :reader node-a
+      :initarg :a
+      :initform '(nil nil)
+      :type list
+      :documentation "Example of a field of arity 2")
+   (n :reader node-b
+      :initarg :b
+      :initform '(nil nil)
+      :type list
+      :documentation "Example of a field of arity 2"))
+  (:documentation "Example of a class with two child slots of arity 2"))
+
+
 (defmethod convert ((to-type (eql 'node-with-arity2)) (seq list) &key &allow-other-keys)
   (if (null seq)
       (call-next-method)
@@ -275,6 +290,25 @@ to subtrees."))
                     (if (typep c 'node) (convert 'list c) c))
                   (slot-value node 'a))
           (slot-value node 'data)))
+
+(defmethod convert ((to-type (eql 'node-with-arity2/2)) (seq list) &key &allow-other-keys)
+  (if (null seq)
+      (call-next-method)
+      (progn
+        (assert (consp (cdr seq)))
+        (make-instance 'node-with-arity2/2
+                       :a (mapcar {convert 'node-with-arity2/2} (car seq))
+                       :b (mapcar {convert 'node-with-arity2/2} (cadr seq))))))
+
+(defmethod convert ((to-type (eql 'node-with-arity2/2)) x &key &allow-other-keys) x)
+
+(defmethod convert ((to-type (eql 'list)) (node node-with-arity2/2) &key &allow-other-keys)
+  (list (mapcar (lambda (c)
+                  (if (typep c 'node) (convert 'list c) c))
+                (slot-value node 'a))
+        (mapcar (lambda (c)
+                  (if (typep c 'node) (convert 'list c) c))
+                (slot-value node 'b))))
 
 (defun swap-random-nodes (root)
   (let ((node1 (random-node root))
@@ -1483,25 +1517,23 @@ diagnostic information on error or failure."
                            :js-body (list 1 2 3))))
     (is (equal? (children (less it 0)) '(2 3)))))
 
-(deftest path-later-p-handles-named-children ()
-  (is (path-later-p '((js-body . 1)  (js-body . 3) js-expression)
-                    '((js-body . 1) (js-body . 0)))))
-
 (deftest path-later-p.basics ()
-  (is (not (path-later-p nil nil)))
-  (is (not (path-later-p nil '(1))))
-  (is (path-later-p '(1) nil))
-  (is (path-later-p '(1 2) '(1)))
-  (is (not (path-later-p '(1) '(1 2))))
-  (is (path-later-p '(2) '(1)))
-  (is (not (path-later-p '(1) '(2))))
-  (is (not (path-later-p '(1) '(1)))))
+  (let ((n (convert 'node-list '((:a :b :c) (:d :e :f) (:g :h :i)))))
+    (is (not (path-later-p n nil nil)))
+    (is (not (path-later-p n nil '(1))))
+    (is (path-later-p n '(1) nil))
+    (is (path-later-p n '(1 2) '(1)))
+    (is (not (path-later-p n '(1) '(1 2))))
+    (is (path-later-p n '(2) '(1)))
+    (is (not (path-later-p n '(1) '(2))))
+    (is (not (path-later-p n '(1) '(1))))))
 
 (deftest path-later-p.named-children ()
-  (is (path-later-p '((a . 2)) '((a . 1))))
-  (is (not (path-later-p '((a . 1)) '((a . 1)))))
-  (is (not (path-later-p '((a . 1)) '((a . 2)))))
-  (is (path-later-p '((b . 1)) '((a . 2)))))
+  (let ((n (convert 'node-with-arity2/2 '((x y)(u v)))))
+    (is (path-later-p n '((a . 1)) '((a . 0))))
+    (is (not (path-later-p n '((a . 1)) '((a . 1)))))
+    (is (not (path-later-p n '((a . 0)) '((a . 1)))))
+    (is (path-later-p n '((b . 0)) '((a . 1))))))
 
 (deftest define-node-class.bad-initarg-detected ()
   (progn
