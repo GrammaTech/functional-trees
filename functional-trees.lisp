@@ -803,12 +803,11 @@ is a reversed list of nodes to be prepended to each path.")
     (declare (ignore initial-rpath))
     nil))
 
-;;; This expensive function is used in testing and in FSet
-;;; compatibility functions.  It computes the path leading from ROOT
-;;; to NODE, or signals an error if it cannot be found.
+;;; Computes the path leading from ROOT to NODE.
 (defun path-of-node (root node)
-  (multiple-value-bind (path foundp) (position node root :key #'identity)
-    (if foundp path (error "Cannot find ~a in ~a" node root))))
+  (unless (finger node)
+    (populate-fingers root))
+  (path (transform-finger (finger node) root)))
 
 ;;; To add: algorithm for extracting a  path transform from
 ;;; a set of rewrites (with var objects).  (Is this still relevant?)
@@ -1250,7 +1249,6 @@ tree has its predecessor set to TREE."
 ;;; Define `lookup' methods to work with FSet's `@' macro.
 (defmethod lookup ((node t) (path null)) node)
 (defmethod lookup ((node t) (location node))
-  ;; FIXME: `path-of-node` is an expensive operation
   (lookup node (path-of-node node location)))
 (defmethod lookup ((node node) (path cons))
   (etypecase path
