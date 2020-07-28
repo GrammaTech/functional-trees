@@ -130,7 +130,7 @@ for their last entries?")
 
 (defgeneric path-element-> (node a b)
   (:documentation "Ordering function for elements of paths")
-  (:method ((node node) (a real) (b real))
+  (:method ((node t) (a real) (b real))
     (> a b))
   (:method ((node node) (a cons) (b cons))
     (let ((ca (car a))
@@ -146,8 +146,8 @@ for their last entries?")
          (> (slot-position-in-node node ca)
             (slot-position-in-node node cb)))
         )))
-  (:method ((node node) (a cons) (b real)) nil)
-  (:method ((node node) (a real) (b cons)) t))
+  (:method ((node t) (a cons) (b real)) nil)
+  (:method ((node t) (a real) (b cons)) t))
 
 (defgeneric path-element-= (a b)
   (:documentation "Equality function for elements of a path, taking
@@ -172,7 +172,7 @@ multiple operations.")
   (:method ((node node) (path-a null) (path-b cons)) nil)
   (:method ((node t) (path-a cons) (path-b null)) t)
   (:method ((node node) (path-a cons) (path-b null)) t)
-  (:method ((node node) (path-a list) (path-b list))
+  (:method ((node t) (path-a list) (path-b list))
     ;; Consider longer paths to be later, so in case of nested ASTs we
     ;; will sort inner one first. Mutating the outer AST could
     ;; invalidate the inner ast.
