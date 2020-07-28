@@ -1264,8 +1264,8 @@ tree has its predecessor set to TREE."
      (destructuring-bind (slot . i) path
        (lookup (slot-value node slot) i)))))
 (defmethod lookup ((node node) (finger finger))
-    (let ((new-finger (transform-finger finger node)))
-      (values (lookup node (path new-finger)) (residue new-finger))))
+  (let ((new-finger (transform-finger finger node)))
+    (values (lookup node (path new-finger)) (residue new-finger))))
 (defmethod lookup ((node node) (slot null))
   node)
 (defmethod lookup ((node node) (slot symbol))
