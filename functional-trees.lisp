@@ -1340,7 +1340,9 @@ functions."
              (etypecase (car path)
                ((or symbol (cons symbol (integer 0)))
                 (copy tree
-                      (make-keyword (car path))
+                      (make-keyword (if (symbolp (car path))
+                                        (car path)
+                                        (caar path)))
                       (,name (lookup tree (car path)) (cdr path)
                              ,@(arg-values other-args))
                       ;; Handle different methods separately in terms
