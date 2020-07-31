@@ -135,7 +135,7 @@ for their last entries?")
   (assert (every #'identity syms))
   (assert (every #'symbolp syms))
   (assert (= (length syms) (length (remove-duplicates syms))))
-  `(let ,(mapcar (lambda (s)`(,s (cons ,s 0))) syms)
+  `(let ,(cl:mapcar (lambda (s)`(,s (cons ,s 0))) syms)
      (declare (dynamic-extent ,@syms))
      ,@body))
 
