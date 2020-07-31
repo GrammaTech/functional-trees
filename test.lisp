@@ -266,7 +266,7 @@ to subtrees."))
       :initform '(nil nil)
       :type list
       :documentation "Example of a field of arity 2")
-   (n :reader node-b
+   (b :reader node-b
       :initarg :b
       :initform '(nil nil)
       :type list
@@ -1534,6 +1534,19 @@ diagnostic information on error or failure."
     (is (not (path-later-p n '((a . 1)) '((a . 1)))))
     (is (not (path-later-p n '((a . 0)) '((a . 1)))))
     (is (path-later-p n '((b . 0)) '((a . 1))))))
+
+(deftest path-of-node.named-children ()
+  (let* ((n1 (convert 'node-with-arity2/2 '((a b)(c d))))
+         (n2 (convert 'node-with-arity2/2 '((e f)(g h))))
+         (n3 (convert 'node-with-arity2/2 '((i j)(k l))))
+         (n4 (convert 'node-with-arity2/2 '((m n)(o p))))
+         (n (convert 'node-with-arity2/2 `((,n1 ,n2)(,n3 ,n4)))))
+    (is (equal (path-of-node n n) nil))
+    (is (equal (path-of-node n (first (children n))) '((a . 0))))
+    (is (equal (path-of-node n (second (children n))) '((a . 1))))
+    (is (equal (path-of-node n (third (children n))) '((b . 0))))
+    (is (equal (path-of-node n (fourth (children n))) '((b . 1))))
+    (is (equal (children n) (list n1 n2 n3 n4)))))
 
 (deftest define-node-class.bad-initarg-detected ()
   (progn
