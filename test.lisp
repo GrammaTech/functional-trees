@@ -150,6 +150,17 @@ which may be more nodes, or other values.")
    (child-slots :initform '((head . 1) (tail . 1)) :allocation :class))
   (:documentation "Functional replacement for cons."))
 
+(define-node-class node-cons2 (node)
+  ((head :reader head
+         :initarg :head
+         :initform nil)
+   (tail :reader tail
+         :initarg :tail
+         :initform nil)
+   (child-slots :initform '((head . 1) (tail . 0)) :allocation :class))
+  (:documentation "Like node-cons, but the tail is a list of children.
+This is form testing . 0 child slots."))
+
 (define-node-class node-list (node)
   ((child-slots :initform '(child-list) :allocation :class)
    (child-list :reader node-list-child-list
@@ -157,23 +168,36 @@ which may be more nodes, or other values.")
                :initform nil))
   (:documentation "Functional replacement for LIST."))
 
+(defun cconvert (class val)
+  (typecase val
+    (cons (convert class val))
+    (t val)))
+
+(defun lconvert (val)
+  (if (typep val 'node) (convert 'list val) val))
+
 (defmethod convert ((to-type (eql 'node-cons)) (sequence list)
                     &key &allow-other-keys)
-  (flet ((next (it)
-           (etypecase it
-             (cons (convert 'node-cons it))
-             (t it))))
+  (flet ((next (it) (cconvert 'node-cons it)))
     (when sequence
       (make-instance 'node-cons
         :head (next (car sequence))
         :tail (next (cdr sequence))))))
 (defmethod convert ((to-list (eql 'list)) (node node-cons)
                     &key &allow-other-keys)
-  (flet ((next (it)
-           (etypecase it
-             (node-cons (convert 'list it))
-             (t it))))
-    (cons (next (head node)) (next (tail node)))))
+  (cons (lconvert (head node)) (lconvert (tail node))))
+
+(defmethod convert ((to-type (eql 'node-cons2)) (sequence list)
+                    &key &allow-other-keys)
+  (flet ((next (it) (cconvert 'node-cons2 it)))
+    (when sequence
+      (make-instance 'node-cons2
+                     :head (next (car sequence))
+                     :tail (cl:mapcar #'next (cdr sequence))))))
+(defmethod convert ((to-type (eql 'list)) (node node-cons2)
+                    &key &allow-other-keys)
+  (cons (lconvert (head node))
+        (cl:mapcar #'lconvert (tail node))))
 
 (defmethod convert ((to-type (eql 'node-list)) (value t) &key) value)
 (defmethod convert ((to-type (eql 'node-list)) (sequence list) &key)
@@ -505,7 +529,7 @@ bucket getting at least 1.  Return as a list."
     (let ((f3 (make-instance 'finger :node node1 :path '(2 1))))
       (is (equal (path f3) '(2 1)))
       (is (equal (convert 'list f3) (second (third l1))))
-      
+
       (let ((f4 (transform-finger-to f3 pt node2)))
         (is (equal (path f4) '(1 1)))
         (is (null (residue f4)))
@@ -712,7 +736,7 @@ bucket getting at least 1.  Return as a list."
     (is (null (intersection nodes nodes2)))
     (is (equal (convert 'list n) l))
     (is (equal (convert 'list n2) l))
-    (is (nodes-disjoint n n2))))    
+    (is (nodes-disjoint n n2))))
 
 (deftest node-equal?.1 ()
   (is (equal? nil nil))
@@ -1297,6 +1321,18 @@ diagnostic information on error or failure."
                '(:data :foo :a :data 1)))
     (is (equal (flatten (convert 'list (less r (@ r :b))))
                '(:data :foo :a :data 1)))))
+
+(deftest less.named-children ()
+  (let* ((l1 '((a b) (c d) e))
+         (n1 (convert 'node-cons2 l1))
+         (n2 (car (tail n1))))
+    (is (equal (convert 'list (less n1 n2))
+               '((a b) e)))
+    (let* ((l1 '((a b) (y (c d)) e))
+           (n1 (convert 'node-cons2 l1))
+           (n2 (first (tail (first (tail n1))))))
+      (is (equal (convert 'list (less n1 n2))
+                 '((a b) (y) e))))))
 
 (deftest @-test ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))

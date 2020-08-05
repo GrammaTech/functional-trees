@@ -1358,45 +1358,31 @@ functions."
           (declare (ignorable ,@vars))
          ,@checks
          ;; At the end of the path, so act directly.
-         (if (null (cdr path))
-             (,name tree (car path) ,@(arg-values other-args))
+         (typecase (cdr path)
+           (null (,name tree (car path) ,@(arg-values other-args)))
+           (cons
              (etypecase (car path)
-               ((or symbol (cons symbol (integer 0)))
+               (symbol
                 (copy tree
                       (make-keyword (if (symbolp (car path))
                                         (car path)
                                         (caar path)))
                       (,name (lookup tree (car path)) (cdr path)
                              ,@(arg-values other-args))
-                      ;; Handle different methods separately in terms
-                      ;; of how we recurse (name index) subseqs.
-                      #|
-                      ,(case name
-                         ((with insert)
-                          `(,name (lookup tree (car path)) (cdr path)
-                                  ,@(arg-values other-args)))
-                         (t
-                          `(if (and (second path) (typep (second path) 'number))
-                               ;; If we're at the end of the path then take
-                               ;; the same approach as (null (cdr path))
-                               ;; above,
-                               (if (null (cddr path))
-                                   ;; and just handle the last element of
-                                   ;; the path as an atom.
-                                   (,name (lookup tree (first path)) (cadr path)
-                                          ,@(arg-values other-args))
-                                   ;; Otherwise, if we're part way through
-                                   ;; the path handle both child named and
-                                   ;; index in one go and then continue.
-                                   (,name (lookup (lookup tree (first path))
-                                                  (second path))
-                                          (cddr path)
-                                          ,@(arg-values other-args)))
-                               (,name (lookup tree (car path)) (cdr path)
-                                      ,@(arg-values other-args)))))
-                      |#
                       ))
+               ((cons symbol (integer 0))
+                (let ((slot (caar path))
+                      (i (cdar path)))
+                  (copy tree
+                        (make-keyword slot)
+                        (let ((subs (lookup tree slot)))
+                          (assert (listp subs))
+                          (append (subseq subs 0 i)
+                                  (cons (,name (elt subs i) (cdr path)
+                                               ,@(arg-values other-args))
+                                        (subseq subs (1+ i))))))))
                ((integer 0)
+                ;; (format t "(integer 0)~%")
                 (reduce
                  (lambda (i child-slot)
                    (nest
@@ -1415,7 +1401,15 @@ functions."
                                         (subseq children (1+ i)))
                                 ,@new)))))
                  (child-slots tree)
-                 :initial-value (car path))))))
+                 :initial-value (car path)))))
+           (t ;; must be (<symbol> . <index>)
+            (assert (symbolp (car path)))
+            (assert (typep (cdr path) '(integer 0)))
+            (copy tree
+                  (make-keyword (car path))
+                  (,name (lookup tree (car path)) (cdr path)
+                         ,@(arg-values other-args))))
+           ))
        (defmethod ,name ((tree node) (i integer) ,@other-args ,@extra-args)
          (declare (ignorable ,@vars))
          ,@checks
