@@ -42,6 +42,7 @@
   (:export :copy :tree-copy
            :node :transform :child-slots :finger
            :path :transform-finger-to :populate-fingers :residue
+           :serial-number
            :path-equalp
            :path-equalp-butlast
            :path-later-p
