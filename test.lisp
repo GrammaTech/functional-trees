@@ -1569,7 +1569,8 @@ diagnostic information on error or failure."
     (is (path-later-p n '((a . 1)) '((a . 0))))
     (is (not (path-later-p n '((a . 1)) '((a . 1)))))
     (is (not (path-later-p n '((a . 0)) '((a . 1)))))
-    (is (path-later-p n '((b . 0)) '((a . 1))))))
+    (is (path-later-p n '((b . 0)) '((a . 1))))
+    (is (not (path-later-p n '(a) '(a))))))
 
 (deftest path-of-node.named-children ()
   (let* ((n1 (convert 'node-with-arity2/2 '((a b)(c d))))
