@@ -27,7 +27,7 @@ test-ccl:
 readme:
   stage: test
   script:
-    - ./readme.py
+    - make check-readme
   except:
     - schedules
 
