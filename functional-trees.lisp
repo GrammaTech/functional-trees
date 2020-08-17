@@ -493,7 +493,8 @@ if NEW-TREE lacks a back pointer.  Returns NEW-TREE."))
 (defmethod update-predecessor-tree ((old-tree t) (new-tree t)) new-tree)
 
 (defmethod update-predecessor-tree ((old-tree node) (new-tree node))
-  (or (slot-value new-tree 'transform)
+  (or (eql old-tree new-tree)
+      (slot-value new-tree 'transform)
       (setf (slot-value new-tree 'transform) old-tree))
   new-tree)
 
@@ -762,6 +763,33 @@ in the transforms slot of PATH-TRANSFORMS objects."
 points through the root NODE.  NODE must be derived from the tree
 that FINGER is pointed through."))
 
+(define-condition transform-finger-loop-error (error)
+  ((nodes :initarg :nodes :initform nil
+          :reader transform-finger-loop-error-nodes)
+   (repeated-node :initarg :repeated-node
+                  :initform nil
+                  :reader transform-finger-loop-error-repeated-node))
+  (:documentation "Error thrown when TRANSFORM-FINGER finds a cycle in
+the FROM links")
+  (:report (lambda (cnd s)
+             (format s "Node ~a repeated in transform list ~a."
+                     (transform-finger-loop-error-repeated-node cnd)
+                     (transform-finger-loop-error-nodes cnd)))))
+
+(defun check-transforms-for-cycle (start-node stop-node)
+  "Check if the transform path from START-NODE has a cycle.
+The path stops at STOP-NODE, or at NIL"
+  (let ((x start-node) (node-list nil))
+    (loop
+       (unless x (return))
+       (when (member x node-list)
+         (error (make-condition 'transform-finger-loop-error
+                                :repeated-node x
+                                :nodes (reverse node-list))))
+       (when (eql x stop-node) (return))
+       (push x node-list)
+       (setf x (from (transform x))))))
+
 (defmethod transform-finger ((f finger) (node node) &key (error-p t))
   (declare (ignore error-p)) ;; for now
 
@@ -789,6 +817,10 @@ that FINGER is pointed through."))
 
     #-brute-force-transform-finger
     (let* ((f f) (node-of-f (node f)))
+      ;; Check if there's a loop in the list of predecessors,
+      ;; and signal an error if we find a loop
+      #+ft-debug-transform-finger
+      (check-transforms-for-cycle node node-of-f)
       #+ft-debug-transform-finger
       (format t "NODE-OF-F = ~a~%" node-of-f)
       (labels ((%transform (x)

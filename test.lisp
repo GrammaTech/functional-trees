@@ -168,6 +168,11 @@ This is form testing . 0 child slots."))
                :initform nil))
   (:documentation "Functional replacement for LIST."))
 
+(define-node-class node-list2 (node)
+  ((child-slots :initform '((body . 0)) :allocation :class)
+   (body :reader node-list2-body :initarg :body :initform nil))
+  (:documentation "A single named child that is a list of arbitrary length"))
+
 (defun cconvert (class val)
   (typecase val
     (cons (convert class val))
@@ -205,6 +210,13 @@ This is form testing . 0 child slots."))
 (defmethod convert ((to-type (eql 'list)) (node node-list) &key)
   (mapcar (lambda (x) (if (typep x 'node) (convert 'list x) x))
           (node-list-child-list node)))
+
+(defmethod convert ((to-type (eql 'node-list2)) (value t) &key) value)
+(defmethod convert ((to-type (eql 'node-list2)) (sequence list) &key)
+  (make-instance 'node-list2 :body (mapcar {convert 'node-list2} sequence)))
+(defmethod convert ((to-type (eql 'list)) (node node-list2) &key)
+  (mapcar (lambda (x) (if (typep x 'node) (convert 'list x) x))
+          (node-list2-body node)))
 
 (define-node-class node-with-fields (node)
   ((child-slots :initform '((a . 1) (b . 1)) :allocation :class)
@@ -1333,6 +1345,14 @@ diagnostic information on error or failure."
            (n2 (first (tail (first (tail n1))))))
       (is (equal (convert 'list (less n1 n2))
                  '((a b) (y) e))))))
+
+(deftest insert-named-children ()
+  (let* ((l1 '((a b) (c d)))
+         (n1 (convert 'node-list2 l1))
+         (l2 '(f g))
+         (n2 (convert 'node-list2 l2))
+         (n3 (insert n1 '((body . 1)) n2)))
+    (is (equal (convert 'list n3) '((a b) (f g) (c d))))))
 
 (deftest @-test ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9)))))
