@@ -40,13 +40,18 @@
                 :slot-definition-initargs
                 :class-slots)
   (:export :copy :tree-copy
-           :node :transform :child-slots :finger
+           :copy-with-children-alist
+           :node :transform :child-slots
+           :child-slot-specifiers
+           :finger
+           :slot-value*
            :path :transform-finger-to :populate-fingers :residue
            :serial-number
            :path-equalp
            :path-equalp-butlast
            :path-later-p
            :children
+           :children-alist
            :do-tree :mapc :mapcar
            :swap
            :define-node-class :define-methods-for-node-class)
@@ -62,33 +67,79 @@
   `(cl:assert ,@(copy-tree body)))
 
 
-(defclass node (identity-ordering-mixin)
-  ((transform :reader transform
-              :initarg :transform
-              :initform nil
-              ;; TODO: change the back pointer to a weak vector
-              ;; containing the pointer.
-              :type (or null node path-transform #+sbcl sb-ext:weak-pointer)
-              :documentation "If non-nil, is either a PATH-TRANSFORM object
-to this node, or the node that led to this node.")
-   (size :reader size
-         :type (integer 1)
-         :documentation "Number of nodes in tree rooted here.")
-   (child-slots :reader child-slots
+(eval-when (:compile-toplevel :load-toplevel)
+  (defclass node (identity-ordering-mixin)
+    ((transform :reader transform
+                :initarg :transform
                 :initform nil
-                :allocation :class
-                :type list ;; of (or symbol cons)
-                :documentation
-                "List of child slots with optional arity.
+                ;; TODO: change the back pointer to a weak vector
+                ;; containing the pointer.
+                :type (or null node path-transform #+sbcl sb-ext:weak-pointer)
+                :documentation "If non-nil, is either a PATH-TRANSFORM object
+to this node, or the node that led to this node.")
+     (size :reader size
+           :type (integer 1)
+           :documentation "Number of nodes in tree rooted here.")
+     (child-slots :reader child-slots
+                  :initform nil
+                  :allocation :class
+                  :type list ;; of (or symbol cons)
+                  :documentation
+                  "List of child slots with optional arity.
 This field should be specified as :allocation :class if defined by a
 subclass of `node'.  List of either symbols specifying a slot holding
 a list of children or a cons of (symbol . number) where number
 specifies a specific number of children held in the slot.")
-   (finger :reader finger
-           :initform nil
-           :type (or null node finger)
-           :documentation "A finger back to the root of the (a?) tree."))
-  (:documentation "A node in a tree."))
+     (child-slot-specifiers :reader child-slot-specifiers
+                            :allocation :class
+                            :type list
+                            :documentation "The list CHILD-SLOTS
+converted to a list of slot-specifier objects")
+     (finger :reader finger
+             :initform nil
+             :type (or null node finger)
+             :documentation "A finger back to the root of the (a?) tree."))
+    (:documentation "A node in a tree."))
+
+  (defclass slot-specifier ()
+    ((class :reader slot-specifier-class
+            :initarg :class
+            :documentation "The class to which the slot belongs")
+     (slot :reader slot-specifier-slot
+           :initarg :slot
+           :documentation "The name of the slot")
+     (arity :reader slot-specifier-arity
+            :type (integer 0)
+            :initarg :arity
+            :documentation "The arity of the slot"))
+    (:documentation "Object that represents the slots of a class")))
+
+(defmethod slot-unbound ((class t) (obj node) (slot (eql 'child-slot-specifiers)))
+  (setf (slot-value obj slot)
+        (iter (for p in (child-slots obj))
+              (collecting
+               (etypecase p
+                 (symbol (make-instance 'slot-specifier
+                                        :class class :slot p :arity 0))
+                 (cons (make-instance 'slot-specifier
+                                      :class class :slot (car p)
+                                      :arity (or (cdr p) 0))))))))
+
+(defgeneric slot-specifier-for-slot (obj slot &optional error?)
+  (:documentation "Returns the child slot SLOT in node OBJ.  If it is not
+the name of a child slot, return NIL if error? is NIL and error if error?
+is true (the default.)")
+  (:method ((obj node) (slot slot-specifier) &optional (error? t))
+    (when (and (not (eql (slot-specifier-class slot) (class-of obj)))
+               error?)
+      (error "Slot specifier class ~a does not match object ~a's class"
+             (slot-specifier-class slot) obj))
+    slot)
+  (:method ((obj node) (slot symbol) &optional (error? t))
+    (let ((slot-spec (find slot (child-slot-specifiers obj) :key #'slot-specifier-slot)))
+      (or slot-spec
+          (when error?
+            (error "Not a slot in ~a: ~a" obj slot))))))
 
 (declaim (inline slot-spec-slot slot-spec-arity child-list))
 
@@ -98,6 +149,42 @@ specifies a specific number of children held in the slot.")
 (defun slot-spec-arity (slot-spec)
   (or (and (consp slot-spec) (cdr slot-spec)) 0))
 
+(defgeneric slot-spec-of-slot (obj slot &optional error?)
+  (:documentation "Returns the slot spec pair of a slot in OBJ.  If ERROR? is
+true (the default) signal an error if SLOT is not a child slot of OBJ.
+Otherwise, in that case return NIL.")
+  (:method ((obj node) (slot symbol) &optional (error? t))
+    (dolist (p (child-slots obj)
+             (when error? (error "Not a child slot of ~a: ~a" obj slot)))
+      (etypecase p
+        (symbol (when (eql p slot) (return p)))
+        (cons (when (eql (car p) slot) (return p)))))))
+
+;; The following functions allow the uniform treatment
+;; of child slots
+
+(defgeneric slot-value* (obj slot)
+  (:documentation "Return the value of a child slot SLOT, converting
+arity 1 children to a list.")
+  (:method ((obj node) (slot symbol))
+    (let* ((p (slot-spec-of-slot obj slot)))
+      (if (eql (slot-spec-arity p) 1)
+          (list (slot-value obj slot))
+          (slot-value obj slot)))))
+
+(defgeneric (setf slot-value*) (val obj slot)
+  (:documentation "Set the value of a child slot SLOT, converting
+values for arity 1 slots from lists")
+  (:method ((val list) (obj node) (slot symbol))
+     (let* ((p (slot-spec-of-slot obj slot)))
+       (if (eql (slot-spec-arity p) 1)
+           (progn
+             (unless (eql (length val) 1)
+               (error "Attempt to store a list of lengh /= 1  into a arity 1 slot: ~a, ~a"
+                      val slot))
+             (setf (slot-value obj slot) (car val)))
+           (setf (slot-value obj slot) val))
+       val)))
 
 ;;;; Core functional tree definitions.
 (deftype path ()
@@ -221,16 +308,34 @@ multiple operations.")
   (:method ((obj sequence) &key &allow-other-keys) (copy-seq obj))
   (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
 
+(defgeneric copy-with-children-alist (obj children-alist &rest args)
+  (:documentation "Perform a copy of node OBJ, with children-alist being
+used to initialize some children")
+  (:method ((obj node) (children-alist list) &rest args)
+    (apply #'copy obj (nconc (mappend (lambda (p)
+                                        (typecase (car p)
+                                          (slot-specifier
+                                           (list (slot-specifier-slot (car p))
+                                                 (if (eql (slot-specifier-arity (car p)) 1)
+                                                     (cadr p)
+                                                     (cdr p))))
+                                          (t (list (car p) (cdr p)))))
+                                      children-alist)
+                             args))))
+
 (defgeneric tree-copy (obj)
   (:documentation "Copy method that descends into a tree and copies all
 its nodes.")
   (:method ((obj t)) obj)
   (:method ((obj list)) (cl:mapcar #'tree-copy obj)))
 
-(defmacro define-node-class (name &rest rest)
+(defmacro define-node-class (name superclasses slots &rest rest)
   `(progn
      (eval-when (:load-toplevel :compile-toplevel :execute)
-       (defclass ,name ,@rest))
+       (defclass ,name ,superclasses
+         ((child-slot-specifiers :allocation :class)
+          ,@slots)
+         ,@rest))
      (define-methods-for-node-class ,name)))
 
 ;; debug macro
@@ -254,15 +359,29 @@ its nodes.")
 (defgeneric children (node)
   (:documentation "Return all children of NODE.")
   (:method ((node node))
-    (mappend (lambda (slot)
-               (destructuring-bind (name . arity)
-                   (etypecase slot
-                     (cons slot)
-                     (symbol (cons slot 0)))
-                 (if (= 1 arity)
-                     (list (slot-value node name))
-                     (slot-value node name))))
+    (mappend (lambda (slot-spec)
+               (multiple-value-bind (slot arity)
+                   (etypecase slot-spec
+                     (cons (values (car slot-spec) (cdr slot-spec)))
+                     (symbol (values slot-spec 0)))
+                 (if (eql 1 arity)
+                     (list (slot-value node slot))
+                     (slot-value node slot))))
              (child-slots node))))
+
+(defgeneric children-alist (node)
+  (:documentation "Return an alist mapping child slots
+of NODE to their members.")
+  (:method ((node node))
+    (cl:mapcar (lambda (slot-spec)
+                 (multiple-value-bind (slot arity)
+                     (etypecase slot-spec
+                       (cons (values (car slot-spec) (cdr slot-spec)))
+                       (symbol (values slot-spec 0)))
+                   (if (eql 1 arity)
+                       (list slot (slot-value node slot))
+                       (cons slot (slot-value node slot)))))
+               (child-slots node))))
 
 (defun expand-children-defmethod (class child-slots)
   `(defmethod children ((node ,class))
@@ -1524,6 +1643,13 @@ functions."
       (call-next-method)
       (print-unreadable-object (obj stream :type t)
         (format stream "~a ~a" (serial-number obj) (convert 'list obj)))))
+
+(defmethod print-object ((obj slot-specifier) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a" (slot-specifier-slot obj)
+                (slot-specifier-arity obj)))))
 
 (defmethod print-object ((obj finger) stream)
   (if *print-readably*

@@ -102,10 +102,12 @@
   ((children :reader children
              :type list
              :initarg :children
+             :initarg children
              :initform nil
              :documentation "The list of children of the node,
 which may be more nodes, or other values.")
    (child-slots :initform '(children) :allocation :class)
+   (child-slot-specifiers :allocation :class)
    (data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")))
 
@@ -143,9 +145,11 @@ which may be more nodes, or other values.")
 (define-node-class node-cons (node)
   ((head :reader head
          :initarg :head
+         :initarg head
          :initform nil)
    (tail :reader tail
          :initarg :tail
+         :initarg tail
          :initform nil)
    (child-slots :initform '((head . 1) (tail . 1)) :allocation :class))
   (:documentation "Functional replacement for cons."))
@@ -153,9 +157,11 @@ which may be more nodes, or other values.")
 (define-node-class node-cons2 (node)
   ((head :reader head
          :initarg :head
+         :initarg head
          :initform nil)
    (tail :reader tail
          :initarg :tail
+         :initarg tail
          :initform nil)
    (child-slots :initform '((head . 1) (tail . 0)) :allocation :class))
   (:documentation "Like node-cons, but the tail is a list of children.
@@ -165,12 +171,13 @@ This is form testing . 0 child slots."))
   ((child-slots :initform '(child-list) :allocation :class)
    (child-list :reader node-list-child-list
                :initarg :child-list
+               :initarg child-list
                :initform nil))
   (:documentation "Functional replacement for LIST."))
 
 (define-node-class node-list2 (node)
   ((child-slots :initform '((body . 0)) :allocation :class)
-   (body :reader node-list2-body :initarg :body :initform nil))
+   (body :reader node-list2-body :initarg :body :initarg body :initform nil))
   (:documentation "A single named child that is a list of arbitrary length"))
 
 (defun cconvert (class val)
@@ -222,11 +229,13 @@ This is form testing . 0 child slots."))
   ((child-slots :initform '((a . 1) (b . 1)) :allocation :class)
    (a :reader node-a
       :initarg :a
+      :initarg a
       :initform nil
       :type (or null node-with-fields)
       :documentation "Example of a node field")
    (b :reader node-b
       :initarg :b
+      :initarg b
       :initform nil
       :type (or null node-with-fields)
       :documentation "Example of a node field")
@@ -286,6 +295,7 @@ to subtrees."))
   ((child-slots :initform '((a . 2)) :allocation :class)
    (a :reader node-a
       :initarg :a
+      :initarg a
       :initform '(nil nil)
       :type list
       :documentation "Example of a field of arity 2")
@@ -299,11 +309,13 @@ to subtrees."))
   ((child-slots :initform '((a . 2) (b . 2)) :allocation :class)
    (a :reader node-a
       :initarg :a
+      :initarg a
       :initform '(nil nil)
       :type list
       :documentation "Example of a field of arity 2")
    (b :reader node-b
       :initarg :b
+      :initarg b
       :initform '(nil nil)
       :type list
       :documentation "Example of a field of arity 2"))
@@ -1557,7 +1569,8 @@ diagnostic information on error or failure."
 (defclass js-block-statement (node)
   ((acorn-slot-name :initform :block-statement :allocation :class)
    (child-slots :initform '((js-body . 0)) :allocation :class)
-   (js-body :reader js-body :initform nil :initarg :js-body :type list))
+   (child-slot-specifiers :allocation :class)
+   (js-body :reader js-body :initform nil :initarg :js-body :initarg js-body :type list))
   (:documentation "javascript ast node class for block-statement acorn asts."))
 
 (deftest test-index-into-named-child ()
@@ -1616,3 +1629,45 @@ diagnostic information on error or failure."
                                          :initform '(c)))))
                    nil)
           (error () t)))))
+
+(deftest children-alist.cons-and-list-nodes ()
+  (is (equal (children-alist (convert 'node-cons '(a . b)))
+             '((head a) (tail b))))
+  (is (equal (children-alist (convert 'node-cons2 '(a b)))
+             '((head a) (tail b))))
+  (is (equal (children-alist (convert 'node-list '(a b c)))
+               '((child-list a b c))))
+  (is (equal (children-alist (convert 'node-list2 '(a b c)))
+             '((body a b c)))))
+
+(deftest children-alist.nodes ()
+  (is (equal (children-alist (convert 'node-with-fields
+                                          '(:data 17 :a 12 :b 34)))
+             '((a 12) (b 34))))
+  (is (equal (children-alist (convert 'node-with-arity2
+                                          '(17 32)))
+             '((a 17 32))))
+  (is (equal (children-alist (convert 'node-with-arity2/2
+                                          '((4 7) (6 19))))
+             '((a 4 7) (b 6 19)))))
+
+(deftest copy-with-children-alist.cons-and-list-nodes ()
+  (let ((n (convert 'node-cons '(a . b))))
+    (is (equal (convert 'list
+                        (copy-with-children-alist
+                         n
+                         '((head z))
+                         :head :ignore))
+               '((z) . b)))
+    (is (equal (convert 'list
+                        (copy-with-children-alist
+                         (convert 'node-cons '(a . b))
+                         `((,(ft::slot-specifier-for-slot n 'head) z))
+                         :head :ignore))
+               '(z . b))))
+  (is (equal (convert 'list
+                      (copy-with-children-alist
+                       (convert 'node-cons2 '(a b))
+                       '((tail z))
+                       :head 'c))
+             '(c z))))
