@@ -114,16 +114,19 @@ converted to a list of slot-specifier objects")
             :documentation "The arity of the slot"))
     (:documentation "Object that represents the slots of a class")))
 
+(defun make-slot-specifier (&rest args)
+  (apply #'make-instance 'slot-specifier args))
+
 (defmethod slot-unbound ((class t) (obj node) (slot (eql 'child-slot-specifiers)))
   (setf (slot-value obj slot)
         (iter (for p in (child-slots obj))
               (collecting
                (etypecase p
-                 (symbol (make-instance 'slot-specifier
-                                        :class class :slot p :arity 0))
-                 (cons (make-instance 'slot-specifier
-                                      :class class :slot (car p)
-                                      :arity (or (cdr p) 0))))))))
+                 (symbol (make-slot-specifier
+                          :class class :slot p :arity 0))
+                 (cons (make-slot-specifier
+                        :class class :slot (car p)
+                        :arity (or (cdr p) 0))))))))
 
 (defgeneric slot-specifier-for-slot (obj slot &optional error?)
   (:documentation "Returns the child slot SLOT in node OBJ.  If it is not
@@ -540,7 +543,6 @@ Otherwise, it is NIL.")
   (:documentation "A wrapper for a path to get to a node"))
 
 
-
 (defun child-list (node slot-spec)
   (let ((children (slot-value node (slot-spec-slot slot-spec))))
     (if (eql 1 (slot-spec-arity slot-spec))
@@ -638,6 +640,7 @@ node (as the trees are applicative.)"))
   (:documentation "Call FN on each child of NODE, along with the INDEX
 augmented by the label of that child."))
 
+;;; TODO: change this to work with slot-specifier objects
 (defmethod map-children/i ((node node) (index list) (fn function))
   (let* ((child-slots (child-slots node))
          (num-slots (length child-slots)))
@@ -677,6 +680,7 @@ returning a plist suitable for passing to COPY"))
 
 (defmethod mapcar-children ((node t) (fn function)) nil)
 
+;;; TODO change this to work with slot-specifier objects
 (defmethod mapcar-children ((node node) (fn function))
   (mappend
    (lambda (child-slot &aux modifiedp)
@@ -702,6 +706,7 @@ returning a plist suitable for passing to COPY"))
 ;;; - a raw index into the children
 ;;; - a cons of child-slot and index
 
+;;; TODO change this to work with slot-specifier objects
 (defmethod slot-unbound ((class t) (f finger) (slot (eql 'cache)))
   ;; Fill in the NODE slot of finger F
   (let* ((node (node f))
@@ -1474,6 +1479,8 @@ handle lambda lists for method argments."
               (cl:remove nil (cl:mapcar #'caddr key))
               (cl:mapcar #'car aux)))))
 
+
+;;; TODO change this to work with slot-specifier objects
 (defmacro descend ((name &key other-args extra-args replace splice checks)
                    &body new
                      ;; VARS is used to generate IGNORABLE declarations to avoid
