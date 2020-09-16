@@ -52,6 +52,7 @@
            :path-later-p
            :children
            :children-alist
+           :children-slot-specifier-alist
            :do-tree :mapc :mapcar
            :swap
            :define-node-class :define-methods-for-node-class)
@@ -385,6 +386,17 @@ of NODE to their members.")
                        (list slot (slot-value node slot))
                        (cons slot (slot-value node slot)))))
                (child-slots node))))
+
+(defgeneric children-slot-specifier-alist (node)
+  (:documentation "Return an alist mapping child slot specifiers
+of NODE to their members")
+  (:method ((node node))
+    (cl:mapcar (lambda (ss)
+                 (let ((v (slot-value node (slot-specifier-slot ss))))
+                   (if (eql (slot-specifier-arity ss) 1)
+                     (if v (list ss v) (list ss))
+                     (cons ss v))))
+               (child-slot-specifiers node))))
 
 (defun expand-children-defmethod (class child-slots)
   `(defmethod children ((node ,class))
