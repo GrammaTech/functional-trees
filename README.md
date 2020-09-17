@@ -171,6 +171,7 @@ lists, essentially a recursive version of `ft:children`:
 
 Slots with :CLASS allocation:
   CHILD-SLOTS                    = ((THEN . 1) ELSE)
+  CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
   SERIAL-NUMBER                  = 7
   TRANSFORM                      = NIL
@@ -293,6 +294,7 @@ for `ft:node`:
 
   Slots with :CLASS allocation:
     CHILD-SLOTS                    = ((THEN . 1) ELSE)
+    CHILD-SLOT-SPECIFIERS          = #<unbound slot>
   Slots with :INSTANCE allocation:
     SERIAL-NUMBER                  = 9
     TRANSFORM                      = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
