@@ -28,6 +28,7 @@ object of which represents a node in a tree. Here are its slots:
 
 Slots with :CLASS allocation:
   CHILD-SLOTS                    = NIL
+  CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
   SERIAL-NUMBER                  = 0
   TRANSFORM                      = NIL
