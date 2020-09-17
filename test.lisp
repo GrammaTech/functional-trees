@@ -1005,7 +1005,7 @@ diagnostic information on error or failure."
     (is (equal (@ n '(:b :data)) 2))))
 
 (deftest node-with-fields.2 ()
-  (let ((n (convert 'node-with-fields '(12))))
+  (let ((n (convert 'node-with-fields '(nil))))
     (is (typep n 'node-with-fields))
     (is (equal (node-a n) nil))
     (is (equal (node-b n) nil))))
@@ -1641,14 +1641,17 @@ diagnostic information on error or failure."
              '((body a b c)))))
 
 (deftest children-alist.nodes ()
-  (is (equal (children-alist (convert 'node-with-fields
-                                          '(:data 17 :a 12 :b 34)))
-             '((a 12) (b 34))))
+  (is (equal (mapcar #'(lambda (p)
+                         (list* (car p) (convert 'list (cadr p)) (cddr p)))
+                     (children-alist
+                      (convert 'node-with-fields
+                               '(:data 17 :a (:data 1) :b (:data 2)))))
+             '((a (:data 1)) (b (:data 2)))))
   (is (equal (children-alist (convert 'node-with-arity2
-                                          '(17 32)))
+                                      '(17 32)))
              '((a 17 32))))
   (is (equal (children-alist (convert 'node-with-arity2/2
-                                          '((4 7) (6 19))))
+                                      '((4 7) (6 19))))
              '((a 4 7) (b 6 19)))))
 
 (deftest copy-with-children-alist.cons-and-list-nodes ()
