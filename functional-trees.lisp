@@ -68,7 +68,7 @@
   `(cl:assert ,@(copy-tree body)))
 
 
-(eval-when (:compile-toplevel :load-toplevel)
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (defclass node (identity-ordering-mixin)
     ((transform :reader transform
                 :initarg :transform
@@ -108,6 +108,7 @@ converted to a list of slot-specifier objects")
             :documentation "The class to which the slot belongs")
      (slot :reader slot-specifier-slot
            :initarg :slot
+           :type symbol
            :documentation "The name of the slot")
      (arity :reader slot-specifier-arity
             :type (integer 0)
@@ -316,15 +317,15 @@ multiple operations.")
   (:documentation "Perform a copy of node OBJ, with children-alist being
 used to initialize some children")
   (:method ((obj node) (children-alist list) &rest args)
-    (apply #'copy obj (nconc (mappend (lambda (p)
-                                        (typecase (car p)
-                                          (slot-specifier
-                                           (list (slot-specifier-slot (car p))
-                                                 (if (eql (slot-specifier-arity (car p)) 1)
-                                                     (cadr p)
-                                                     (cdr p))))
-                                          (t (list (car p) (cdr p)))))
-                                      children-alist)
+    (apply #'copy obj (nconc (mapcan (lambda (p)
+                                       (typecase (car p)
+                                         (slot-specifier
+                                          (list (slot-specifier-slot (car p))
+                                                (if (eql (slot-specifier-arity (car p)) 1)
+                                                    (cadr p)
+                                                    (cdr p))))
+                                         (t (list (car p) (cdr p)))))
+                                     children-alist)
                              args))))
 
 (defgeneric tree-copy (obj)
