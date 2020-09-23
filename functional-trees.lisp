@@ -44,7 +44,6 @@
            :node :transform :child-slots
            :child-slot-specifiers
            :finger
-           :slot-value*
            :path :transform-finger-to :populate-fingers :residue
            :serial-number
            :path-equalp
@@ -164,32 +163,6 @@ Otherwise, in that case return NIL.")
       (etypecase p
         (symbol (when (eql p slot) (return p)))
         (cons (when (eql (car p) slot) (return p)))))))
-
-;; The following functions allow the uniform treatment
-;; of child slots
-
-(defgeneric slot-value* (obj slot)
-  (:documentation "Return the value of a child slot SLOT, converting
-arity 1 children to a list.")
-  (:method ((obj node) (slot symbol))
-    (let* ((p (slot-spec-of-slot obj slot)))
-      (if (eql (slot-spec-arity p) 1)
-          (list (slot-value obj slot))
-          (slot-value obj slot)))))
-
-(defgeneric (setf slot-value*) (val obj slot)
-  (:documentation "Set the value of a child slot SLOT, converting
-values for arity 1 slots from lists")
-  (:method ((val list) (obj node) (slot symbol))
-     (let* ((p (slot-spec-of-slot obj slot)))
-       (if (eql (slot-spec-arity p) 1)
-           (progn
-             (unless (eql (length val) 1)
-               (error "Attempt to store a list of lengh /= 1  into a arity 1 slot: ~a, ~a"
-                      val slot))
-             (setf (slot-value obj slot) (car val)))
-           (setf (slot-value obj slot) val))
-       val)))
 
 ;;;; Core functional tree definitions.
 (deftype path ()
