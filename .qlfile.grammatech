@@ -1,1 +1,3 @@
+git gt https://github.com/GrammaTech/cl-utils.git
+git stefil+ https://github.com/GrammaTech/stefil-.git main
 git testbot https://git.grammatech.com/synthesis/testbot.git
