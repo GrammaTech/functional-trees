@@ -405,6 +405,7 @@ bucket getting at least 1.  Return as a list."
 
 
 ;;;; Test suite.
+(defroot test)
 (defsuite test "Functional trees top-level test suite.")
 (in-suite test)
 
