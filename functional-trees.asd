@@ -13,4 +13,4 @@ one tree to its successors."
   :defsystem-depends-on (:asdf-package-system)
   :in-order-to ((test-op (load-op "functional-trees/test")))
   :perform
-  (test-op (o c) (symbol-call :functional-trees/test '#:test)))
+  (test-op (o c) (symbol-call :functional-trees/test '#:run-batch)))
