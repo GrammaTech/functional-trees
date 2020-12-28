@@ -293,7 +293,7 @@ used to initialize some children")
     (apply #'copy obj (nconc (mapcan (lambda (p)
                                        (typecase (car p)
                                          (slot-specifier
-                                          (list (slot-specifier-slot (car p))
+                                          (list (make-keyword (slot-specifier-slot (car p)))
                                                 (if (eql (slot-specifier-arity (car p)) 1)
                                                     (cadr p)
                                                     (cdr p))))
