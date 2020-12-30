@@ -33,8 +33,6 @@ readme:
 
 dependents:
   stage: deploy
-  inherit:
-    default: false
   script:
     - "curl -X POST -F token=064aa88b0cae92c6b22885598f3ccf -F ref=$CI_BUILD_REF_NAME https://git.grammatech.com/api/v4/projects/1312/trigger/pipeline" # gt
   only:
