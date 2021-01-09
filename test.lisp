@@ -82,9 +82,6 @@ which may be more nodes, or other values.")
    (data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")))
 
-(defmethod node-values ((node node-with-data)) (data node))
-(defmethod data (val) val)
-
 (defmethod convert ((to-type (eql 'node-with-data)) (sequence list)
                     &key &allow-other-keys)
   (labels ((make-node (list-form)

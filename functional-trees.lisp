@@ -1660,24 +1660,10 @@ functions."
 
 
 ;;;; FSET conversion operations
-(defgeneric node-values (node)
-  (:documentation "Returns multiple values that are used by
-CONVERT 'LIST to append to the beginning of the list representation
-of a node.")
-  (:method ((node node)) (values)))
-
-(defmethod convert ((to-type (eql 'list)) (node node)
-                    &key (value-fn #'node-values) &allow-other-keys)
+(defmethod convert ((to-type (eql 'list)) (node node) &key &allow-other-keys &aux all)
   "Convert NODE of type node to a list."
-  (declare (optimize (speed 3)))
-  (setf value-fn (coerce value-fn 'function))
-  (labels ((convert- (node)
-             (declare (type function value-fn))
-             (if (typep node 'node)
-                 (append (multiple-value-list (funcall value-fn node))
-                         (cl:mapcar #'convert- (children node)))
-                 node)))
-    (convert- node)))
+  (mapc (lambda (node) (push node all)) node)
+  (nreverse all))
 
 (defmethod convert ((to-type (eql 'list)) (finger finger)
                     &key &allow-other-keys)
