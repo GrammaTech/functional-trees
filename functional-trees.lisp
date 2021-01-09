@@ -399,7 +399,7 @@ of NODE to their members")
             `(defmethod (setf ,slot) (new (obj ,class))
                ,@(when (and arity (numberp arity))
                    `((assert
-                      (= ,arity (length new))
+                      (or (zerop ,arity) (= ,arity (length new)))
                       ()
                       ,(format nil "New value for ~a has wrong arity ~~a not ~a."
                                slot arity)
