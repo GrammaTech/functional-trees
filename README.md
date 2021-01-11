@@ -147,26 +147,23 @@ construct our nodes (we will discuss `ft:populate-fingers` in the next section):
 (defmethod fset:convert ((to-type (eql 'if-then-else-node)) (sequence list)
                          &key &allow-other-keys)
   (labels ((construct (form)
-             (if (consp form)
-                 (make-instance 'if-then-else-node
-                                :then (construct (first form))
-                                :else (mapcar #'construct (rest form)))
-                 (make-instance 'ft:node))))
+             (etypecase form
+               (cons
+                (make-instance 'if-then-else-node
+                  :then (construct (first form))
+                  :else (mapcar #'construct (rest form))))
+               (atom
+                (make-instance 'ft:node)))))
     (ft:populate-fingers (construct sequence))))
 ```
 
-Now we can round-trip from a `list` to an `if-then-else-node` and back, because
-this library already defines an `fset:convert` method to convert from nodes to
-lists, essentially a recursive version of `ft:children`:
-
+This method may be used to easily create a functional tree from a list.
 ```lisp
-(progn
-  (defvar my-node (fset:convert 'if-then-else-node '((nil) nil)))
-  (describe my-node)
-  (fset:convert 'list my-node))
+(progn (defvar my-node (fset:convert 'if-then-else-node '((nil) nil)))
+       (describe my-node))
 ```
 ```
-#<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
+#<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
   [standard-object]
 
 Slots with :CLASS allocation:
@@ -176,11 +173,32 @@ Slots with :INSTANCE allocation:
   SERIAL-NUMBER                  = 7
   TRANSFORM                      = NIL
   SIZE                           = #<unbound slot>
-  FINGER                         = #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)> NIL>
-  THEN                           = #<IF-THEN-ELSE-NODE 5 (NIL)>
+  FINGER                         = #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5..
+  THEN                           = #<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)>
   ELSE                           = (#<FUNCTIONAL-TREES:NODE 6 NIL>)
-((NIL) NIL)
 ```
+
+Now we can round-trip from a `list` to an `if-then-else-node` and
+back, because this library already defines an `fset:convert` method to
+convert from nodes to lists, essentially a recursive version of
+`ft:children`.
+
+```lisp
+(ft::convert 'list my-node)
+```
+```
+(#<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)> #<NODE 4 NIL>
+                        #<NODE 6 NIL>)>
+ #<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)> #<FUNCTIONAL-TREES:NODE 4 NIL>
+ #<FUNCTIONAL-TREES:NODE 6 NIL>)
+ ```
+
+The convert functions to and from lists may be specialized for a
+particular subclass of node to achieve translation to and from
+functional trees which don't lose information.  However, doing that in
+general is not possible without specific knowledge of the desired tree
+structure -- namely how the tree stores list *values* vs list
+*strucure*.
 
 ### Fingers
 
@@ -193,11 +211,11 @@ In the previous example, we constructed a small tree and then called
   (describe finger1))
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)> (THEN THE..
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5..
   [standard-object]
 
 Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
+  NODE                           = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
   PATH                           = (THEN THEN)
   RESIDUE                        = NIL
   CACHE                          = #<unbound slot>
@@ -218,11 +236,11 @@ Now let's look at one more finger:
   (describe finger2))
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)> ((ELSE..
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5..
   [standard-object]
 
 Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
+  NODE                           = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
   PATH                           = ((ELSE . 0))
   RESIDUE                        = NIL
   CACHE                          = #<unbound slot>
@@ -289,7 +307,7 @@ for `ft:node`:
     (describe expanded))
   ```
   ```
-  #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)>
+  #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 11 (#1=#<NODE 4 NIL>..
     [standard-object]
 
   Slots with :CLASS allocation:
@@ -297,10 +315,10 @@ for `ft:node`:
     CHILD-SLOT-SPECIFIERS          = #<unbound slot>
   Slots with :INSTANCE allocation:
     SERIAL-NUMBER                  = 9
-    TRANSFORM                      = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
+    TRANSFORM                      = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
     SIZE                           = #<unbound slot>
     FINGER                         = NIL
-    THEN                           = #<IF-THEN-ELSE-NODE 11 (NIL NIL)>
+    THEN                           = #<IF-THEN-ELSE-NODE 11 (#<NODE 4 NIL> #<NODE 10 NIL>)>
     ELSE                           = (#<FUNCTIONAL-TREES:NODE 8 NIL> #<FUNCTIONAL-TREES:NODE 6 NIL>)
   ```
 
@@ -322,7 +340,7 @@ retains knowledge of the relationship to the former (its "predecessor") via its
   [standard-object]
 
 Slots with :INSTANCE allocation:
-  FROM                           = #<IF-THEN-ELSE-NODE 7 ((NIL) NIL)>
+  FROM                           = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
   TRANSFORMS                     = (((THEN THEN) (THEN THEN) :LIVE) (((ELSE . 0)) ((ELSE . 1)) :LIVE))
 ```
 
@@ -345,11 +363,11 @@ Here's an example:
 (show-expanded-finger finger1)
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> (..
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 1..
   [standard-object]
 
 Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)>
+  NODE                           = #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 11 (#1=#<NODE 4 NIL>..
   PATH                           = (THEN THEN)
   RESIDUE                        = NIL
   CACHE                          = #<unbound slot>
@@ -364,11 +382,11 @@ we can also translate other paths:
 (show-expanded-finger finger2)
 ```
 ```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)> (..
+#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 1..
   [standard-object]
 
 Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 9 ((NIL NIL) NIL NIL)>
+  NODE                           = #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 11 (#1=#<NODE 4 NIL>..
   PATH                           = ((ELSE . 1))
   RESIDUE                        = NIL
   CACHE                          = #<unbound slot>

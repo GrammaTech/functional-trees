@@ -1635,7 +1635,7 @@ functions."
   (if *print-readably*
       (call-next-method)
       (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a" (serial-number obj) (convert 'list obj)))))
+        (format stream "~a ~a" (serial-number obj) (cdr (convert 'list obj))))))
 
 (defmethod print-object ((obj slot-specifier) stream)
   (if *print-readably*
