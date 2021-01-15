@@ -463,6 +463,27 @@ bucket getting at least 1.  Return as a list."
       (is (equal (%f '(1 1 0)) (caddr init-list)))
       (is (equal (%f '(1 1 1 1 0 1 0)) (second (fifth init-list)))))))
 
+(deftest transform-path-on-lookup ()
+  (let ((l1 '(:a (:b) (:c (:x))))
+        (node-top (convert 'node-list l1))
+        ;; Select two nodes in
+        (node-x (find-if [{eql :x} #'car #'children] node-top))
+        (node-c (find-if [{eql :c} #'car #'children] node-top))
+        ;; A new tree in which node-c has an additional child -- changing the path to node-x.
+        (node-top' (with node-top node-c
+                         (setf (child-list node-c)
+                               (cons (car (children node-c))
+                                     (cons (convert 'node-list '(:y))
+                                           (cdr (children node-c))))))))
+    ;; Lookup of node-x in
+    (is (equal node-x (@ node-top node-x)))
+    ;; Lookup of node-x in the new tree transforms the finger to continue to find node-x.
+    ;;
+    ;; FIXME: This currently fails because `lookup' calls `path-of-node'
+    ;; which calls `transform-finger' which appears to fail to actually
+    ;; update the finger.
+    (is (equal node-x (@ node-top' node-x)))))
+
 (deftest transform-path.1 ()
   (let* ((l1 '(:a (:b) (:c (:x))))
          (l2 '(:a (:b) (:d) (:c (:x))))
