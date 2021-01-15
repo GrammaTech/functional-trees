@@ -1417,14 +1417,14 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (path cons))
   (etypecase path
     (proper-list
-#|     ;; If the path has a named child with an index
+     #+nil ;; If the path has a named child with an index
      (if (and (first path) (second path)
               (typep (first path) 'symbol)
               (typep (second path) 'number))
          ;; then handle them both at once.
-         (lookup (lookup (lookup node (first path)) (second path)) (cddr path)) |#
+         (lookup (lookup (lookup node (first path)) (second path)) (cddr path))
+         (lookup (lookup node (car path)) (cdr path)))
      (lookup (lookup node (car path)) (cdr path)))
-    ;; )
     (cons
      (destructuring-bind (slot . i) path
        (lookup (slot-value node slot) i)))))
