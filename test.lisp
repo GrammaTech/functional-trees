@@ -1417,6 +1417,16 @@ diagnostic information on error or failure."
                     '(:a (:b) (:b (:c) (:d) (:e)) (:d)))
               '(:a (:b) (:b (:foo) (:d) (:e)) (:d)))))
 
+(deftest mapcar-keeps-on-nil ()
+  (is (equalp (nest (convert 'list)
+                    (mapcar
+                     (lambda (it)
+                       (when (eql (head it) :c)
+                         (convert 'node-cons '(:foo)))))
+                    (convert 'node-cons)
+                    '(:a (:b) (:b (:c) (:d) (:e)) (:d)))
+              '(:a (:b) (:b (:foo) (:d) (:e)) (:d)))))
+
 (deftest bad-tree ()
   ;; Test where a tree has a node twice
   (flet ((%f (f x y)

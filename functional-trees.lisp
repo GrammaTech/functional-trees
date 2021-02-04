@@ -1746,9 +1746,12 @@ functions."
     (apply #'cl:mapcar function sequence more)))
 
 (defmethod mapcar (function (tree node) &rest more)
+  "Map FUNCTION over TREE collecting the results into a new tree.
+Non-nil return values of FUNCTION replace the current node in the tree
+and nil return values of FUNCTION leave the existing node."
   (fset::check-two-arguments more 'mapcar 'node)
   (do-tree (node tree :rebuild t)
-    (funcall function node)))
+    (or (funcall function node) node)))
 
 (defmethod reduce
     (fn (node node)
