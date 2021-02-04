@@ -606,11 +606,11 @@ if NEW-TREE lacks a back pointer.  Returns NEW-TREE."))
   new-tree)
 
 (defgeneric traverse-tree (node fn)
-  (:documentation "Traverse tree rooted at NODE in preorder.
-At each node, call FN.  If the first value returned is true,
-replaced node by the second returned value and continued the
-traversal.  If any child is replaced also replace the parent
-node (as the trees are applicative.)"))
+  (:documentation "Traverse tree rooted at NODE in preorder.  At each
+node, call FN.  If the returned value is non-nil, it replaces the node
+and traversal continues.  If the returned value is nil stop traversal.
+If any child is replaced also replace the parent node (as the trees
+are applicative.)"))
 
 (defmethod traverse-tree ((node t) (fn function)) node)
 
