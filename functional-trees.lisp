@@ -1236,119 +1236,136 @@ is the path to NODE.")
 ;;; Uses two heaps to pull nodes from FROM and TO in decreasing
 ;;; order of size and serial number.
 
+(defparameter *path-transform-cache*
+  (make-hash-table :test 'equal #|:weakness :value|#)
+  "Cache all the results of PATH-TRANSFORM-OF.")
+
 (defmethod path-transform-of ((orig-from node) (to node))
-  (let* (;; TABLE is a mapping from serial numbers
-         ;; to length 2 lists.  The elements of the list
-         ;; are either NIL or a pair containing a node from the
-         ;; FROM (first element) or TO (second element), along
-         ;; with the path to the node.
-         (table (make-hash-table))
-         (from-heap (make-node-heap))
-         (to-heap (make-node-heap))
-         (from-size (size orig-from))
-         (from-sn (serial-number orig-from))
-         (from-path nil)
-         (to-size (size to))
-         (to-sn (serial-number to))
-         (to-path nil)
-         (mapping nil)
-         (from orig-from)
-         (to to))
-    (flet ((%add-from ()
-             #+ft-debug-path-transform-of
-             (format t "%add-from~%")
-             (let ((entry (gethash from-sn table))
-                   (l (list from from-path)))
+  (let* ((cache-key (cons (serial-number orig-from) (serial-number to)))
+         (cached (gethash cache-key *path-transform-cache*)))
+    (when cached
+      #-debug (format t "Found in path-transform cache: ~A~%" cache-key)
+      (return-from path-transform-of cached))
+
+    (let* (;; TABLE is a mapping from serial numbers
+           ;; to length 2 lists.  The elements of the list
+           ;; are either NIL or a pair containing a node from the
+           ;; FROM (first element) or TO (second element), along
+           ;; with the path to the node.
+           (table (make-hash-table))
+           (from-heap (make-node-heap))
+           (to-heap (make-node-heap))
+           (from-size (size orig-from))
+           (from-sn (serial-number orig-from))
+           (from-path nil)
+           (to-size (size to))
+           (to-sn (serial-number to))
+           (to-path nil)
+           (mapping nil)
+           (from orig-from)
+           (to to))
+      (flet ((%add-from ()
                #+ft-debug-path-transform-of
-               (format t "entry = ~a~%" entry)
-               (if (null entry)
-                   (setf (gethash from-sn table) (list l nil))
-                   (if (null (car entry))
-                       (setf (car entry) l)
-                       (error "Two nodes in FROM tree with same SN: ~a" from-sn)))))
-           (%add-to ()
-             #+ft-debug-path-transform-of
-             (format t "%add-to~%")
-             (let ((entry (gethash to-sn table))
-                   (l (list to to-path)))
+               (format t "%add-from~%")
+               (let ((entry (gethash from-sn table))
+                     (l (list from from-path)))
+                 #+ft-debug-path-transform-of
+                 (format t "entry = ~a~%" entry)
+                 (if (null entry)
+                     (setf (gethash from-sn table) (list l nil))
+                     (if (null (car entry))
+                         (setf (car entry) l)
+                         (error "Two nodes in FROM tree with same SN: ~a"
+                                from-sn)))))
+             (%add-to ()
                #+ft-debug-path-transform-of
-               (format t "entry = ~a~%" entry)
-               (if (null entry)
-                   (setf (gethash to-sn table) (list nil l))
-                   (if (null (cadr entry))
-                       (setf (cadr entry) l)
-                       (error "Two nodes in TO tree with same SN: ~a" to-sn))))))
-      ;; (declare (type fixnum from-size from-sn to-size to-sn))
-      (tagbody
-       again
-         #+ft-debug-path-transform-of
-         (progn
-           (format t "from-size=~a, from-sn=~a~%" from-size from-sn)
-           (format t "to-size=~a, to-sn=~a~%" to-size to-sn))
-         (when (eql from to)
+               (format t "%add-to~%")
+               (let ((entry (gethash to-sn table))
+                     (l (list to to-path)))
+                 #+ft-debug-path-transform-of
+                 (format t "entry = ~a~%" entry)
+                 (if (null entry)
+                     (setf (gethash to-sn table) (list nil l))
+                     (if (null (cadr entry))
+                         (setf (cadr entry) l)
+                         (error "Two nodes in TO tree with same SN: ~a"
+                                to-sn))))))
+        ;; (declare (type fixnum from-size from-sn to-size to-sn))
+        (tagbody
+         again
            #+ft-debug-path-transform-of
-           (format t "eql~%")
+           (progn
+             (format t "from-size=~a, from-sn=~a~%" from-size from-sn)
+             (format t "to-size=~a, to-sn=~a~%" to-size to-sn))
+           (when (eql from to)
+             #+ft-debug-path-transform-of
+             (format t "eql~%")
+             (%add-from)
+             (%add-to)
+             (go popboth))
+           (when (> from-size to-size) (go advance1))
+           (when (< from-size to-size) (go advance2))
+           ;; sizes are eql
+           (if (>= from-sn to-sn) (go advance1) (go advance2))
+         popboth
+           (setf (values from from-size from-sn from-path)
+                 (node-heap-pop from-heap))
+           (setf (values to to-size to-sn to-path)
+                 (node-heap-pop to-heap))
+           (unless (and from to) (go done))
+           (go again)
+         advance1
+           #+ft-debug-path-transform-of
+           (format t "advance1~%")
            (%add-from)
+           (node-heap-add-children from-heap from from-path)
+           (setf (values from from-size from-sn from-path)
+                 (node-heap-pop from-heap))
+           (unless from (go done))
+           (go again)
+         advance2
+           #+ft-debug-path-transform-of
+           (format t "advance2~%")
            (%add-to)
-           (go popboth))
-         (when (> from-size to-size) (go advance1))
-         (when (< from-size to-size) (go advance2))
-         ;; sizes are eql
-         (if (>= from-sn to-sn) (go advance1) (go advance2))
-       popboth
-         (setf (values from from-size from-sn from-path)
-               (node-heap-pop from-heap))
-         (setf (values to to-size to-sn to-path)
-               (node-heap-pop to-heap))
-         (unless (and from to) (go done))
-         (go again)
-       advance1
-         #+ft-debug-path-transform-of
-         (format t "advance1~%")
-         (%add-from)
-         (node-heap-add-children from-heap from from-path)
-         (setf (values from from-size from-sn from-path)
-               (node-heap-pop from-heap))
-         (unless from (go done))
-         (go again)
-       advance2
-         #+ft-debug-path-transform-of
-         (format t "advance2~%")
-         (%add-to)
-         (node-heap-add-children to-heap to to-path)
-         (setf (values to to-size to-sn to-path)
-               (node-heap-pop to-heap))
-         (unless to (go done))
-         (go again)
-       done
-         #+ft-debug-path-transform-of
-         (format t "done~%"))
-      (iter (while from)
-            (%add-from)
-            (setf (values from from-size from-sn from-path)
-                  (node-heap-pop from-heap)))
-      (iter (while to)
-            (%add-to)
-            (setf (values to to-size to-sn to-path)
-                  (node-heap-pop to-heap)))
+           (node-heap-add-children to-heap to to-path)
+           (setf (values to to-size to-sn to-path)
+                 (node-heap-pop to-heap))
+           (unless to (go done))
+           (go again)
+         done
+           #+ft-debug-path-transform-of
+           (format t "done~%"))
+        (iter (while from)
+              (%add-from)
+              (setf (values from from-size from-sn from-path)
+                    (node-heap-pop from-heap)))
+        (iter (while to)
+              (%add-to)
+              (setf (values to to-size to-sn to-path)
+                    (node-heap-pop to-heap)))
 
-      ;; Extract mapping from table
-      (maphash
-       (lambda (sn entry)
-         (declare (ignore sn))
-         (when (and (car entry) (cadr entry))
-           (push (list (cadar entry) (cadadr entry)) mapping)))
-       table)
-      (setf mapping (sort mapping #'lexicographic-< :key #'car))
-      #+ft-debug-path-transform-of
-      (format t "Sorted mapping:~%~A~%" mapping)
+        ;; Extract mapping from table
+        (maphash
+         (lambda (sn entry)
+           (declare (ignore sn))
+           (when (and (car entry) (cadr entry))
+             (push (list (cadar entry) (cadadr entry)) mapping)))
+         table)
+        (setf mapping (sort mapping #'lexicographic-< :key #'car))
+        #+ft-debug-path-transform-of
+        (format t "Sorted mapping:~%~A~%" mapping)
 
-      (let ((sorted-result (path-transform-compress-mapping mapping)))
-        (make-instance
-         'path-transform
-         :from orig-from
-         :transforms (cl:mapcar (lambda (p) (append p (list :live)))
-                                sorted-result))))))
+        (let* ((sorted-result (path-transform-compress-mapping mapping))
+               (path-transform
+                (make-instance 'path-transform
+                               :from orig-from
+                               :transforms
+                               (cl:mapcar (lambda (p) (append p (list :live)))
+                                          sorted-result))))
+          #-debug (format t "Add to cache: ~A~%" cache-key)
+
+          (setf (gethash cache-key *path-transform-cache*)
+                path-transform))))))
 
 ;;; TODO: enhance this compression so that paths that differ
 ;;; only in the final index are compressed into "range" paths.
