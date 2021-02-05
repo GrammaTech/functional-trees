@@ -251,8 +251,8 @@ into account the representation of named children")
 ;;; TODO: determine if this may or should be combined with lexicographic-<
 
 (defgeneric path-later-p (node path-a path-b)
-  (:documentation "Does PATH-A from NODE represent an AST path after
-PATH-B from NODE?   Use this to sort AST asts for mutations that perform
+  (:documentation "Does PATH-A from NODE represent an NODE path after
+PATH-B from NODE?   Use this to sort NODE nodes for mutations that perform
 multiple operations.")
   (:method ((node t) (path-a null) (path-b null)) nil)
   (:method ((node node) (path-a null) (path-b null)) nil)
@@ -261,9 +261,9 @@ multiple operations.")
   (:method ((node t) (path-a cons) (path-b null)) t)
   (:method ((node node) (path-a cons) (path-b null)) t)
   (:method ((node t) (path-a list) (path-b list))
-    ;; Consider longer paths to be later, so in case of nested ASTs we
-    ;; will sort inner one first. Mutating the outer AST could
-    ;; invalidate the inner ast.
+    ;; Consider longer paths to be later, so in case of nested NODEs we
+    ;; will sort inner one first. Mutating the outer NODE could
+    ;; invalidate the inner node.
     (nest (destructuring-bind (head-a . tail-a) path-a)
           (destructuring-bind (head-b . tail-b) path-b)
           (cond
