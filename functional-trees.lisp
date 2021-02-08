@@ -1224,7 +1224,7 @@ is the path to NODE.")
                     (node-heap-insert nh c
                                       (append path (list path-element)))))))))))
 
-
+
 ;;; The algorithm for computing the path transform finds all
 ;;; the nodes that are unique to either tree, and their immediate
 ;;; children.  Only the paths to these nodes need be considered
@@ -1236,15 +1236,62 @@ is the path to NODE.")
 ;;; Uses two heaps to pull nodes from FROM and TO in decreasing
 ;;; order of size and serial number.
 
+;;; Path-transform caching strategy:
+;;;
+;;; Computing paths can be computationally expensive, and
+;;; we would like to cache them for reuse as long as the nodes
+;;; they connect are still alive (haven't been garbage collected).
+;;; Both sbcl and ccl support "weak hash-tables" which can release
+;;; entries when either the key or the value (as selected for the
+;;; hash-table) is no longer alive.
+;;;
+;;; We use this feature to implement a path-transform cache.
+;;; We want the paths to be retained, even if no running code is
+;;; currently using them, until the nodes they connect are no longer
+;;; alive. Precisely, we can discard them if either of the nodes is
+;;; no longer alive. So the value (containing paths) cannot be weak.
+;;; We need to use weak keys.
+;;;
+;;; Logically, our key would be the two nodes, but weak caching
+;;; requires a single object as the key. If we construct a key, it will
+;;; discarded at the next collection because it doesn't live anywhere
+;;; other than at a weak cache reference.
+;;;
+;;; So we have used the second node (to-node), which is usually the most
+;;; distinct, as the key, and its value will be all the paths that end
+;;; at that node from other nodes, stored in an a-list:
+;;; ((<serial-number-node1> . <path1>) (<serial-number-node2> . <path2>) ...).
+;;;
+;;; This seems to be sufficient, performance-wise, and causes all
+;;; paths that end at a given node to be removed from the cache when the
+;;; node is determined to be no longer living by the garbage collector.
+;;;
+;;; Note: the equality test shoul be 'eq for weak hashtables.
+
 (defparameter *path-transform-cache*
-  (make-hash-table :test 'equal #|:weakness :value|#)
-  "Cache all the results of PATH-TRANSFORM-OF.")
+  (make-hash-table :test 'eq #+ccl :weak #+sbcl :weakness :key)
+  "Cache all the results of PATH-TRANSFORM-OF as long as specified
+ to-node is alive.")
+
+(defun clear-path-transform-cache () (clrhash *path-transform-cache*))
+
+(defun add-cached-path-transform (from-node to-node path-transform)
+  "Add a node path-transform to the cache."
+  (push (cons (serial-number from-node)
+              path-transform)
+        (gethash to-node *path-transform-cache* nil)))
+
+(defun lookup-cached-path-transform (from-node to-node)
+  (cdr (assoc (serial-number from-node)
+         (gethash to-node *path-transform-cache* nil))))
 
 (defmethod path-transform-of ((orig-from node) (to node))
-  (let* ((cache-key (cons (serial-number orig-from) (serial-number to)))
-         (cached (gethash cache-key *path-transform-cache*)))
+  (let* ((save-orig-from orig-from)
+         (save-to to)
+         (cached (lookup-cached-path-transform orig-from to)))
     (when cached
-      #-debug (format t "Found in path-transform cache: ~A~%" cache-key)
+      #+debug (format t "Found in path-transform cache ~A~%"
+                      (cons (serial-number orig-from) (serial-number to)))
       (return-from path-transform-of cached))
 
     (let* (;; TABLE is a mapping from serial numbers
@@ -1362,10 +1409,11 @@ is the path to NODE.")
                                :transforms
                                (cl:mapcar (lambda (p) (append p (list :live)))
                                           sorted-result))))
-          #-debug (format t "Add to cache: ~A~%" cache-key)
-
-          (setf (gethash cache-key *path-transform-cache*)
-                path-transform))))))
+          #+debug (format t "Add to cache ~A~%"
+                          (cons (serial-number save-orig-from)
+                                (serial-number save-to)))
+          (add-cached-path-transform save-orig-from save-to path-transform)
+          path-transform)))))
 
 ;;; TODO: enhance this compression so that paths that differ
 ;;; only in the final index are compressed into "range" paths.
