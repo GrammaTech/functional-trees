@@ -548,7 +548,7 @@ VALUE is the value to return upon completion.  INDEX may hold a
 variable bound in BODY to the *reversed* path leading to the current
 node.  If REBUILD then the body should return the new node that will
 replace NODE, NODE itself if it is not to be replaced, and NIL if NODE
-is to be deleted (from a variable arity list of children in its parent."
+is to be deleted (from a variable arity list of children in its parent)."
   ;; (declare (ignorable start end from-end))
   ;; (when (or startp endp from-end-p)
   ;;   (warn "TODO: implement start end and from-end-p."))
