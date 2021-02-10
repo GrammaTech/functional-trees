@@ -54,7 +54,8 @@
            :children-slot-specifier-alist
            :do-tree :mapc :mapcar
            :swap
-           :define-node-class :define-methods-for-node-class)
+           :define-node-class :define-methods-for-node-class
+           :*cache-path-transforms?*)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -1238,6 +1239,9 @@ is the path to NODE.")
 
 ;;; Path-transform caching strategy:
 ;;;
+;;; If *cache-path-transforms?* is true, path-transforms are cached
+;;; and reused for performance.
+;;;
 ;;; Computing paths can be computationally expensive, and
 ;;; we would like to cache them for reuse as long as the nodes
 ;;; they connect are still alive (haven't been garbage collected).
@@ -1268,6 +1272,10 @@ is the path to NODE.")
 ;;;
 ;;; Note: the equality test shoul be 'eq for weak hashtables.
 
+(defparameter *cache-path-transforms?* t
+  "Iff true, path-transforms are cached and retained until the
+ end node (to-node) is garbage collected.")
+
 (defparameter *path-transform-cache*
   (make-hash-table :test 'eq #+ccl :weak #+sbcl :weakness :key)
   "Cache all the results of PATH-TRANSFORM-OF as long as specified
@@ -1277,13 +1285,15 @@ is the path to NODE.")
 
 (defun add-cached-path-transform (from-node to-node path-transform)
   "Add a node path-transform to the cache."
-  (push (cons (serial-number from-node)
-              path-transform)
-        (gethash to-node *path-transform-cache* nil)))
+  (and *cache-path-transforms?*
+       (push (cons (serial-number from-node)
+                   path-transform)
+             (gethash to-node *path-transform-cache* nil))))
 
 (defun lookup-cached-path-transform (from-node to-node)
-  (cdr (assoc (serial-number from-node)
-         (gethash to-node *path-transform-cache* nil))))
+  (and *cache-path-transforms?*
+       (cdr (assoc (serial-number from-node)
+                   (gethash to-node *path-transform-cache* nil)))))
 
 (defmethod path-transform-of ((orig-from node) (to node))
   (let* ((save-orig-from orig-from)
