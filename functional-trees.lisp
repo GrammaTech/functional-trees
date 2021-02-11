@@ -24,7 +24,7 @@
                           :find :find-if :find-if-not
                           :count :count-if :count-if-not
                           :position :position-if :position-if-not
-                          :remove :remove-if :remove-if-not
+                          :remove :remove-if :remove-if-not :filter
                           :substitute :substitute-if :substitute-if-not
                           :some :every :notany :notevery
                           ;; Additional stuff
@@ -1868,6 +1868,9 @@ checking and normalization of :TEST and :TEST-NOT arguments."
   (multiple-value-call
       #'remove-if (complement predicate) node
       (if key (values :key key) (values))))
+
+(defmethod filter (predicate (node node))
+  (remove-if-not predicate node))
 
 (defmethod remove (item (node node)
                    &key (test #'eql test-p) (test-not nil test-not-p) key &allow-other-keys)
