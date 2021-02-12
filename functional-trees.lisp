@@ -1277,7 +1277,7 @@ is the path to NODE.")
  end node (to-node) is garbage collected.")
 
 (defparameter *path-transform-cache*
-  (make-hash-table :test 'eq #+ccl :weak #+sbcl :weakness :key)
+  (make-hash-table :test 'eq #+ccl :weak #+(or sbcl ecl) :weakness #+(or ccl sbcl ecl) :key)
   "Cache all the results of PATH-TRANSFORM-OF as long as specified
  to-node is alive.")
 
