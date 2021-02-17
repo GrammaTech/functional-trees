@@ -71,15 +71,26 @@
 
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defclass node (identity-ordering-mixin)
+  (defclass root-info ()
     ((transform :reader transform
                 :initarg :transform
                 :initform nil
-                ;; TODO: change the back pointer to a weak vector
-                ;; containing the pointer.
                 :type (or null node path-transform #+sbcl sb-ext:weak-pointer)
                 :documentation "If non-nil, is either a PATH-TRANSFORM object
-to this node, or the node that led to this node.")
+to this node, or the node that led to this node."))
+    (:documentation "Information that is associated with the root of an AST.  This
+is placed in a separate object so we don't have to burden non-root nodes with too
+many slots."))
+  (defclass node (identity-ordering-mixin)
+    ((root-info :reader root-info
+                :initarg :root-info
+                :initform nil
+                ;; TODO: change the back pointer to a weak vector
+                ;; containing the pointer.
+                ;; :type (or null node path-transform #+sbcl sb-ext:weak-pointer)
+                :type (or null root-info)
+                :documentation "If non-nil, the ROOT-INFO object that
+contains TRANSFORMS and other root-only information.")
      (size :reader size
            :type (integer 1)
            :documentation "Number of nodes in tree rooted here.")
@@ -117,6 +128,18 @@ converted to a list of slot-specifier objects")
             :initarg :arity
             :documentation "The arity of the slot"))
     (:documentation "Object that represents the slots of a class")))
+
+(defmethod transform ((node node))
+  (when-let ((ri (root-info node))) (transform ri)))
+
+(defgeneric set-transform (node tr)
+  (:method ((node node) tr)
+    (if-let ((ri (slot-value node 'root-info)))
+      (setf (slot-value node 'root-info)
+            (copy ri :transform tr))
+      (setf (slot-value node 'root-info)
+            (make-instance 'root-info :transform tr)))
+    tr))
 
 (defun make-slot-specifier (&rest args)
   (apply #'make-instance 'slot-specifier args))
@@ -463,8 +486,13 @@ of NODE to their members")
   (let ((tr (call-next-method)))
     (if (typep tr 'node)
         (progn
-          ; (format t "Compute path transform from ~a to ~a~%" tr n)
-          (setf (slot-value n 'transform) (path-transform-of tr n)))
+          ;; (format t "Compute path transform from ~a to ~a~%" tr n)
+          (let ((pto (path-transform-of tr n)))
+            (setf (slot-value n 'root-info)
+                  (if-let ((ri (root-info n)))
+                          (copy ri :transform pto)
+                          (make-instance 'root-info :transform pto)))
+            pto))
         tr)))
 
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
@@ -482,6 +510,9 @@ of NODE to their members")
    (cl:mapcar #'slot-definition-name )
    (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
    (class-slots (class-of node))))
+
+(defmethod copy ((r root-info) &key (transform (transform r)))
+  (make-instance 'root-info :transform transform))
 
 ;;; TODO -- specialize this in define-node-class
 (defmethod tree-copy ((node node))
@@ -604,8 +635,10 @@ if NEW-TREE lacks a back pointer.  Returns NEW-TREE."))
 
 (defmethod update-predecessor-tree ((old-tree node) (new-tree node))
   (or (eql old-tree new-tree)
-      (slot-value new-tree 'transform)
-      (setf (slot-value new-tree 'transform) old-tree))
+      (setf (slot-value new-tree 'root-info)
+            (if-let ((ri (slot-value new-tree 'root-info)))
+                    (copy ri :transform old-tree)
+                    (make-instance 'root-info :transform old-tree))))
   new-tree)
 
 (defgeneric traverse-tree (node fn)
@@ -785,7 +818,7 @@ tree to another."))
   (:documentation "REturns the list of predecessor trees of N"))
 
 (defmethod predecessor-chain ((n node))
-  (let ((tr (slot-value n 'transform)))
+  (let ((tr (when-let ((ri (root-info n))) (slot-value ri 'transform))))
     (typecase tr
       (node (cons tr (predecessor-chain tr)))
       (path-transform (cons (from tr) (predecessor-chain (from tr)))))))
@@ -1490,7 +1523,10 @@ tree has its predecessor set to TREE."
     (if (or (not (typep new-tree 'node))
             (eql tree (from (transform new-tree))))
         new-tree
-        (copy new-tree :transform tree))))
+        (copy-with-transform new-tree :transform tree))))
+
+(defun copy-with-transform (tree &key transform)
+  (copy tree :root-info (make-instance 'root-info :transform transform)))
 
 (defmacro with-encapsulation (tree &body body)
   (let ((var (gensym)))
@@ -1969,7 +2005,7 @@ Returns the path from NODE to the child, or NIL if not found.")
 
 (defmethod remove-if :around (predicate (node node) &key &allow-other-keys)
   ;; Ensure that we set the old node as the original for subsequent transforms.
-  (when-let ((it (call-next-method))) (copy it :transform node)))
+  (when-let ((it (call-next-method))) (copy-with-transform it :transform node)))
 
 (defmethod remove-if-not (predicate (node node)
                           &key key  &allow-other-keys)

@@ -47,7 +47,9 @@
                           :subst-if
                           :subst-if-not
                           :transform-finger
-                          :with-encapsulation)
+                          :with-encapsulation
+                          :root-info
+                          :set-transform)
   (:shadowing-import-from :fset
                           :@ :convert :less :splice :insert :lookup :alist
                           :map :set :partition :alist :size
@@ -471,7 +473,8 @@ bucket getting at least 1.  Return as a list."
                             :from node1
                             :transforms '(((1) (2) :live))))
          (node2 (convert 'node-cons l2)))
-    (setf (slot-value node2 'transform) pt)
+    ;; (setf (slot-value node2 'transform) pt)
+    (set-transform node2 pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
       (is (null (path f1)))
@@ -508,7 +511,8 @@ bucket getting at least 1.  Return as a list."
                             :transforms '(((1) nil :dead)
                                           ((2) (1) :live))))
          (node2 (convert 'node-list l2)))
-    (setf (slot-value node2 'transform) pt)
+    ;; (setf (slot-value node2 'transform) pt)
+    (set-transform node2 pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
       (is (null (path f1)))
@@ -544,7 +548,8 @@ bucket getting at least 1.  Return as a list."
                             :transforms '(((2 1) (2 0) :live)
                                           ((2) (3) :live))))
          (node2 (convert 'node-list l2)))
-    (setf (slot-value node2 'transform) pt)
+    ;; (setf (slot-value node2 'transform) pt)
+    (set-transform node2 pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
       (is (null (path f1)))
@@ -948,7 +953,7 @@ diagnostic information on error or failure."
          (n1 (convert 'node-cons l1))
          (c (children n1))
          (l2 `(a 65 ,(elt c 1) 23 ,(elt c 0)))
-         (n2 (copy (convert 'node-cons l2) :transform n1)))
+         (n2 (copy (convert 'node-cons l2) :root-info (make-instance 'root-info :transform n1))))
     (is (null (random-test-check n1 n2)))))
 
 (deftest path-transform-compress-mapping.1 ()
@@ -1529,7 +1534,7 @@ diagnostic information on error or failure."
     (is (not (equal (transform t4) t4))))
   (is (transform
        (eval '(let ((t1 (convert 'node-with-data '(:a 1 2))))
-               (with-encapsulation t1 (copy t1 :transform t1)))))))
+               (with-encapsulation t1 (copy t1 :root-info (make-instance 'root-info :transform t1))))))))
 
 (deftest assert-test ()
   (is (null (eval '(ft::assert t)))))
