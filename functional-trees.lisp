@@ -55,7 +55,9 @@
            :do-tree :mapc :mapcar
            :swap
            :define-node-class :define-methods-for-node-class
-           :*cache-path-transforms?*)
+           :*cache-path-transforms?*
+           :child-position-if
+           :child-position)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -623,9 +625,36 @@ are applicative.)"))
         (apply #'copy new keys)
         new))))
 
+(defgeneric map-only-children/i (node index fn)
+  (:documentation "Call FN on eeach child of NODE, along with
+the INDEX augmented by the label of that child.  Do not descend
+into subtrees."))
+
+(defmethod map-only-children/i ((node node) (index list) (fn function))
+  (let* ((child-slots (child-slots node))
+         (num-slots (length child-slots)))
+    (declare (type fixnum))
+    (dolist (child-slot child-slots)
+      (let ((name (slot-spec-slot child-slot)))
+        (if (eql 1 (slot-spec-arity child-slot))
+            ;; Single arity just add slot name.
+            (funcall fn (slot-value node name) (list* name index))
+            ;; Otherwise add slot name and index into slot.
+            (let ((child-list (child-list node child-slot))
+                  (counter 0))
+              (declare (type fixnum counter))
+              (if (and (eql 1 num-slots) (eql name 'children))
+                  (dolist (child child-list)
+                    (funcall fn child (list* counter index))
+                    (incf counter))
+                  (dolist (child child-list)
+                    (funcall fn child (list* (cons name counter) index))
+                    (incf counter)))))))))
+
 (defgeneric map-children/i (node index fn)
   (:documentation "Call FN on each child of NODE, along with the INDEX
-augmented by the label of that child."))
+  augmented by the label of that child, and descrend into subtrees in
+  depth first order"))
 
 ;;; TODO: change this to work with slot-specifier objects
 (defmethod map-children/i ((node node) (index list) (fn function))
@@ -1926,7 +1955,26 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                                         &allow-other-keys)
   (test-handler position)
   (multiple-value-call #'position-if (curry test item) node
-                       (if key-p (values :key key) (values))))
+    (if key-p (values :key key) (values))))
+
+(defgeneric child-position-if (predicate node &key key)
+  (:documentation "Like POSITION-IF, but only apply to the children of NODE"))
+
+(defmethod child-position-if (predicate (node node) &key (key nil))
+  (nest
+   (block done)
+   (map-only-children/i node nil)
+   (if key
+       (lambda (c i) (when (funcall predicate (funcall key c))
+                       (return-from done i))))
+       (lambda (c i) (when (funcall predicate c)
+                       (return-from done i)))))
+
+(defgeneric child-position (value node &key key test)
+  (:documentation "Like POSITION, but apply to the children of NODE.
+Returns the path from NODE to the child, or NIL if not found.")
+  (:method ((value t) (node node) &key key (test #'eql))
+    (child-position-if (lambda (c) (funcall test value c)) node :key key)))
 
 (defmethod remove-if (predicate (node node) &key key &allow-other-keys)
   (when key (setf key (coerce key 'function)))

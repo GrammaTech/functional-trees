@@ -1107,6 +1107,14 @@ diagnostic information on error or failure."
     (is (not (position-if-not (constantly t) tree)))
     (is (not (position-if-not #'not tree :key (constantly nil))))))
 
+(deftest child-position-tree ()
+  (let ((tree (convert 'node-list '(4 7 19 21))))
+    (is (equal (child-position-if (lambda (c) (eql c 19)) tree) '((child-list . 2))))
+    (is (equal (child-position-if #'evenp tree :key #'1+) '((child-list . 1))))
+    (is (equal (child-position 0 tree) nil))
+    (is (equal (child-position 4 tree) '((child-list . 0))))
+    (is (equal (child-position 4 tree :key (lambda (c) (- c 3))) '((child-list . 1))))))
+
 (deftest remove-tree ()
   (declare (optimize (speed 0)))
   (is (= (size (remove 24 (convert 'node-with-data (iota 100)) :key #'data))
