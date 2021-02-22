@@ -626,7 +626,7 @@ are applicative.)"))
         new))))
 
 (defgeneric map-only-children/i (node index fn)
-  (:documentation "Call FN on eeach child of NODE, along with
+  (:documentation "Call FN on each child of NODE, along with
 the INDEX augmented by the label of that child.  Do not descend
 into subtrees."))
 
