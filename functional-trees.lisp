@@ -630,57 +630,42 @@ are applicative.)"))
 the INDEX augmented by the label of that child.  Do not descend
 into subtrees."))
 
-(defmethod map-only-children/i ((node node) (index list) (fn function))
-  (let* ((child-slots (child-slots node))
-         (num-slots (length child-slots)))
-    (declare (type fixnum))
-    (dolist (child-slot child-slots)
-      (let ((name (slot-spec-slot child-slot)))
-        (if (eql 1 (slot-spec-arity child-slot))
-            ;; Single arity just add slot name.
-            (funcall fn (slot-value node name) (list* name index))
-            ;; Otherwise add slot name and index into slot.
-            (let ((child-list (child-list node child-slot))
-                  (counter 0))
-              (declare (type fixnum counter))
-              (if (and (eql 1 num-slots) (eql name 'children))
-                  (dolist (child child-list)
-                    (funcall fn child (list* counter index))
-                    (incf counter))
-                  (dolist (child child-list)
-                    (funcall fn child (list* (cons name counter) index))
-                    (incf counter)))))))))
-
 (defgeneric map-children/i (node index fn)
   (:documentation "Call FN on each child of NODE, along with the INDEX
   augmented by the label of that child, and descrend into subtrees in
   depth first order"))
 
-;;; TODO: change this to work with slot-specifier objects
-(defmethod map-children/i ((node node) (index list) (fn function))
-  (let* ((child-slots (child-slots node))
-         (num-slots (length child-slots)))
-    (declare (type fixnum))
-    (dolist (child-slot child-slots)
-      (let ((name (slot-spec-slot child-slot)))
-        (if (eql 1 (slot-spec-arity child-slot))
-            ;; Single arity just add slot name.
-            (pure-traverse-tree/i (slot-value node name)
-                                  ;; TODO: precompute this keyword in slot-spec
-                                  (list* name index)
-                                  fn)
-            ;; Otherwise add slot name and index into slot.
-            (let ((child-list (child-list node child-slot))
-                  (counter 0))
-              (declare (type fixnum counter))
-              (if (and (eql 1 num-slots) (eql name 'children))
-                  (dolist (child child-list)
-                    (pure-traverse-tree/i child (list* counter index) fn)
-                    (incf counter))
-                  (dolist (child child-list)
-                    (pure-traverse-tree/i
-                     child (list* (cons name counter) index) fn)
-                    (incf counter)))))))))
+(defmacro def-map-children/i (name child-op)
+  "Define a method for a map-children-like method.  There was much
+code duplication here before."
+  ;; TODO: change this to work with slot-specifier objects
+  `(defmethod ,name ((node node) (index list) (fn function))
+     (let* ((child-slots (child-slots node))
+            (num-slots (length child-slots)))
+       (declare (type fixnum))
+       (dolist (child-slot child-slots)
+         (let ((name (slot-spec-slot child-slot)))
+           (if (eql 1 (slot-spec-arity child-slot))
+               ;; Single arity just add slot name.
+               (,child-op (slot-value node name)
+                          ;; TODO: precompute this keyword in slot-spec
+                          (list* name index)
+                          fn)
+               ;; Otherwise add slot name and index into slot.
+               (let ((child-list (child-list node child-slot))
+                     (counter 0))
+                 (declare (type fixnum counter))
+                 (if (and (eql 1 num-slots) (eql name 'children))
+                     (dolist (child child-list)
+                       (,child-op child (list* counter index) fn)
+                       (incf counter))
+                     (dolist (child child-list)
+                       (,child-op
+                        child (list* (cons name counter) index) fn)
+                       (incf counter))))))))))
+
+(def-map-children/i map-children/i pure-traverse-tree/i)
+(def-map-children/i map-only-children/i (lambda (child path fn) (funcall fn child path)))
 
 (defmethod map-children ((node t) (fn function)) nil)
 
