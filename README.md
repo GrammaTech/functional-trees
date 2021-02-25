@@ -171,7 +171,7 @@ Slots with :CLASS allocation:
   CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
   SERIAL-NUMBER                  = 7
-  TRANSFORM                      = NIL
+  ROOT-INFO                      = NIL
   SIZE                           = #<unbound slot>
   FINGER                         = #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5..
   THEN                           = #<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)>
@@ -315,7 +315,7 @@ for `ft:node`:
     CHILD-SLOT-SPECIFIERS          = #<unbound slot>
   Slots with :INSTANCE allocation:
     SERIAL-NUMBER                  = 9
-    TRANSFORM                      = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
+    TRANSFORM                      = #<FUNCTIONAL-TREES::ROOT-INFO #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NO..
     SIZE                           = #<unbound slot>
     FINGER                         = NIL
     THEN                           = #<IF-THEN-ELSE-NODE 11 (#<NODE 4 NIL> #<NODE 10 NIL>)>

@@ -1756,6 +1756,12 @@ functions."
 
 (defmethod size ((other t)) 0)
 
+(defmethod print-object ((obj root-info) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a" (transform obj)))))
+
 (defmethod print-object ((obj node) stream)
   (if *print-readably*
       (call-next-method)
