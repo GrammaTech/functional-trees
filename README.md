@@ -31,7 +31,7 @@ Slots with :CLASS allocation:
   CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
   SERIAL-NUMBER                  = 0
-  TRANSFORM                      = NIL
+  ROOT-INFO                      = NIL
   SIZE                           = #<unbound slot>
   FINGER                         = NIL
 ```
