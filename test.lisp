@@ -473,7 +473,6 @@ bucket getting at least 1.  Return as a list."
                             :from node1
                             :transforms '(((1) (2) :live))))
          (node2 (convert 'node-cons l2)))
-    ;; (setf (slot-value node2 'transform) pt)
     (set-transform node2 pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
@@ -511,7 +510,6 @@ bucket getting at least 1.  Return as a list."
                             :transforms '(((1) nil :dead)
                                           ((2) (1) :live))))
          (node2 (convert 'node-list l2)))
-    ;; (setf (slot-value node2 'transform) pt)
     (set-transform node2 pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))
@@ -548,7 +546,6 @@ bucket getting at least 1.  Return as a list."
                             :transforms '(((2 1) (2 0) :live)
                                           ((2) (3) :live))))
          (node2 (convert 'node-list l2)))
-    ;; (setf (slot-value node2 'transform) pt)
     (set-transform node2 pt)
 
     (let ((f1 (make-instance 'finger :node node1 :path nil)))

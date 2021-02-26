@@ -818,7 +818,8 @@ tree to another."))
   (:documentation "REturns the list of predecessor trees of N"))
 
 (defmethod predecessor-chain ((n node))
-  (let ((tr (when-let ((ri (root-info n))) (slot-value ri 'transform))))
+  (when-let* ((ri (root-info n))
+              (tr (slot-value ri 'transform)))
     (typecase tr
       (node (cons tr (predecessor-chain tr)))
       (path-transform (cons (from tr) (predecessor-chain (from tr)))))))
