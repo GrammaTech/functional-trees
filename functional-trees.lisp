@@ -57,7 +57,8 @@
            :define-node-class :define-methods-for-node-class
            :*cache-path-transforms?*
            :child-position-if
-           :child-position)
+           :child-position
+           :subst :subst-if :subst-if-not)
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -2058,23 +2059,18 @@ Returns the path from NODE to the child, or NIL if not found.")
 (defgeneric subst (new old tree &key key test test-not)
   (:documentation "If TREE is a cons, this simply calls `cl:subst'.
 Also works on a functional tree node.")
-  (:method (new old (tree cons)
-            &key key (test nil test-p) (test-not nil test-not-p))
-    (multiple-value-call #'cl:subst
-      new old tree
-      (if key (values :key key) (values))
-      (if test-p (values :test test) (values))
-      (if test-not-p (values :test-not test-not) (values))))
   (:method (new old (tree node) &rest rest &key &allow-other-keys)
-    (apply #'substitute new old tree rest)))
+    (apply #'substitute new old tree rest))
+  (:method (new old (tree t) &rest rest &key &allow-other-keys)
+    (apply #'cl:subst new old tree rest)))
 
 (defgeneric subst-if (new test tree &key key)
   (:documentation "If TREE is a cons, this simply calls `cl:subst-if'.
 Also works on a functional tree node.")
-  (:method (new test (tree cons) &key (key nil key-p))
-    (apply #'cl:subst-if new test tree (when key-p (list :key key))))
   (:method (new test (tree node) &rest rest &key &allow-other-keys)
-    (apply #'substitute-if new test tree rest)))
+    (apply #'substitute-if new test tree rest))
+  (:method (new test (tree t) &rest rest &key &allow-other-keys)
+    (apply #'cl:subst-if new test tree rest)))
 
 (defgeneric subst-if-not (new test tree &key key)
   (:documentation "If TREE is a cons, this simply calls `cl:subst-if'.

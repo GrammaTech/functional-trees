@@ -1223,6 +1223,7 @@ diagnostic information on error or failure."
              '(0 :y 2 3 4)))
   (is (equal (subst :y '(1) '(0 1 2 3 4) :test-not (complement #'equal) :key #'list)
              '(0 :y 2 3 4)))
+  (is (= (subst 10 20 20) 10)) ; when tree is an atom
   (let ((it (subst (make-instance 'node-with-data :data :x)
                    4 (convert 'node-with-data '(:a 1 (:b 2) 3 (:c (:d 4) 5) (:e 4) 7))
                    :key #'data)))
@@ -1243,6 +1244,7 @@ diagnostic information on error or failure."
                           :key #'data)))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd :key #'data)))
     (is (= 50 (count :odd no-odd :key #'data))))
+  (is (= (subst-if 10 (lambda (x) (= x 20)) 20) 10)) ; when tree is an atom
   (let ((it (subst-if (make-instance 'node-with-data :data :odd)
                       «and #'numberp #'oddp»
                       (convert 'node-with-data '(:a 1 2 3))
@@ -1258,6 +1260,7 @@ diagnostic information on error or failure."
                        :key #'data)))
     (is (= 0 (count-if «and #'numberp #'oddp» no-odd :key #'data)))
     (is (= 50 (count :odd no-odd :key #'data))))
+  (is (= (subst-if-not 10 (lambda (x) (= x 20)) 20) 20)) ; when tree is an atom
   (let ((it (subst-if-not (make-instance 'node-with-data :data :odd)
                           (complement «and #'numberp #'oddp»)
                           (convert 'node-with-data '(:a 1 2 3))
