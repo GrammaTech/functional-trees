@@ -2057,15 +2057,14 @@ Returns the path from NODE to the child, or NIL if not found.")
       (if key (values :key key) (values))))
 
 (defgeneric subst (new old tree &key key test test-not)
-  (:documentation "If TREE is a cons, this simply calls `cl:subst'.
-Also works on a functional tree node.")
+  (:documentation "If TREE is not a node, this simply calls `cl:subst'.")
   (:method (new old (tree node) &rest rest &key &allow-other-keys)
     (apply #'substitute new old tree rest))
   (:method (new old (tree t) &rest rest &key &allow-other-keys)
     (apply #'cl:subst new old tree rest)))
 
 (defgeneric subst-if (new test tree &key key)
-  (:documentation "If TREE is a cons, this simply calls `cl:subst-if'.
+  (:documentation "If TREE is not a node, this simply calls `cl:subst-if'.
 Also works on a functional tree node.")
   (:method (new test (tree node) &rest rest &key &allow-other-keys)
     (apply #'substitute-if new test tree rest))
@@ -2073,7 +2072,7 @@ Also works on a functional tree node.")
     (apply #'cl:subst-if new test tree rest)))
 
 (defgeneric subst-if-not (new test tree &key key)
-  (:documentation "If TREE is a cons, this simply calls `cl:subst-if'.
+  (:documentation "Complements the test, and calls `subst-if'.
 Also works on a functional tree node.")
   (:method (new test tree &key (key nil key-p))
     (multiple-value-call
