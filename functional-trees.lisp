@@ -418,6 +418,24 @@ of NODE to their members")
                                   `(slot-value node ',slot))))
                           child-slots))))
 
+(eval-when (:compile-toplevel :load-toplevel)
+  (defun slot-setf-expander (node slot-name env)
+    (nest
+     (let ((key (make-keyword slot-name))))
+     (multiple-value-bind (temps vals stores store-form access-form)
+         (get-setf-expansion node env))
+     (let ((val-temp (gensym))
+           (coll-temp (car stores)))
+       (when (cdr stores)
+         (error "Too many values required in `setf' of `~a'" slot-name)))
+     (values temps
+             (cons key vals)
+             (list val-temp)
+             `(let ((,coll-temp (with ,access-form ',key ,val-temp)))
+                ,store-form
+                ,val-temp)
+             `(lookup ,access-form ',key)))))
+
 (defun expand-copying-setf-writers (class child-slots)
   `(progn
      ,@(cl:mapcar
@@ -426,16 +444,11 @@ of NODE to their members")
               (etypecase form
                 (symbol (cons form nil))
                 (cons form))
-            `(defmethod (setf ,slot) (new (obj ,class))
-               ,@(when (and arity (numberp arity))
-                   `((assert
-                      (or (zerop ,arity) (= ,arity (length new)))
-                      ()
-                      ,(format nil "New value for ~a has wrong arity ~~a not ~a."
-                               slot arity)
-                      (length new))))
-               ;; TODO: Actually I'm not sure what we want here.
-               (copy obj ,(make-keyword slot) new))))
+            `(eval-when (:compile-toplevel :load-toplevel :execute)
+               (unless (get ',slot 'slot-accessor)
+                 (setf (get ',slot 'slot-accessor) t)
+                 (define-setf-expander ,slot (node &environment env)
+                   (slot-setf-expander node ',slot env))))))
         child-slots)))
 
 (defun expand-lookup-specialization (class child-slots)
