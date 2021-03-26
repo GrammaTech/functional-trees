@@ -657,11 +657,19 @@ bucket getting at least 1.  Return as a list."
     (is (equal (convert 'list n4) '(:a (:d) (:c) (:b))))))
 
 (deftest setf-slot-accessor.1 ()
-  (let* ((n1 (convert 'node-cons '(:a :b))))
+  (let* ((n1 (convert 'node-cons '(:a :b)))
+         (sn1 (serial-number n1)))
     (is (eql (@ n1 :head) :a))
     (is (equal (convert 'list (@ n1 :tail)) '(:b)))
     (is (eql (setf (head n1) :c) :c))
-    (is (equal (convert 'list n1) '(:c :b)))))
+    (is (equal (convert 'list n1) '(:c :b)))
+    (is (equal sn1 (serial-number n1)))))
+
+(deftest setf-slot-accessor.2 ()
+  (let* ((n1 (convert 'node-cons '(:a :b)))
+         (n2 (convert 'node-cons '(:c :d))))
+    (setf (tail n1) n2)
+    (is (eql (serial-number n2) (serial-number (tail n1))))))
 
 (deftest @.error ()
   (is (handler-case (progn (@ (convert 'node-cons '(:a)) '(:bad)) nil)
