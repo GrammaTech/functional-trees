@@ -656,6 +656,13 @@ bucket getting at least 1.  Return as a list."
     (is (not (eql n1 n4)))
     (is (equal (convert 'list n4) '(:a (:d) (:c) (:b))))))
 
+(deftest setf-slot-accessor.1 ()
+  (let* ((n1 (convert 'node-cons '(:a :b))))
+    (is (eql (@ n1 :head) :a))
+    (is (equal (convert 'list (@ n1 :tail)) '(:b)))
+    (is (eql (setf (head n1) :c) :c))
+    (is (equal (convert 'list n1) '(:c :b)))))
+
 (deftest @.error ()
   (is (handler-case (progn (@ (convert 'node-cons '(:a)) '(:bad)) nil)
         (error () t)))
