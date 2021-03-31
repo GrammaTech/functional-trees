@@ -335,13 +335,16 @@ its nodes.")
   (:method ((obj list)) (cl:mapcar #'tree-copy obj)))
 
 (defmacro define-node-class (name superclasses slots &rest rest)
-  `(progn
-     (eval-when (:load-toplevel :compile-toplevel :execute)
-       (defclass ,name ,superclasses
-         ((child-slot-specifiers :allocation :class)
-          ,@slots)
-         ,@rest))
-     (define-methods-for-node-class ,name)))
+  (flet ((method-options-p (item)
+           (and (consp item) (eq :method-options (car item)))))
+    `(progn
+       (eval-when (:load-toplevel :compile-toplevel :execute)
+         (defclass ,name ,superclasses
+           ((child-slot-specifiers :allocation :class)
+            ,@slots)
+           ,@(remove-if #'method-options-p rest))
+         (define-methods-for-node-class ,name
+             ,(cdr (find-if #'method-options-p rest)))))))
 
 ;; debug macro
 (defmacro dump (&body forms)
@@ -446,7 +449,8 @@ of NODE to their members")
                          (slot-value obj ',slot))))
                   child-slots)))
 
-(defmacro define-methods-for-node-class (class-name &environment env)
+(defmacro define-methods-for-node-class (class-name method-options
+                                         &environment env)
   (let ((class (find-class class-name env)))
     (assert class () "No class found for ~s" class-name)
     ;; create an instance to cause the class to be finalized
@@ -471,7 +475,8 @@ of NODE to their members")
                       (error "Class ~a does not have initarg ~s for slot ~a"
                              class-name desired-initarg name)))))))
       `(progn
-         ,(expand-children-defmethod class child-slots)
+         ,(unless (member :skip-children-definition method-options)
+            (expand-children-defmethod class child-slots))
          ,(expand-lookup-specialization class child-slots)
          ,(expand-copying-setf-writers class child-slots)))))
 
