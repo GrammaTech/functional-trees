@@ -443,7 +443,8 @@ bucket getting at least 1.  Return as a list."
   (is (lexicographic-< '((a . 1) 3) '((a . 1) 10)))
   (is (if (eql (fset:compare 'a 'b) :less)
           (lexicographic-< '((a . 1)) '((b . 0)))
-          (not (lexicographic-< '((a . 1)) '((b . 0)))))))
+          (not (lexicographic-< '((a . 1)) '((b . 0))))))
+  (is (not (lexicographic-< '(1) '((a . 0))))))
 
 (deftest make-node.1 ()
   (is (not (convert 'node-cons nil)))

@@ -1117,6 +1117,7 @@ are compared with each other using fset:compare"
             (cond
               ((< c1d c2d) (return t))
               ((> c1d c2d) (return nil)))))
+         ((consp c2) (return nil))
          ((<= c1 c2)
           (when (< c1 c2)
             (return t)))
