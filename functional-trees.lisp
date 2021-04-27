@@ -435,22 +435,6 @@ of NODE to their members")
                 ,store-form
                 ,val-temp)
              `(lookup ,access-form ',key)))))
-
-(defun expand-copying-setf-writers (class child-slots)
-  `(progn
-     ,@(cl:mapcar
-        (lambda (form)
-          (destructuring-bind (slot . arity)
-              (etypecase form
-                (symbol (cons form nil))
-                (cons form))
-            `(eval-when (:compile-toplevel :load-toplevel :execute)
-               (unless (get ',slot 'slot-accessor)
-                 (setf (get ',slot 'slot-accessor) t)
-                 (define-setf-expander ,slot (node &environment env)
-                   (slot-setf-expander node ',slot env))))))
-        child-slots)))
-
 (defun expand-lookup-specialization (class child-slots)
   `(progn
      ,@(cl:mapcar (lambda (form)
@@ -460,6 +444,19 @@ of NODE to their members")
                       `(defmethod lookup
                            ((obj ,class) (key (eql ,(make-keyword slot))))
                          (slot-value obj ',slot))))
+                  child-slots)))
+
+(defun expand-setf-error-methods (class child-slots)
+  "Generate (setf <slot>) methods for CLASS that just signal errors
+telling the user to use (setf (@ ... :<slot>) ...)"
+  `(progn
+     ,@(cl:mapcar (lambda (form)
+                    (let ((slot (etypecase form
+                                  (symbol form)
+                                  (cons (car form)))))
+                      `(defmethod (setf ,slot) ((obj ,class) (value t))
+                         (error "Functional setf to slot ~A of class ~A should be via setf of (@ <obj> ~s)"
+                                ',slot ',class ,(make-keyword slot)))))
                   child-slots)))
 
 (defmacro define-methods-for-node-class (class-name method-options
@@ -491,7 +488,8 @@ of NODE to their members")
          ,(unless (member :skip-children-definition method-options)
             (expand-children-defmethod class child-slots))
          ,(expand-lookup-specialization class child-slots)
-         ,(expand-copying-setf-writers class child-slots)))))
+         ,(expand-setf-error-methods class child-slots)
+         ))))
 
 ;;; NOTE: We might want to propose a patch to FSet to allow setting
 ;;; serial-number with an initialization argument.
