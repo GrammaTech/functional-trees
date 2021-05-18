@@ -524,7 +524,8 @@ telling the user to use (setf (@ ... :<slot>) ...)"
    (apply #'make-instance (class-name (class-of node)))
    (apply #'append keys)
    (cl:mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
-   (cl:mapcar #'slot-definition-name )
+   (cl:remove-if-not (lambda (slot) (slot-boundp node slot)))
+   (cl:mapcar #'slot-definition-name)
    (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
    (class-slots (class-of node))))
 

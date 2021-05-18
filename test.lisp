@@ -1684,3 +1684,22 @@ diagnostic information on error or failure."
                        '((tail z))
                        :head 'c))
              '(c z))))
+
+(defclass triggers-unbound-slot-error (node)
+  ((slot1 :initarg :slot1)
+   (slot2 :initarg :slot2)))
+
+(defmethod slot-unbound ((class t)
+                         (obj triggers-unbound-slot-error)
+                         (slot-name (eql 'slot2)))
+  (error "Should not be called"))
+
+(deftest copy-ignores-unbound-slots ()
+  (let* ((node (make-instance 'triggers-unbound-slot-error :slot1 'x)))
+    (is (slot-boundp node 'slot1))
+    (is (not (slot-boundp node 'slot2)))
+    (signals error
+      (slot-value node 'slot2))
+    (let ((copy (finishes (copy node))))
+      (is (slot-boundp copy 'slot1))
+      (is (not (slot-boundp copy 'slot2))))))
