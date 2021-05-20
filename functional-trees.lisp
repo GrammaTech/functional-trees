@@ -539,8 +539,10 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                            (class-slots (class-of node))))
          (slot-names (remove 'serial-number
                              (cl:mapcar #'slot-definition-name slots)))
-         (initializers (mappend (lambda (slot) (list (make-keyword slot)
-                                                     (slot-value node slot)))
+         (initializers (mappend (lambda (slot)
+                                  (and (slot-boundp node slot)
+                                       (list (make-keyword slot)
+                                             (slot-value node slot))))
                                 slot-names))
          (new-node (apply #'make-instance (class-name (class-of node))
                           initializers)))

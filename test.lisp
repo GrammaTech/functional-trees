@@ -1702,4 +1702,7 @@ diagnostic information on error or failure."
       (slot-value node 'slot2))
     (let ((copy (finishes (copy node))))
       (is (slot-boundp copy 'slot1))
+      (is (not (slot-boundp copy 'slot2))))
+    (let ((copy (finishes (tree-copy node))))
+      (is (slot-boundp copy 'slot1))
       (is (not (slot-boundp copy 'slot2))))))
