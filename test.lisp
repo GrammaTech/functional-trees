@@ -84,6 +84,13 @@ which may be more nodes, or other values.")
    (data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")))
 
+(defmethod print-object ((obj node-with-data) stream)
+  (if *print-readably*
+      (call-next-method)
+      (print-unreadable-object (obj stream :type t)
+        (format stream "~a ~a" (serial-number obj)
+                (convert 'list obj)))))
+
 (defmethod convert ((to-type (eql 'node-with-data)) (sequence list)
                     &key &allow-other-keys)
   (labels ((make-node (list-form)
@@ -922,6 +929,13 @@ diagnostic information on error or failure."
   (is (equalp (mapcar (lambda (n) (case n (3 :eric) (t n))) (fset:seq 1 2 3 4))
               (fset::seq 1 2 :eric 4))))
 
+;; Test that came up in random testing
+#+nil
+(deftest remove-second-child ()
+  (let* ((n (convert 'node-with-data '(a b c d)))
+         (n2 (remove (@ n 1) n)))
+    ))
+
 (deftest random.1 ()
   ;; Randomized test of path transforms
   (is (equal (random-test 20 200 (lambda (n) (remove-nodes-randomly n 0.2))) nil)))
@@ -1093,8 +1107,9 @@ diagnostic information on error or failure."
 
 (deftest position-tree ()
   (let ((tree (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9 (10 (11)))))))
-    (is (equalp (position 4 tree :key #'data) '(2)))
-    (is (equalp (position 11 tree :key #'data) '(4 0 0)))
+    (is (equalp (position 4 tree :key #'data) '((children . 2))))
+    (is (equalp (position 11 tree :key #'data) '((children . 4) (children . 0)
+                                                 (children . 0))))
     (is (not (position 12 tree :key #'data)))))
 
 (deftest position-tree-w-named-children ()

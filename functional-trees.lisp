@@ -708,7 +708,7 @@ code duplication here before."
                (let ((child-list (child-list node child-slot))
                      (counter 0))
                  (declare (type fixnum counter))
-                 (if (and (eql 1 num-slots) (eql name 'children))
+                 (if nil ; (and (eql 1 num-slots) (eql name 'children))
                      (dolist (child child-list)
                        (,child-op child (list* counter index) fn)
                        (incf counter))
@@ -1289,7 +1289,7 @@ is the path to NODE.")
                 (when (typep c 'node)
                   (let ((path-element
                           (cond
-                            ((eql slot 'children) i)
+                            ;; ((eql slot 'children) i)
                             ((eql arity 1)
                              (assert (eql i 0))
                              slot)
