@@ -708,14 +708,10 @@ code duplication here before."
                (let ((child-list (child-list node child-slot))
                      (counter 0))
                  (declare (type fixnum counter))
-                 (if nil ; (and (eql 1 num-slots) (eql name 'children))
-                     (dolist (child child-list)
-                       (,child-op child (list* counter index) fn)
-                       (incf counter))
-                     (dolist (child child-list)
-                       (,child-op
-                        child (list* (cons name counter) index) fn)
-                       (incf counter))))))))))
+                 (dolist (child child-list)
+                   (,child-op
+                    child (list* (cons name counter) index) fn)
+                   (incf counter)))))))))
 
 (def-map-children/i map-children/i pure-traverse-tree/i)
 (def-map-children/i map-only-children/i (lambda (child path fn) (funcall fn child path)))
@@ -1289,7 +1285,6 @@ is the path to NODE.")
                 (when (typep c 'node)
                   (let ((path-element
                           (cond
-                            ;; ((eql slot 'children) i)
                             ((eql arity 1)
                              (assert (eql i 0))
                              slot)
