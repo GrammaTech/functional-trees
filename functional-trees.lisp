@@ -49,6 +49,9 @@
            :path-equalp
            :path-equalp-butlast
            :path-later-p
+           :parent
+           :predecessor
+           :successor
            :children
            :children-alist
            :children-slot-specifier-alist
@@ -62,9 +65,6 @@
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
-;;; TODO: implement successor
-;;; TODO: implement predecessor
-;;; TODO: implement parent
 
 (defmacro assert (&body body)
   ;; Copy the body of the assert so it doesn't pollute coverage reports
@@ -582,6 +582,25 @@ Otherwise, it is NIL.")
          :documentation "Internal slot used to cache the lookup of a node."))
   (:documentation "A wrapper for a path to get to a node"))
 
+(defgeneric parent (root node)
+  (:documentation "Return the parent of NODE.")
+  (:method ((root node) (node node))
+    (with-slots (finger) node
+      (assert finger)
+      (transform-finger finger root)
+      (@ (node finger) (butlast (path finger))))))
+
+(defgeneric predecessor (root node)
+  (:documentation "Return the predecessor of NODE.")
+  (:method ((root node) (node node))
+    (when-let (parent (parent root node))
+      (second (member node (reverse (children parent)))))))
+
+(defgeneric successor (root node)
+  (:documentation "Return the successor of NODE.")
+  (:method ((root node) (node node))
+    (when-let (parent (parent root node))
+      (second (member node (children parent))))))
 
 (defun child-list (node slot-spec)
   (let ((children (slot-value node (slot-spec-slot slot-spec))))
