@@ -1721,3 +1721,30 @@ diagnostic information on error or failure."
     (let ((copy (finishes (tree-copy node))))
       (is (slot-boundp copy 'slot1))
       (is (not (slot-boundp copy 'slot2))))))
+
+(deftest parent-nil-on-self ()
+  (let ((root-and-node (convert 'node-list '(a b c))))
+    (populate-fingers root-and-node)
+    (is (null (parent root-and-node root-and-node)))))
+
+(deftest parent-nil-on-unrelated-root ()
+  (let ((node (convert 'node-list '(a b c)))
+        (root (convert 'node-list '(d e f))))
+    (populate-fingers root)
+    (populate-fingers node)
+    (is (null (parent root node)))))
+
+(deftest parent-works-on-actual-child ()
+  (let ((root (convert 'node-list '(a b (c d)))))
+    (populate-fingers root)
+    (is (not (null (parent root (@ root '(2))))))))
+
+(deftest predecessor-works-on-actual-child ()
+  (let ((root (convert 'node-list '(a b (c d) e))))
+    (populate-fingers root)
+    (is (not (null (predecessor root (@ root '(2))))))))
+
+(deftest successor-works-on-actual-child ()
+  (let ((root (convert 'node-list '(a b (c d) e))))
+    (populate-fingers root)
+    (is (not (null (successor root (@ root '(2))))))))

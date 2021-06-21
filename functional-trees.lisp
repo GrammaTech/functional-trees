@@ -583,21 +583,23 @@ Otherwise, it is NIL.")
   (:documentation "A wrapper for a path to get to a node"))
 
 (defgeneric parent (root node)
-  (:documentation "Return the parent of NODE.")
+  (:documentation "Return the parent of NODE.
+Return nil if NODE is equal to ROOT or is not in the subtree of ROOT.")
   (:method ((root node) (node node))
     (with-slots (finger) node
       (assert finger)
-      (transform-finger finger root)
-      (@ (node finger) (butlast (path finger))))))
+      (let ((finger (transform-finger finger root)))
+        (when (path finger)
+          (@ (node finger) (butlast (path finger))))))))
 
 (defgeneric predecessor (root node)
-  (:documentation "Return the predecessor of NODE.")
+  (:documentation "Return the predecessor of NODE with respect to ROOT if one exists.")
   (:method ((root node) (node node))
     (when-let (parent (parent root node))
       (second (member node (reverse (children parent)))))))
 
 (defgeneric successor (root node)
-  (:documentation "Return the successor of NODE.")
+  (:documentation "Return the successor of NODE with respect to ROOT if one exists.")
   (:method ((root node) (node node))
     (when-let (parent (parent root node))
       (second (member node (children parent))))))
