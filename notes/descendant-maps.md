@@ -89,6 +89,17 @@ When a node is replaced with another node:
 When a node is inserted or deleted, we may also have to change some of
 the child labels in the parent's map.
 
+The map at a node will, in the initial case, have size (in number of
+intervals stored) equal to the number of children of the node.  In
+most cases, it's likely to be efficient to just store it as a list or
+vector.  For nodes with many children, a balanced tree can be used.
+
+## Path Stuff Goes Away
+
+Paths will remain as arguments to @ and lookup, but otherwise will
+have no place in the internals.  Instead, nodes will be looked up
+by their serial numbers.
+
 
 
 
