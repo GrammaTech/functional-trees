@@ -47,7 +47,9 @@ single thing.  This can be done with balanced trees, and balanced
 trees can be implemented functionally.
 
 (Possible alternative: map to the serial number of a child, not to the
-child label.)
+child label.  This would make changing the tree possibly faster, but
+would slow down the case of looking up a node in the tree.  I feel
+this is likely not a good tradeoff.)
 
 If a subtree is sufficiently small, don't store these sets at all, and
 do the operations by just traversing the tree.  This can save most of
@@ -85,6 +87,10 @@ When a node is replaced with another node:
   interval maps to two different child labels, or is equal to the
   serial number of an ancestor, then we have found a duplicate serial
   number and will signal an error.
+
+- When a duplicate is found after a replacement, there should be a
+  way to change the replacement subtree to copy the duplicated nodes
+  and restart with the cleansed tree.
 
 When a node is inserted or deleted, we may also have to change some of
 the child labels in the parent's map.
