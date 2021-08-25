@@ -32,6 +32,7 @@
                           :compare :convert)
   (:shadow :subst :subst-if :subst-if-not :assert :mapc :mapcar)
   (:shadowing-import-from :alexandria :compose)
+  (:shadowing-import-from :functional-trees/interval-trees)
   (:import-from :uiop/utility :nest)
   (:import-from :closer-mop
                 :slot-definition-name
