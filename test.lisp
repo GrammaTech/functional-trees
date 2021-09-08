@@ -27,13 +27,10 @@
                           :equal?
                           :dump
                           :lexicographic-<
-                          :make-node-heap-data
                           :mapc
                           :mapcar
                           :node
                           :node-can-implant
-                          :node-heap-data
-                          :node-heap-data-<
                           :node-valid
                           :nodes-disjoint
                           :path-of-node
@@ -453,7 +450,6 @@ bucket getting at least 1.  Return as a list."
   (is (equal (convert 'list (convert 'node-cons '(:a))) '(:a)))
   (is (eql 4 (serial-number (make-instance 'node :serial-number 4)))))
 
-;;; Tests of path-transform-of, mapcar
 (deftest mapcar.0 ()
   (is (eql (mapcar #'identity 1) 1))
   (is (eql (mapcar #'1+ 1) 2))
@@ -1276,20 +1272,6 @@ diagnostic information on error or failure."
   (is (not (prefix? '(a) '(b))))
   (is (not (prefix? '(a a) '(a b))))
   (is (not (prefix? '(a a) '(a)))))
-
-(deftest node-heap-data-test ()
-  (let ((all (iter (for sz from 1 to 2)
-                   (appending
-                    (iter (for sn from 1 to 2)
-                          (collecting
-                           (make-node-heap-data :size sz :sn sn)))))))
-    (declare (notinline node-heap-data-<)) ;; so coverage hits the def
-    (iter (for e on all)
-          (let ((n1 (car e)))
-            (is (not (node-heap-data-< n1 n1)))
-            (iter (for n2 in (cdr e))
-                  (is (node-heap-data-< n1 n2))
-                  (is (not (node-heap-data-< n2 n1))))))))
 
 ;;; SBCL nonstandard sequence extension
 #+sbcl
