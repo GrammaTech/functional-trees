@@ -10,7 +10,11 @@
            itree-glb-node itree-glb
            itree-lub-node itree-lub
            itree-insert itree-delete-node
-           itree-delete)
+           itree-delete
+           descendant-map
+           intervals-of-itree
+           itree-add-intervals
+           itree-remove-intervals)
   (:documentation "Functional implementation of splay trees
 for integer intervals."))
 
@@ -39,6 +43,15 @@ for integer intervals."))
 (defun node-hi (node)
   (let ((key (node-key node)))
     (if (consp key) (cdr key) key)))
+
+(defun make-key (lo hi)
+  (assert (<= lo hi))
+  (if (eql lo hi) lo (cons lo hi)))
+
+(defun interval-range (interval)
+  (etypecase interval
+    (integer (values interval interval))
+    (cons (values (car interval) (cdr interval)))))
 
 (defstruct itree
   (root nil :type (or null node))
@@ -100,6 +113,9 @@ for integer intervals."))
 (defun itree-find-node-path (key tree)
   "Return the NODE whose interval contains KEY, or NIL if none,
 and the reversed path to that node (or NIL leaf)."
+  ;; TODO -- also return the GLB and LUB nodes, and return
+  ;; their reversed paths as well (these will be suffixes of the
+  ;; reversed path to the NIL leaf itself.)
   (declare (type bound key)
            (type itree tree))
   (let ((node (itree-root tree))
@@ -146,27 +162,37 @@ if none."
   (when-let ((node (itree-lub-node key tree)))
     (values (node-lo node) (node-hi node) (node-data node))))
 
-(defun itree-lub-node (key tree)
+(defun itree-lub-node-path (key tree)
    "Find the lowest interval in TREE for which KEY is <= HI, or NIL
-if none."
+if none.  Returns the path to the node (list of ancestors of node,
+in decreasing order of depth) if it exists."
   (declare (type bound key)
            (type itree tree))
   (let ((node (itree-root tree))
-        (lub nil))
+        (lub nil)
+        (lub-path nil)
+        (path nil))
     (iter (while node)
           (let ((hi (node-hi node)))
             (cond
               ((< key hi)
-               (setf lub node) 
+               (setf lub-path path)
+               (setf lub node)
+               (push node path)
                (setf node (node-left node)))
               ((> key hi)
+               (push node path)
                (setf node (node-right node)))
-              (t (setf lub node)
+              (t (setf lub-path path)
+                 (setf lub node)
                  (return)))))
-    lub))
+    (if lub (values lub lub-path) nil)))
+
+(defun itree-lub-node (key tree)
+  (values (itree-lub-node-path key tree)))
 
 (defun itree-lub (key tree)
-  (when-let ((node (itree-lub-node key tree)))
+  (when-let ((node (itree-lub-node-path key tree)))
     (values (node-lo node) (node-hi node) (node-data node))))
 
 (defun move-node (node left right)
@@ -176,6 +202,24 @@ if none."
              :right right
              :key (node-key node)
              :data (node-data node)))
+
+(defun intervals-of-itree (itree)
+  "Return list of all the intervals in ITREE"
+  (let ((intervals nil))
+    (labels ((%walk (node)
+               (iter (while node)
+                     (%walk (node-right node))
+                     (push (cons (node-lo node) (node-hi node)) intervals)
+                     (setf node (node-left node)))))
+      (%walk (itree-root itree)))
+    intervals))
+
+(defun itree-replace-node (itree new-node path &optional (size-delta 0))
+  "Replaces the node that was reached by PATH in ITREE with new-node.
+SIZE-DELTA is the change in size of the itree"
+  (declare (ignore old-node))
+  (make-itree :root (insert-node new-node path)
+              :size (+ (itree-size itree) size-delta)))
 
 (defun insert-node (x path)
   "Given a node X that has been inserted at the end of PATH
@@ -243,6 +287,22 @@ some node.  Return NIL if there is no next node."
           (return (car path))))
       (setf node (pop path)))))
 
+(defun max-node (node)
+  "Returns the rightmost node in tree rooted at NODE, and the rpath to it"
+  (let ((rpath nil))
+    (iter (while (node-right node))
+          (push node rpath)
+          (setf node (node-right node)))
+    (values node rpath)))
+
+(defun min-node (node)
+  "Returns the leftmost node in tree rooted at NODE, and the rpath to it"
+  (let ((rpath nil))
+    (iter (while (node-left node))
+          (push node rpath)
+          (setf node (node-left node)))
+    (values node rpath)))  
+
 (declaim (ftype (function (t t t t) nil) collision))
 
 (defun collision (node lo hi data)
@@ -250,6 +310,50 @@ some node.  Return NIL if there is no next node."
   (error "Interval collision in ITREE-INSERT: [~a,~a] intersects [~a,~a]"
          lo hi (node-lo node) (node-hi node)))
 
+(defun merge-intervals (interval-list)
+  "Combine intervals with the same datum.  Assumes INTERVAL-LIST
+is fresh and can be modified."
+  (setf interval-list (sort interval-list #'< :key #'caar))
+  (when interval-list
+    (destructuring-bind ((lo . hi) datum) (car interval-list)
+      (nconc
+       (iter (for interval in (cdr interval-list))
+         (destructuring-bind ((next-lo . next-hi) next-datum)
+             interval
+           (if (and (eql next-lo (1+ hi))
+                    (eql next-datum datum))
+               (setf hi next-hi)
+               (progn
+                 (collecting (list (cons lo hi) datum))
+                 (setf lo next-lo
+                       hi next-hi
+                       datum next-datum)))))
+       (list (list (cons lo hi) datum))))))
+
+(defun itree-merge-root-nodes (tree &key (test #'eql))
+  "Merge the root node with preceding or following
+nodes if they (1) have abutting intervals, and (2)
+have data satisfying the TEST comparison function."
+  ;; Merge before root
+  (iter (let* ((root (itree-root tree))
+               (left (node-left tree)))
+          (while left)
+          (multiple-value-bind (prev-node rpath)
+              (max-node left)
+            (while (and (funcall test (node-datum prev-node) (node-data root))
+                        (eql (1+ (node-hi prev-node)) (node-lo root))))
+            (setf tree (itree-delete-node tree prev-node (append rpath (list root)))))))
+  ;; Merge after root
+  (iter (let* ((root (itree-root tree))
+               (right (node-right tree)))
+          (while right)
+          (multiple-value-bind (succ-node rpath)
+              (min-node right)
+            (while (and (funcall test (node-datum succ-node) (node-data root))
+                        (eql (1+ (node-hi root)) (node-lo succ-node))))
+            (setf tree (itree-delete-node tree succ-node (append rpath (list root)))))))
+  tree)
+    
 (defun itree-insert (tree lo hi data
                           &aux (new-node
                                 (make-node :key (if (eql lo hi) lo (cons lo hi))
@@ -266,6 +370,8 @@ already in the tree signal an error"
                             (next-node path))))
         (when (<= (node-lo next) hi)
           (collision next lo hi data))))
+    ;; TODO -- detect when the inserted node can be
+    ;; merged with an existing node, and do that instead
     (make-itree :root (insert-node new-node path)
                 :size (1+ (itree-size tree)))))
 
@@ -309,8 +415,76 @@ already in the tree signal an error"
       (setf node (node-left node)))
     (if (null path)
         (values node (node-right node)) ;; already in the desired form
-        (values node (insert-node (move-node (car path) (node-right node) (node-right (car path)))
-                                  (cdr path)))))) 
+        (values node (insert-node
+                      (move-node (car path) (node-right node)
+                                 (node-right (car path)))
+                      (cdr path))))))
+
+(defun itree-add-intervals (itree intervals)
+  "Add interval -> data mappings itree.  Fails if any interval
+overlaps one already in the tree."
+  (iter (for (interval datum) in intervals)
+        (setf itree
+              (multiple-value-call
+                  #'itree-insert
+                itree
+                (interval-range interval)
+                datum)))
+  itree)
+
+(defun itree-remove-intervals (itree intervals)
+  "Removes the intervals in INTERVALS from ITREE"
+  (iter (for interval in intervals)
+        (setf itree
+              (multiple-value-call
+                  #'itree-remove-interval
+                itree
+                (interval-range interval))))
+  itree)
+
+(defun itree-remove-interval (itree lo hi)
+  "Remove the interval [LO,HI] from ITREE"
+  (iter (while (<= lo hi))
+        (multiple-value-bind (node path) (itree-lub-node-path lo itree)
+          (while node)
+          (let ((n-lo (node-lo node))
+                (n-hi (node-hi node)))
+            (cond
+              ((< n-lo lo)
+               ;; Should only happen on first iteration, if then
+               (if (> n-hi hi)
+                   ;; remove internal interval
+                   (let* ((new2 (make-node :left nil :right (node-right node)
+                                           :key (make-key (1+ hi) n-hi)
+                                           :data (node-data node)))
+                          (new1 (make-node :left (node-left node)
+                                           :right new2
+                                           :key (make-key n-lo (1- lo))
+                                           :data (node-data node))))
+                     (setf itree (itree-replace-node itree new1 path 1))
+                     (return))
+                   (let ((new (make-node :left (node-left node)
+                                         :right (node-right node)
+                                         :data (node-data node)
+                                         :key (make-key n-lo (1- lo)))))
+                     (setf itree (itree-replace-node itree new path))
+                     (return))))
+              ;; (>= n-lo lo)
+              ((> n-hi hi)
+               ;; Final iteration
+               (let ((new (make-node :left (node-left node)
+                                     :right (node-right node)
+                                     :data (node-data node)
+                                     :key (make-key (1+ hi) n-hi))))
+                 (setf itree (itree-replace-node itree new path)))
+               (return))
+              (t
+               ;; Common case -- remove entire node
+               (setf itree (itree-delete-node itree node path))
+               (setf lo (1+ n-hi)))))))
+  itree)
+                     
+          
     
 ;;; utility functions
 

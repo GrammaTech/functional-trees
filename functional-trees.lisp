@@ -73,6 +73,7 @@
 
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  #+nil
   (defclass root-info ()
     ((transform :reader transform
                 :initarg :transform
@@ -83,8 +84,14 @@ to this node, or the node that led to this node."))
     (:documentation "Information that is associated with the root of an AST.  This
 is placed in a separate object so we don't have to burden non-root nodes with too
 many slots."))
-  (defclass node (identity-ordering-mixin)
-    ((root-info :reader root-info
+  (defclass descendant-map-mixin ()
+    ((descendant-map :initarg :descendant-map
+                     :accessor descendant-map
+                     :documentation "Map from serial numbers to child slots"))
+    (:documentation "Mixin for the descendant-map slot"))
+  (defclass node (identity-ordering-mixin descendant-map-mixin)
+    (#+nil
+     (root-info :reader root-info
                 :initarg :root-info
                 :initform nil
                 ;; TODO: change the back pointer to a weak vector
@@ -111,6 +118,7 @@ specifies a specific number of children held in the slot.")
                             :type list
                             :documentation "The list CHILD-SLOTS
 converted to a list of slot-specifier objects")
+     #+nil
      (finger :reader finger
              :initform nil
              :type (or null node finger)
@@ -130,18 +138,6 @@ converted to a list of slot-specifier objects")
             :initarg :arity
             :documentation "The arity of the slot"))
     (:documentation "Object that represents the slots of a class")))
-
-(defmethod transform ((node node))
-  (when-let ((ri (root-info node))) (transform ri)))
-
-(defgeneric set-transform (node tr)
-  (:method ((node node) tr)
-    (if-let ((ri (slot-value node 'root-info)))
-      (setf (slot-value node 'root-info)
-            (copy ri :transform tr))
-      (setf (slot-value node 'root-info)
-            (make-instance 'root-info :transform tr)))
-    tr))
 
 (defun make-slot-specifier (&rest args)
   (apply #'make-instance 'slot-specifier args))
@@ -499,20 +495,6 @@ telling the user to use (setf (@ ... :<slot>) ...)"
   (when serial-number-p
     (setf (slot-value node 'serial-number) serial-number)))
 
-(defmethod transform :around ((n node))
-  ;; Compute the PT lazily, when TRANSFORM is a node
-  (let ((tr (call-next-method)))
-    (if (typep tr 'node)
-        (progn
-          ;; (format t "Compute path transform from ~a to ~a~%" tr n)
-          (let ((pto (path-transform-of tr n)))
-            (setf (slot-value n 'root-info)
-                  (if-let ((ri (root-info n)))
-                          (copy ri :transform pto)
-                          (make-instance 'root-info :transform pto)))
-            pto))
-        tr)))
-
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
   (setf (slot-value obj 'size)
         (reduce #'+ (children obj) :key #'size :initial-value 1)))
@@ -522,6 +504,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 ;;; infrastructure in CL for objects.
 (defmethod copy ((node node) &rest keys)
   (nest
+   (compute-descendant-map node)
    (apply #'make-instance (class-name (class-of node)))
    (apply #'append keys)
    (cl:mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
@@ -530,16 +513,92 @@ telling the user to use (setf (@ ... :<slot>) ...)"
    (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
    (class-slots (class-of node))))
 
-(defmethod copy ((r root-info) &key (transform (transform r)))
-  (make-instance 'root-info :transform transform))
+;;; Fill in the slot lazily
+
+(defmethod slot-unbound ((class t) (node node) (slot (eql 'descendant-map)))
+  (let* ((intervals
+           (iter (for slot-spec in (child-slot-specifiers node))
+             (let* ((slot (slot-specifier-slot slot-spec))
+                    (val (slot-value node slot)))
+               (nconcing
+                (if (listp val)
+                    (iter (for v in val)
+                      (nconcing (add-slot-to-intervals (intervals-of-node v) slot)))
+                    (add-slot-to-intervals (intervals-of-node val) slot))))))
+         (sn (serial-number node)))
+    (setf (slot-value node 'descendant-map)
+          (convert 'ft/it:itree (cons (list (cons sn sn) nil) intervals)))))
+
+(defgeneric intervals-of-node (node)
+  (:documentation "Compute a list of intervals for the subtree rooted at NODE")
+  (:method ((node node))
+    (ft/it:intervals-of-itree (descendant-map node)))
+  (:method ((node t)) nil))
+
+(defun add-slot-to-intervals (intervals slot)
+  "Returns a fresh list of (interval slot) pairs"
+  (mapcar (lambda (interval) (list interval slot)) intervals))
+
+;;; Fill in the descendant-map field of a node after copy
+
+(defgeneric compute-descendant-map (old-node new-node)
+  (:method ((old-node t) (new-node t)) new-node)
+  (:method ((old-node node) (new-node node))
+    (assert (eql (class-of old-node) (class-of new-node)))
+    (let* ((old-dm (descendant-map old-node))
+           (differing-child-slot-specifiers
+             ;; The specifiers for the slots on which old-node
+             ;; and new-node differ
+             (iter (for slot-spec in (child-slot-specifiers new-node))
+                   (let ((slot (slot-specifier-slot slot-spec)))
+                     (unless (eql (slot-value old-node slot)
+                                  (slot-value new-node slot))
+                       (collecting slot-spec)))))
+           (old-sn (serial-number old-node))
+           (intervals-to-remove `((,old-sn . ,old-sn)))
+           (new-sn (serial-number new-node))
+           (intervals-to-add `(((,new-sn . ,new-sn)))))
+      (iter (for slot-spec in differing-child-slot-specifiers)
+            (let* ((slot (slot-specifier-slot slot-spec))
+                   (old (slot-value old-node slot))
+                   (new (slot-value new-node slot)))
+              (cond
+                ((and (listp old) (listp new))
+                 (let* ((removed-children (set-difference old new))
+                        (added-children (set-difference new old)))
+                   ;; (format t "Removed children: ~a~%" removed-children)
+                   ;; (format t "Added children: ~a~%" added-children)
+                   (setf intervals-to-remove
+                         (nconc
+                          (iter (for removed-child in removed-children)
+                                (nconcing (intervals-of-node removed-child)))
+                          intervals-to-remove))
+                   (setf intervals-to-add
+                         (nconc
+                          (iter (for added-child in added-children)
+                                (nconcing (add-slot-to-intervals (intervals-of-node added-child) slot)))
+                          intervals-to-add))))
+                (t ;; was (and (not (listp old)) (not (listp new)))
+                 (setf intervals-to-remove
+                       (nconc (intervals-of-node old) intervals-to-remove))
+                 (setf intervals-to-add
+                       (nconc (add-slot-to-intervals (intervals-of-node new) slot)
+                              intervals-to-add)))
+                )))
+      (setf (descendant-map new-node)
+            (ft/it:itree-add-intervals
+             (ft/it:itree-remove-intervals old-dm intervals-to-remove)
+             intervals-to-add)))
+    new-node))
 
 ;;; TODO -- specialize this in define-node-class
 (defmethod tree-copy ((node node))
   (let* ((child-slots (slot-value node 'child-slots))
          (slots (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot)))
                            (class-slots (class-of node))))
-         (slot-names (remove 'serial-number
-                             (cl:mapcar #'slot-definition-name slots)))
+         (slot-names (remove-if (lambda (s) (or (eql s 'serial-number)
+                                                (eql s 'descendant-map)))
+                                (cl:mapcar #'slot-definition-name slots)))
          (initializers (mappend (lambda (slot)
                                   (and (slot-boundp node slot)
                                        (list (make-keyword slot)
@@ -548,6 +607,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
          (new-node (apply #'make-instance (class-name (class-of node))
                           initializers)))
     ;; Now write over the child slots
+    ;; This is ok, as the descendant-map slot is uninitialized
     (iter (for c in child-slots)
           (if (consp c)
               (destructuring-bind (child-slot-name . arity) c
@@ -561,37 +621,96 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                     (cl:mapcar #'tree-copy (slot-value new-node c)))))
     new-node))
 
-(defclass finger ()
-  ((node :reader node :initarg :node
-         :type node
-         :initform (required-argument :node)
-         :documentation "The node to which this finger pertains,
-considered as the root of a tree.")
-   (path :reader path :initarg :path
-         :type path
-         :initform (required-argument :path)
-         :documentation "A list of nonnegative integer values
-giving a path from node down to another node.")
-   (residue :reader residue :initarg :residue
-            :initform nil ;; (required-argument :residue)
-            :type list
-            :documentation "If this finger was created from another
-finger by a path-transform, some part of the path may not have been
-translated.  If so, this field is the part that could not be handled.
-Otherwise, it is NIL.")
-   (cache :accessor cache
-         :documentation "Internal slot used to cache the lookup of a node."))
-  (:documentation "A wrapper for a path to get to a node"))
+(defun childs-list (node slot)
+  (let ((val (slot-value node slot)))
+    (if (listp val) val (list val))))
+
+(defun child-slot-with-sn (node sn)
+  (when-let ((itree-node (ft/it::itree-find-node sn (descendant-map node))))
+     (ft/it:node-data itree-node)))
+
+(defun child-with-sn (node sn)
+  "Return the child of SN whose tree contains serial number SN, or"
+  (let ((child-slot (child-slot-with-sn node sn)))
+    (when child-slot
+      (iter (for child-node in (childs-list node slot))
+            (when (or (eql (serial-number child-node) sn)
+                      (ft/it:itree-find-node sn (descendant-map child-node)))
+              (return (child-with-sn child-node sn))))
+      ;; this should not happen (indicates child-slot was incorrect
+      ;; in the descendant map)
+      (error "Could not find child ~a below ~a" sn node))))
+
+(defgeneric rpath-to-node (root node &key error)
+  (:documentation "Returns the (reversed) path from ROOT to a node
+with the same serial number as NODE.  Note that this does not include NODE itself.
+Also return the node found.  If no such node is in the tree, return NIL NIL, or
+signal an error if ERROR is true.")
+  (:method ((root node) (node node) &key error)
+    (rpath-to-node root (serial-number node) :error error))
+  (:method ((root node) (sn integer) &key error)
+    (unless (eql (serial-number root) sn)
+      (let ((node root)
+            (rpath nil)
+            (child-slot (child-slot-with-sn root sn)))
+        (iter (while node)
+              (unless child-slot
+                (if error 
+                    (error "Serial number ~a not found in tree ~a" sn root)
+                    (return (values nil nil))))
+              (push node rpath)
+              (iter (for child-node in (childs-list node child-slot))
+                    (when (typep child-node 'node)
+                      (when (eql (serial-number child-node) sn)
+                        (return-from rpath-to-node (values rpath child-node)))
+                      (let ((grandchild-slot (child-slot-with-sn child-node sn)))
+                        (when grandchild-slot
+                          (setf child-slot grandchild-slot
+                                node child-node)
+                          (return))))
+                    (finally
+                     ;; This should never happen if the tree is well formed
+                     (error "Could not find child with sn ~a in slot ~a"
+                            sn child-slot))))))))
+
+(defgeneric path-of-node (root node &key error)
+  (:documentation "Return the path from ROOT to NODE, in a form
+suitable for use by @ or LOOKUP.  If the node is not in the tree
+return NIL, unless ERROR is true, in which case error.")
+  (:method ((root node) (node node) &key (error nil))
+    (path-of-node root (serial-number node) :error error))
+  (:method ((root node) (serial-number integer) &key (error nil))
+    (multiple-value-bind (rpath found) (rpath-to-node root serial-number)
+      (if found
+          ;; Translate the rpath to actual path
+          (let ((child found)
+                (path nil))
+            (iter (for a in rpath)
+                  (let ((slot (when-let ((itree-node (ft/it::itree-find-node
+                                                      (serial-number child)
+                                                      (descendant-map a)
+                                                      )))
+                                        (ft/it:node-data itree-node))))
+                    (assert slot () "Could not find SLOT of ~a in descendant map of ~a" child a)
+                    (let ((v (slot-value a slot)))
+                      (push
+                       (if (listp v)
+                           (let ((pos (position child v)))
+                             (assert pos () "Could not find ~a in slot ~a of ~a" child slot a)
+                             (cons slot pos))
+                           (progn
+                             (assert (eql v child) () "Child ~a is not the value of slot ~a of ~a" child slot a)
+                             slot))
+                       path)))
+                  (setf child a))
+            path)
+          (if error (error "Could not find ~a in ~a" serial-number root) nil)))))
 
 (defgeneric parent (root node)
   (:documentation "Return the parent of NODE.
 Return nil if NODE is equal to ROOT or is not in the subtree of ROOT.")
   (:method ((root node) (node node))
-    (with-slots (finger) node
-      (assert finger)
-      (let ((finger (transform-finger finger root)))
-        (when (path finger)
-          (@ (node finger) (butlast (path finger))))))))
+    (car (rpath-to-node root node))))
 
 (defgeneric predecessor (root node)
   (:documentation "Return the predecessor of NODE with respect to ROOT if one exists.")
@@ -644,7 +763,8 @@ is to be deleted (from a variable arity list of children in its parent)."
           (declare (dynamic-extent #',body-fn)))
         (let ((,tree-var ,tree)))
         ,(cond
-           (rebuild `(update-predecessor-tree ,tree-var (traverse-tree ,tree-var #',body-fn)))
+           ;; (rebuild `(update-predecessor-tree ,tree-var (traverse-tree ,tree-var #',body-fn)))
+           (rebuild `(compute-descendant-map ,tree-var (traverse-tree ,tree-var #',body-fn)))
            (indexp `(pure-traverse-tree/i ,tree-var nil #',body-fn))
            (t `(pure-traverse-tree ,tree-var #',body-fn))))
        ,@(when valuep (list value)))))
@@ -669,6 +789,7 @@ calling FN on each node."))
   (funcall fn node)
   (map-children node fn))
 
+#|
 (defgeneric update-predecessor-tree (old-tree new-tree)
   (:documentation "Sets the back pointer of NEW-TREE to be OLD-TREE,
 if NEW-TREE lacks a back pointer.  Returns NEW-TREE."))
@@ -682,6 +803,7 @@ if NEW-TREE lacks a back pointer.  Returns NEW-TREE."))
                     (copy ri :transform old-tree)
                     (make-instance 'root-info :transform old-tree))))
   new-tree)
+|#
 
 (defgeneric traverse-tree (node fn)
   (:documentation "Traverse tree rooted at NODE in preorder.  At each
@@ -778,6 +900,7 @@ returning a plist suitable for passing to COPY"))
 ;;; - a raw index into the children
 ;;; - a cons of child-slot and index
 
+#|
 ;;; TODO change this to work with slot-specifier objects
 (defmethod slot-unbound ((class t) (f finger) (slot (eql 'cache)))
   ;; Fill in the NODE slot of finger F
@@ -882,6 +1005,7 @@ tree to another."))
       (transform-path (path f) (transforms p))
     (make-instance 'finger :path new-path
                    :node to :residue residue)))
+|#
 
 (defclass trie ()
   ((root :initarg :root :accessor root
@@ -929,6 +1053,7 @@ in the transforms slot of PATH-TRANSFORMS objects."
           (trie-insert trie segment (list new-initial-segment status)))
     trie))
 
+#|
 (defgeneric transform-path (path transforms))
 
 (defmethod transform-path ((orig-path list) (trie trie))
@@ -1066,6 +1191,7 @@ is a reversed list of nodes to be prepended to each path.")
 ;;; To add: algorithm for extracting a  path transform from
 ;;; a set of rewrites (with var objects).  (Is this still relevant?)
 ;;  Also, conversion of the transform set to a trie.
+|#
 
 (defgeneric node-valid (node)
   (:documentation "True if the tree rooted at NODE have EQL unique
@@ -1098,9 +1224,10 @@ any serial-number"))
           (return-from nodes-disjoint nil))))))
 
 (defgeneric node-can-implant (root at-node new-node)
-  (:documentation "Check if new-node can the subtree rooted at at-node
+  (:documentation "Check if new-node can replace the subtree rooted at at-node
 below ROOT and produce a valid tree."))
 
+;;; TODO -- reimplement this with descendant-map
 (defmethod node-can-implant ((root node) (at-node node) (new-node node))
   (let ((serial-number-table (make-hash-table)))
     ;; Populate serial-number table
@@ -1561,14 +1688,7 @@ is the path to NODE.")
 (defun encapsulate (tree rewrite-fn)
   "Apply REWRITE-FN to TREE, producing a new tree.  The new
 tree has its predecessor set to TREE."
-  (let ((new-tree (funcall rewrite-fn tree)))
-    (if (or (not (typep new-tree 'node))
-            (eql tree (from (transform new-tree))))
-        new-tree
-        (copy-with-transform new-tree :transform tree))))
-
-(defun copy-with-transform (tree &key transform)
-  (copy tree :root-info (make-instance 'root-info :transform transform)))
+  (funcall rewrite-fn tree))
 
 (defmacro with-encapsulation (tree &body body)
   (let ((var (gensym)))
@@ -1595,9 +1715,11 @@ tree has its predecessor set to TREE."
     (cons
      (destructuring-bind (slot . i) path
        (lookup (slot-value node slot) i)))))
+#|
 (defmethod lookup ((node node) (finger finger))
   (let ((new-finger (transform-finger finger node)))
     (values (lookup node (path new-finger)) (residue new-finger))))
+|#
 (defmethod lookup ((node node) (slot null))
   node)
 (defmethod lookup ((node node) (slot symbol))
@@ -1798,11 +1920,13 @@ functions."
 
 (defmethod size ((other t)) 0)
 
+#|
 (defmethod print-object ((obj root-info) stream)
   (if *print-readably*
       (call-next-method)
       (print-unreadable-object (obj stream :type t)
         (format stream "~a" (transform obj)))))
+|#
 
 (defmethod print-object ((obj node) stream)
   (if *print-readably*
@@ -1817,6 +1941,7 @@ functions."
         (format stream "~a ~a" (slot-specifier-slot obj)
                 (slot-specifier-arity obj)))))
 
+#|
 (defmethod print-object ((obj finger) stream)
   (if *print-readably*
       (call-next-method)
@@ -1830,6 +1955,7 @@ functions."
       (print-unreadable-object (obj stream :type t)
         (format stream "~a ~a"
                 (transforms obj) (from obj)))))
+|#
 
 
 ;;;; FSET conversion operations
@@ -1838,12 +1964,14 @@ functions."
   (mapc (lambda (node) (push node all)) node)
   (nreverse all))
 
+#|
 (defmethod convert ((to-type (eql 'list)) (finger finger)
                     &key &allow-other-keys)
   (let ((cached (cache finger)))
     (if (typep cached 'node)
         (convert to-type cached)
         cached)))
+|#
 
 (defmethod convert ((to-type (eql 'alist)) (node node)
                     &key (value-fn nil value-fn-p) &allow-other-keys)
@@ -1854,7 +1982,7 @@ functions."
               (nest
                (cl:remove-if
                 (rcurry #'member (append '(serial-number transform finger
-                                           child-slots size)
+                                           child-slots size descendant-map)
                                          (cl:mapcar (lambda (slot)
                                                       (etypecase slot
                                                         (symbol slot)
@@ -2023,8 +2151,11 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                                         (key nil key-p)
                                         &allow-other-keys)
   (test-handler position)
-  (multiple-value-call #'position-if (curry test item) node
-    (if key-p (values :key key) (values))))
+  (if (and (null key-p) (or (null test-p) (eql test 'eq) (eql test 'eql)
+                            (eql test #'eq) (eql test #'eql)))
+      (path-of-node node item :error nil)
+      (multiple-value-call #'position-if (curry test item) node
+        (if key-p (values :key key) (values)))))
 
 (defgeneric child-position-if (predicate node &key key)
   (:documentation "Like POSITION-IF, but only apply to the children of NODE"))
@@ -2051,9 +2182,9 @@ Returns the path from NODE to the child, or NIL if not found.")
     (and (not (funcall predicate (if key (funcall key node) node)))
          node)))
 
+;; TODO -- remove this
 (defmethod remove-if :around (predicate (node node) &key &allow-other-keys)
-  ;; Ensure that we set the old node as the original for subsequent transforms.
-  (when-let ((it (call-next-method))) (copy-with-transform it :transform node)))
+  (call-next-method))
 
 (defmethod remove-if-not (predicate (node node)
                           &key key  &allow-other-keys)
@@ -2087,20 +2218,21 @@ Returns the path from NODE to the child, or NIL if not found.")
 
 (defmethod substitute (newitem olditem (node node)
                        &key (test #'eql test-p) (test-not nil test-not-p)
-                         key &allow-other-keys)
+                         key (copy nil copy-p) &allow-other-keys)
   (test-handler substitute)
   (multiple-value-call
       #'substitute-if newitem (curry test olditem) node
-      (if key (values :key key) (values))))
+    (if key (values :key key) (values))
+    (if copy-p (values :copy copy) (values))))
 
-(defgeneric subst (new old tree &key key test test-not)
+(defgeneric subst (new old tree &key key test test-not copy)
   (:documentation "If TREE is not a node, this simply calls `cl:subst'.")
   (:method (new old (tree node) &rest rest &key &allow-other-keys)
     (apply #'substitute new old tree rest))
   (:method (new old (tree t) &rest rest &key &allow-other-keys)
     (apply #'cl:subst new old tree rest)))
 
-(defgeneric subst-if (new test tree &key key)
+(defgeneric subst-if (new test tree &key key copy)
   (:documentation "If TREE is not a node, this simply calls `cl:subst-if'.
 Also works on a functional tree node.")
   (:method (new test (tree node) &rest rest &key &allow-other-keys)
@@ -2108,10 +2240,11 @@ Also works on a functional tree node.")
   (:method (new test (tree t) &rest rest &key &allow-other-keys)
     (apply #'cl:subst-if new test tree rest)))
 
-(defgeneric subst-if-not (new test tree &key key)
+(defgeneric subst-if-not (new test tree &key key copy)
   (:documentation "Complements the test, and calls `subst-if'.
 Also works on a functional tree node.")
-  (:method (new test tree &key (key nil key-p))
+  (:method (new test tree &key (key nil key-p) (copy nil copy-p))
     (multiple-value-call
         #'subst-if new (complement test) tree
-        (if key-p (values :key key) (values)))))
+        (if key-p (values :key key) (values))
+        (if copy-p (values :copy copy) (values)))))
