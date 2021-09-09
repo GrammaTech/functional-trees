@@ -11,10 +11,12 @@
            itree-lub-node itree-lub
            itree-insert itree-delete-node
            itree-delete
+           itree-remove-interval
            descendant-map
            intervals-of-itree
            itree-add-intervals
-           itree-remove-intervals)
+           itree-remove-intervals
+           itree-merge-root-nodes)
   (:documentation "Functional implementation of splay trees
 for integer intervals."))
 
@@ -47,6 +49,9 @@ for integer intervals."))
 (defun make-key (lo hi)
   (assert (<= lo hi))
   (if (eql lo hi) lo (cons lo hi)))
+
+(defun key-lo (key) (car key))
+(defun key-hi (key) (or (cdr key) (car key)))
 
 (defun interval-range (interval)
   (etypecase interval
@@ -89,6 +94,17 @@ for integer intervals."))
           (unless (eql data t)
             (format s " ~a" data))
           (format s " ~a ~a" (node-left node) (node-right node))))))
+
+(define-condition interval-collision-error (error)
+  ((key1 :accessor key1 :initarg :key1)
+   (key2 :accessor key2 :initarg :key2))
+  (:documentation "Error thrown when an inserted interval overlaps an existing interval")
+  (:report (lambda (cnd s)
+             (let ((key1 (key1 cnd))
+                   (key2 (key2 cnd)))
+               (format s "Interval collision: [~a,~a] intersects [~a,~a]"
+                       (key-lo key1) (key-hi key1)
+                       (key-lo key2) (key-hi key2))))))
 
 (declaim (ftype (function (bound itree) (or null node))
                 itree-find-node
@@ -152,7 +168,7 @@ if none."
               ((< key lo)
                (setf node (node-left node)))
               ((> key lo)
-               (setf glb node) 
+               (setf glb node)
                (setf node (node-right node)))
               (t (setf glb node)
                  (return)))))
@@ -269,7 +285,7 @@ SIZE-DELTA is the change in size of the itree"
                                    (node-right x))))
                 path (cddr path))))))
   x)
-  
+
 (defun next-node (path)
   "Find the next node in the tree after the last node in PATH,
 where PATH is a (reversed) list of nodes from the root down to
@@ -301,20 +317,21 @@ some node.  Return NIL if there is no next node."
     (iter (while (node-left node))
           (push node rpath)
           (setf node (node-left node)))
-    (values node rpath)))  
+    (values node rpath)))
 
 (declaim (ftype (function (t t t t) nil) collision))
 
 (defun collision (node lo hi data)
   (declare (ignore data))
-  (error "Interval collision in ITREE-INSERT: [~a,~a] intersects [~a,~a]"
-         lo hi (node-lo node) (node-hi node)))
+  (error (make-condition 'interval-collision-error
+                         :key1 (make-key lo hi)
+                         :key2 (node-key node))))
 
 (defun merge-intervals (interval-list)
   "Combine intervals with the same datum.  Assumes INTERVAL-LIST
 is fresh and can be modified."
   (setf interval-list (sort interval-list #'< :key #'caar))
-  (when interval-list
+  (when interval-list 
     (destructuring-bind ((lo . hi) datum) (car interval-list)
       (nconc
        (iter (for interval in (cdr interval-list))
@@ -330,30 +347,58 @@ is fresh and can be modified."
                        datum next-datum)))))
        (list (list (cons lo hi) datum))))))
 
-(defun itree-merge-root-nodes (tree &key (test #'eql))
+(defgeneric itree-merge-root-nodes (tree &key test)
+  (:documentation
   "Merge the root node with preceding or following
 nodes if they (1) have abutting intervals, and (2)
-have data satisfying the TEST comparison function."
-  ;; Merge before root
-  (iter (let* ((root (itree-root tree))
-               (left (node-left tree)))
-          (while left)
-          (multiple-value-bind (prev-node rpath)
-              (max-node left)
-            (while (and (funcall test (node-datum prev-node) (node-data root))
-                        (eql (1+ (node-hi prev-node)) (node-lo root))))
-            (setf tree (itree-delete-node tree prev-node (append rpath (list root)))))))
-  ;; Merge after root
-  (iter (let* ((root (itree-root tree))
-               (right (node-right tree)))
-          (while right)
-          (multiple-value-bind (succ-node rpath)
-              (min-node right)
-            (while (and (funcall test (node-datum succ-node) (node-data root))
-                        (eql (1+ (node-hi root)) (node-lo succ-node))))
-            (setf tree (itree-delete-node tree succ-node (append rpath (list root)))))))
-  tree)
-    
+have data satisfying the TEST comparison function.")
+  (:method ((tree itree) &key (test #'eql))
+    ;; Merge before root
+    (let ((root (itree-root tree))
+          (size (itree-size tree)))
+      (if root
+          (let ((root-data (node-data root))
+                (root-lo (node-lo root))
+                (root-hi (node-hi root))
+                (root-left (node-left root))
+                (root-right (node-right root)))
+            (block nil
+              (labels ((%max-left (n)
+                         (unless n (return))
+                         (if (null (node-right n))
+                             (progn
+                               (when (or (< (1+ (node-hi n)) root-lo)
+                                         (not (funcall test (node-data n) root-data)))
+                                 (return))
+                               ;; Merge this node into root
+                               (decf size)
+                               (setf root-lo (node-lo n))
+                               (node-left n))
+                             (let ((new-right (%max-left (node-right n))))
+                               (move-node n (node-left n) new-right)))))
+                (setf root-left (%max-left root-left))))
+            (block nil
+              (labels ((%max-right (n)
+                         (unless n (return))
+                         (if (null (node-left n))
+                             (progn
+                               (when (or (< (1+ root-hi) (node-lo n))
+                                         (not (funcall test root-data (node-data n))))
+                                 (return))
+                               ;; Merge this node into root
+                               (decf size)
+                               (setf root-hi (node-hi n))
+                               (node-right n))
+                             (let ((new-left (%max-right (node-left n))))
+                               (move-node n new-left (node-right n))))))
+                (setf root-right (%max-right root-right))))
+            (if (< size (itree-size tree))
+                (let ((new-root (make-node :data root-data
+                                           :key (make-key root-lo root-hi) :left root-left :right root-right)))
+                  (make-itree :root new-root :size size))
+              tree))
+          tree))))
+
 (defun itree-insert (tree lo hi data
                           &aux (new-node
                                 (make-node :key (if (eql lo hi) lo (cons lo hi))
@@ -370,10 +415,14 @@ already in the tree signal an error"
                             (next-node path))))
         (when (<= (node-lo next) hi)
           (collision next lo hi data))))
-    ;; TODO -- detect when the inserted node can be
-    ;; merged with an existing node, and do that instead
-    (make-itree :root (insert-node new-node path)
-                :size (1+ (itree-size tree)))))
+    (itree-merge-root-nodes
+     (make-itree :root (insert-node new-node path)
+                 :size (1+ (itree-size tree))))))
+
+(defun itree-insert* (tree lo hi data &key (test #'eql))
+  "Like ITREE-INSERT, but also merge any compatible nodes that
+abut the newly inserted node."
+  (itree-merge-root-nodes (itree-insert tree lo hi data) :test test))
 
 (defun itree-delete (tree val &key error)
   (multiple-value-bind (node path)
@@ -405,7 +454,7 @@ already in the tree signal an error"
        (if (< (node-hi node) (node-lo p))
            (setf node (move-node p nil (node-right p)))
            (setf node (move-node p (node-left p) nil))))))
-  (make-itree :root (insert-node node path) :size (1- (itree-size tree))))    
+  (make-itree :root (insert-node node path) :size (1- (itree-size tree))))
 
 (defun lift-least-node (node)
   "Rotate the least node of the tree rooted at NODE to the root."
@@ -483,9 +532,7 @@ overlaps one already in the tree."
                (setf itree (itree-delete-node itree node path))
                (setf lo (1+ n-hi)))))))
   itree)
-                     
-          
-    
+
 ;;; utility functions
 
 (defmethod convert ((to-type (eql 'list)) (tree itree) &key)
@@ -506,9 +553,3 @@ overlaps one already in the tree."
         ((cons (cons bound bound) (cons t null))
          (setf tree (itree-insert tree (caar i) (cdar i) (cadr i))))))
     tree))
-
-      
-                                            
-                    
-          
-         
