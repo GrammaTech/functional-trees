@@ -30,10 +30,9 @@ Slots with :CLASS allocation:
   CHILD-SLOTS                    = NIL
   CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
+  DESCENDANT-MAP                 = #<unbound slot>
   SERIAL-NUMBER                  = 0
-  ROOT-INFO                      = NIL
   SIZE                           = #<unbound slot>
-  FINGER                         = NIL
 ```
 
 The `:class`-allocated `child-slots` slot holds a list of the slots that
@@ -113,12 +112,6 @@ an unbound slot to be a mutation of the object. So rather than immutability
 meaning that the object never changes, it instead means that the object can only
 ever go upward in a lattice ordered by boundness of slots.
 
-There is one exception to this definition of immutability: fingers. As shown by
-our first `node` example, the `finger` slot is initially set to `nil` when a
-node is created, and should only be set by the `ft:populate-fingers` function
-(see below). Thus, a more accurate version of our definition of immutability
-would replace "unbound" with "`nil`" in the case of the `finger` slot.
-
 The reason we don't have referential transparency is that each newly created
 `node` has a unique serial number:
 
@@ -141,7 +134,7 @@ tree does not contain any duplicate serial numbers.
 As the above examples show, `make-instance` is fairly barebones: it sets the
 `serial-number` but not much else. Because this library incorporates FSet,
 though, we can extend the generic `convert` function to provide an easier way to
-construct our nodes (we will discuss `ft:populate-fingers` in the next section):
+construct our nodes:
 
 ```lisp
 (defmethod fset:convert ((to-type (eql 'if-then-else-node)) (sequence list)
@@ -154,7 +147,7 @@ construct our nodes (we will discuss `ft:populate-fingers` in the next section):
                   :else (mapcar #'construct (rest form))))
                (atom
                 (make-instance 'ft:node)))))
-    (ft:populate-fingers (construct sequence))))
+    (construct sequence)))
 ```
 
 This method may be used to easily create a functional tree from a list.
@@ -170,10 +163,9 @@ Slots with :CLASS allocation:
   CHILD-SLOTS                    = ((THEN . 1) ELSE)
   CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
+  DESCENDANT-MAP                 = #<unbound slot>
   SERIAL-NUMBER                  = 7
-  ROOT-INFO                      = NIL
   SIZE                           = #<unbound slot>
-  FINGER                         = #<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5..
   THEN                           = #<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)>
   ELSE                           = (#<FUNCTIONAL-TREES:NODE 6 NIL>)
 ```
@@ -199,63 +191,6 @@ functional trees which don't lose information.  However, doing that in
 general is not possible without specific knowledge of the desired tree
 structure -- namely how the tree stores list *values* vs list
 *strucure*.
-
-### Fingers
-
-In the previous example, we constructed a small tree and then called
-`ft:populate-fingers` on it. Let's take a look at one of these fingers:
-
-```lisp
-(progn
-  (defvar finger1 (ft:finger (then (then my-node))))
-  (describe finger1))
-```
-```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5..
-  [standard-object]
-
-Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
-  PATH                           = (THEN THEN)
-  RESIDUE                        = NIL
-  CACHE                          = #<unbound slot>
-```
-
-From this we can see that a finger includes a pointer to the root of a tree (in
-`node`) and a `path` to another node in that tree. From these two pieces, it is
-straightforward to follow `path`, starting from the root `node`, to find the
-original node which held this `finger`; once this lookup has been computed once,
-finger can store the resulting `node` in its `cache` slot. The `residue` relates
-to path transformations, which we will discuss in the next section.
-
-Now let's look at one more finger:
-
-```lisp
-(progn
-  (defvar finger2 (ft:finger (first (else my-node))))
-  (describe finger2))
-```
-```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5..
-  [standard-object]
-
-Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
-  PATH                           = ((ELSE . 0))
-  RESIDUE                        = NIL
-  CACHE                          = #<unbound slot>
-```
-
-Because these two fingers were both created in the context of the same tree,
-they both point to the same root `node`. However, this one has a different
-`path` to it: we took the first node in the `else` branch.
-
-In general, a path in this library is a list where
-
-- a symbol (e.g. `then`) means to follow the child whose slot name is the given
-  symbol, and
-- a cons cell containing a symbol and a number means to follow the child with
-  the given number as its index, in the slot whose name is the given symbol.
 
 ### Transformations
 
@@ -322,83 +257,6 @@ for `ft:node`:
     ELSE                           = (#<FUNCTIONAL-TREES:NODE 8 NIL> #<FUNCTIONAL-TREES:NODE 6 NIL>)
   ```
 
-### Path transforms
-
-This library differs from a naive implementation of functional trees by
-efficiently handling the relationship between transformations on trees and
-transformations on paths.
-
-When you transform a tree into another tree using this library, the latter
-retains knowledge of the relationship to the former (its "predecessor") via its
-`transform` slot:
-
-```lisp
-(describe (ft:transform expanded))
-```
-```
-#<FUNCTIONAL-TREES::PATH-TRANSFORM (((THEN THEN) (THEN THEN) LIVE)..
-  [standard-object]
-
-Slots with :INSTANCE allocation:
-  FROM                           = #<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
-  TRANSFORMS                     = (((THEN THEN) (THEN THEN) :LIVE) (((ELSE . 0)) ((ELSE . 1)) :LIVE))
-```
-
-Here we see that `expanded` knows which tree it originally came `from` (the
-predecessor), and also stores some additional `transforms` information. Since
-`expanded` shares some structure with `my-node`, these `transforms` enable us to
-take a path (that is, a finger) to a node in the `my-node` tree and translate it
-into a path (finger) to the same node in the `expanded` tree:
-
-```lisp
-(defun show-expanded-finger (finger)
-  (describe (ft:transform-finger-to finger
-                                    (ft:transform expanded)
-                                    expanded)))
-```
-
-Here's an example:
-
-```lisp
-(show-expanded-finger finger1)
-```
-```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 1..
-  [standard-object]
-
-Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 11 (#1=#<NODE 4 NIL>..
-  PATH                           = (THEN THEN)
-  RESIDUE                        = NIL
-  CACHE                          = #<unbound slot>
-```
-
-That example isn't particularly exciting, because the path to this node is the
-same as it was before: it's still just the first child of the first child. We do
-see that the root `node` of the finger was changed to our new tree, though. But
-we can also translate other paths:
-
-```lisp
-(show-expanded-finger finger2)
-```
-```
-#<FUNCTIONAL-TREES:FINGER #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 1..
-  [standard-object]
-
-Slots with :INSTANCE allocation:
-  NODE                           = #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 11 (#1=#<NODE 4 NIL>..
-  PATH                           = ((ELSE . 1))
-  RESIDUE                        = NIL
-  CACHE                          = #<unbound slot>
-```
-
-This path actually did change, because we added an extra `ft:node` in the else
-branch right before it.
-
-This library is able to very efficiently compute these path transform objects:
-it only takes time _O_(_n_ log _n_), where _n_ is the number of newly allocated
-nodes in the transformed tree.
-
 ## Tasks
 - [X] Eliminate hard-coded children.
 - [X] Address all FIXMEs
@@ -416,11 +274,6 @@ nodes in the transformed tree.
 - [X] Eliminate 'data' as default key in trees.
 - [X] Make default equality test in tree methods be EQL, as on sequences.
 - [ ] Add :START, :END for tree methods, where these are paths not integers.
-- [ ] Back pointer to previous tree versions should be weak, if that is supported.
 - [ ] Define copying setf expanders for non-class-allocated slots of node subclasses.
 - [ ] Make trie maps switch to hash tables if the branching is too large (efficiency.)
-- [ ] Cache PATH-TRANSFORM-OF.
-- [ ] Enhance path transform compression so paths that differ only in the final
-      index  are compressed into "range" paths.
 - [ ] Splice should report error on nodes of fixed arity.
-- [ ] Make path transform algorithm more efficient with very long child lists.
