@@ -42,11 +42,11 @@
                 :class-slots)
   (:export :copy :tree-copy
            :copy-with-children-alist
-           :node :transform :child-slots
+           :node :child-slots
            :child-slot-specifiers
-           :finger
-           :path :transform-finger-to :populate-fingers :residue
            :serial-number
+           :descendant-map
+           :path-of-node
            :path-equalp
            :path-equalp-butlast
            :path-later-p
@@ -59,7 +59,6 @@
            :do-tree :mapc :mapcar
            :swap
            :define-node-class :define-methods-for-node-class
-           :*cache-path-transforms?*
            :child-position-if
            :child-position
            :subst :subst-if :subst-if-not)
@@ -1267,38 +1266,12 @@ functions."
       (print-unreadable-object (obj stream :type t)
         (format stream "~a ~a" (slot-specifier-slot obj)
                 (slot-specifier-arity obj)))))
-
-#|
-(defmethod print-object ((obj finger) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a~@[ ~a~]"
-                (node obj) (path obj) (residue obj)))))
-
-(defmethod print-object ((obj path-transform) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a ~a"
-                (transforms obj) (from obj)))))
-|#
-
 
 ;;;; FSET conversion operations
 (defmethod convert ((to-type (eql 'list)) (node node) &key &allow-other-keys &aux all)
   "Convert NODE of type node to a list."
   (mapc (lambda (node) (push node all)) node)
   (nreverse all))
-
-#|
-(defmethod convert ((to-type (eql 'list)) (finger finger)
-                    &key &allow-other-keys)
-  (let ((cached (cache finger)))
-    (if (typep cached 'node)
-        (convert to-type cached)
-        cached)))
-|#
 
 (defmethod convert ((to-type (eql 'alist)) (node node)
                     &key (value-fn nil value-fn-p) &allow-other-keys)
