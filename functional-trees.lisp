@@ -45,7 +45,7 @@
            :node :child-slots
            :child-slot-specifiers
            :serial-number
-           :descendant-map
+           :descendant-map :path
            :path-of-node
            :path-equalp
            :path-equalp-butlast
