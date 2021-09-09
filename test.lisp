@@ -1483,14 +1483,6 @@ diagnostic information on error or failure."
 
 (defsuite interval-trees "Interval trees tests")
 
-(defun random-permute (seq)
-  (let ((len (length seq)))
-    (setf seq (copy-seq seq))
-    (iter (for i from len downto 1)
-          (let ((r (random len)))
-            (rotatef (elt seq r) (elt seq (1- i)))))
-    seq))
-
 (defun mapcar-car (x) (mapcar #'car x))
 
 (eval-when (:load-toplevel :compile-toplevel)
