@@ -85,7 +85,7 @@ is placed in a separate object so we don't have to burden non-root nodes with to
 many slots."))
   (defclass descendant-map-mixin ()
     ((descendant-map :initarg :descendant-map
-                     :accessor descendant-map
+                     :reader descendant-map
                      :documentation "Map from serial numbers to child slots"))
     (:documentation "Mixin for the descendant-map slot"))
   (defclass node (identity-ordering-mixin descendant-map-mixin)
@@ -584,7 +584,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                        (nconc (add-slot-to-intervals (intervals-of-node new) slot)
                               intervals-to-add)))
                 )))
-      (setf (descendant-map new-node)
+      (setf (slot-value new-node 'descendant-map)
             (ft/it:itree-add-intervals
              (ft/it:itree-remove-intervals old-dm intervals-to-remove)
              intervals-to-add)))
