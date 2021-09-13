@@ -25,7 +25,6 @@
   (:import-from :uiop/stream :with-temporary-file)
   (:shadowing-import-from
    :functional-trees
-   :child-with-sn
    :dump
    :equal?
    :lexicographic-<
