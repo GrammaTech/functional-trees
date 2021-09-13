@@ -540,6 +540,9 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 
 ;;; Fill in the descendant-map field of a node after copy
 
+;;; TODO -- do not fill in the map if the node's size is below
+;;; a threshold.  Instead, lookups that would use the map would
+;;; instead search the subtree directly.
 (defgeneric compute-descendant-map (old-node new-node)
   (:method ((old-node t) (new-node t)) new-node)
   (:method ((old-node node) (new-node node))
@@ -627,18 +630,6 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 (defun child-slot-with-sn (node sn)
   (when-let ((itree-node (ft/it::itree-find-node sn (descendant-map node))))
      (ft/it:node-data itree-node)))
-
-(defun child-with-sn (node sn)
-  "Return the child of SN whose tree contains serial number SN, or"
-  (let ((child-slot (child-slot-with-sn node sn)))
-    (when child-slot
-      (iter (for child-node in (childs-list node slot))
-            (when (or (eql (serial-number child-node) sn)
-                      (ft/it:itree-find-node sn (descendant-map child-node)))
-              (return (child-with-sn child-node sn))))
-      ;; this should not happen (indicates child-slot was incorrect
-      ;; in the descendant map)
-      (error "Could not find child ~a below ~a" sn node))))
 
 (defgeneric rpath-to-node (root node &key error)
   (:documentation "Returns the (reversed) path from ROOT to a node

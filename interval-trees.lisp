@@ -12,11 +12,11 @@
            itree-insert itree-delete-node
            itree-delete
            itree-remove-interval
-           descendant-map
            intervals-of-itree
            itree-add-intervals
            itree-remove-intervals
-           itree-merge-root-nodes)
+           itree-merge-root-nodes
+           interval-collision-error)
   (:documentation "Functional implementation of splay trees
 for integer intervals."))
 
@@ -112,41 +112,54 @@ for integer intervals."))
                 itree-lub-node)
          (ftype (function (bound itree) (values (or null node) list))))
 
+;;; TODO -- in the itree-find... functions, move the found node
+;;; (or last node in the path) to the root.  This will involve
+;;; modifying the itree object, but this is ok as it is still
+;;; a representation of the same map
 (defun itree-find-node (key tree)
-  "Return the NODE whose interval contains KEY, or NIL if none."
+  "Return the NODE whose interval contains KEY, or NIL if none.
+Also return the depth of the node (or the NIL leaf) in the tree."
   (declare (type bound key)
            (type itree tree))
-  (let ((node (itree-root tree)))
+  (let ((node (itree-root tree))
+        (depth 0))
     (iter (while node)
           (cond
             ((< key (node-lo node))
+             (incf depth)
              (setf node (node-left node)))
             ((> key (node-hi node))
+             (incf depth)
              (setf node (node-right node)))
             (t
-             (return node))))))
+             (return-from itree-find-node (values node depth)))))
+    (values nil depth)))
 
 (defun itree-find-node-path (key tree)
   "Return the NODE whose interval contains KEY, or NIL if none,
-and the reversed path to that node (or NIL leaf)."
+and the reversed path to that node (or NIL leaf).  Also return
+the depth of the node, which is the length of the path."
   ;; TODO -- also return the GLB and LUB nodes, and return
   ;; their reversed paths as well (these will be suffixes of the
   ;; reversed path to the NIL leaf itself.)
   (declare (type bound key)
            (type itree tree))
   (let ((node (itree-root tree))
-        (path nil))
+        (path nil)
+        (depth 0))
     (iter (while node)
           (cond
             ((< key (node-lo node))
+             (incf depth)
              (push node path)
              (setf node (node-left node)))
             ((> key (node-hi node))
+             (incf depth)
              (push node path)
              (setf node (node-right node)))
             (t
-             (return-from itree-find-node-path (values node path)))))
-    (values nil path)))
+             (return-from itree-find-node-path (values node path depth)))))
+    (values nil path depth)))
 
 (defun itree-find (key tree)
   "Find the interval in TREE containins KEY.  Returns three values:
@@ -175,7 +188,7 @@ if none."
     glb))
 
 (defun itree-glb (key tree)
-  (when-let ((node (itree-lub-node key tree)))
+  (when-let ((node (itree-glb-node key tree)))
     (values (node-lo node) (node-hi node) (node-data node))))
 
 (defun itree-lub-node-path (key tree)
@@ -237,19 +250,19 @@ SIZE-DELTA is the change in size of the itree"
   (make-itree :root (insert-node new-node path)
               :size (+ (itree-size itree) size-delta)))
 
-(defun insert-node (x path)
-  "Given a node X that has been inserted at the end of PATH
-, rebalance nodes back along that path.  Returns the root node."
-  (declare (type node x) (type list path))
-  ;; X is not actually on PATH
+(defun insert-node (x rpath)
+  "Given a node X that has been inserted at the end of RPATH,
+rebalance nodes back along that reversed path.  Returns the root node."
+  (declare (type node x) (type list rpath))
+  ;; RPATH is the reversed path down to X, but X is not on RPATH
   ;; Because nodes are reallocated during ascent, we cannot
   ;; compare nodes vs. node-left to determine the position of
   ;; a child under its parent.  So, compare keys instead.
   (flet ((%less (a b)
            (< (node-hi a) (node-lo b))))
-    (iter (while path)
-      (let ((p (car path))
-            (pp (cadr path)))
+    (iter (while rpath)
+      (let ((p (car rpath))
+            (pp (cadr rpath)))
         (declare (type node p))
         (unless pp
           ;; Final step
@@ -283,7 +296,7 @@ SIZE-DELTA is the change in size of the itree"
                                                              (node-left p))
                                                 (node-left x))
                                    (node-right x))))
-                path (cddr path))))))
+                rpath (cddr rpath))))))
   x)
 
 (defun next-node (path)

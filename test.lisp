@@ -23,39 +23,43 @@
         #+gt :testbot)
   (:import-from :uiop/utility :nest)
   (:import-from :uiop/stream :with-temporary-file)
-  (:shadowing-import-from :functional-trees
-                          :equal?
-                          :dump
-                          :lexicographic-<
-                          :mapc
-                          :mapcar
-                          :node
-                          :node-can-implant
-                          :node-valid
-                          :nodes-disjoint
-                          :path-of-node
-                          :path-p
-                          :prefix?
-                          :serial-number
-                          :subst
-                          :subst-if
-                          :subst-if-not
-                          :with-encapsulation)
-  (:shadowing-import-from :fset
-                          :@ :convert :less :splice :insert :lookup :alist
-                          :map :set :partition :alist :size
-                          :range :compose :unionf :appendf :with :removef
-                          ;; Shadowed set operations
-                          :union :intersection :set-difference :complement
-                          ;; Shadowed sequence operations
-                          :first :last :subseq :reverse :sort :stable-sort
-                          :reduce
-                          :find :find-if :find-if-not
-                          :count :count-if :count-if-not
-                          :position :position-if :position-if-not
-                          :remove :remove-if :remove-if-not
-                          :substitute :substitute-if :substitute-if-not
-                          :some :every :notany :notevery)
+  (:shadowing-import-from
+   :functional-trees
+   :child-with-sn
+   :dump
+   :equal?
+   :lexicographic-<
+   :mapc
+   :mapcar
+   :node
+   :node-can-implant
+   :node-valid
+   :nodes-disjoint
+   :path-of-node
+   :path-p
+   :prefix?
+   :serial-number
+   :subst
+   :subst-if
+   :subst-if-not
+   :with-encapsulation)
+   
+  (:shadowing-import-from
+   :fset
+   :@ :convert :less :splice :insert :lookup :alist
+   :map :set :partition :alist :size
+   :range :compose :unionf :appendf :with :removef
+   ;; Shadowed set operations
+   :union :intersection :set-difference :complement
+   ;; Shadowed sequence operations
+   :first :last :subseq :reverse :sort :stable-sort
+   :reduce
+   :find :find-if :find-if-not
+   :count :count-if :count-if-not
+   :position :position-if :position-if-not
+   :remove :remove-if :remove-if-not
+   :substitute :substitute-if :substitute-if-not
+   :some :every :notany :notevery)
   #+gt (:shadowing-import-from :testbot :batch-test)
   (:export :test))
 (in-package :ft/test)
@@ -477,6 +481,11 @@ bucket getting at least 1.  Return as a list."
       (is (not (eql n1 n2)))
       (is (equal (convert 'list n1) (convert 'list n2)))))
 
+(deftest mapc.1 ()
+  (let ((result nil))
+    (mapc #'(lambda (x) (push (convert 'list x) result)) (convert 'node-list2 '(a (b c) d)))
+    (is (equal result '((b c) (a (b c) d))))))
+
 (deftest remove-if.3 ()
   (let* ((n1 (convert 'node-cons '(:a (:b) (:c) (:d))))
          (n2 (remove-if (lambda (it)
@@ -600,7 +609,12 @@ bucket getting at least 1.  Return as a list."
     (is (not (equal? n (convert 'node-cons '(:a)))))
     (is (not (equal? n (convert 'node-cons '(:a (:b))))))
     (let ((it (convert 'node-cons '(:b))))
-      (is (not (equal? n (copy n :head (head it) :tail (tail it))))))))
+      (is (not (equal? n (copy n :head (head it) :tail (tail it)))))))
+  (is (not (equal? (convert 'node-list2 '(a b))
+                   (convert 'node-list2 '(a b c)))))
+  (let* ((n1 (convert 'node-list2 '(a b)))
+         (n2 (copy n1 :body nil)))
+    (is (not (equal? n1 n2)))))
 
 (deftest print.1 ()
   (let ((*print-readably* nil)
@@ -1513,7 +1527,7 @@ diagnostic information on error or failure."
     (%check (1 2))
     (%check (3 2 1))))
 
-(deftest it.delete ()
+(deftest it.delete-node ()
   (macrolet ((%check (inserts deletes)
                (assert (equal (sort (copy-seq inserts) #'<)
                               (sort (copy-seq deletes) #'<)))
@@ -1536,8 +1550,32 @@ diagnostic information on error or failure."
     (%check (1 3) (3 1))
     (%check (1 3 5) (5 3 1))
     (%check (3 7 5 1) (3 7 1 5))
-    (%check (1 7 5 3) (3 5 1 7))
+    (%check (1 7 5 3) (3 5 1 7))))
+
+(deftest it.delete ()
+  (let ((itree (convert 'ft/it:itree '(((1 . 3) :a) ((5 . 5) :b) ((6 . 10) :c)))))
+    (is (equal (convert 'list (ft/it:itree-delete itree 0))
+               '(((1 . 3) :a) (5 :b) ((6 . 10) :c))))
+    (is (equal
+         (handler-case (ft/it:itree-delete itree 0 :error t)
+           (error () :good))
+         :good))
+    (is (equal (convert 'list (ft/it:itree-delete itree 1))
+               '((5 :b) ((6 . 10) :c))))
+    (is (equal (convert 'list (ft/it:itree-delete itree 2))
+               '((5 :b) ((6 . 10) :c))))
+    (is (equal (convert 'list (ft/it:itree-delete itree 3))
+               '((5 :b) ((6 . 10) :c))))
     ))
+
+(deftest it.insert* ()
+  (let ((itree (convert 'ft/it:itree nil)))
+    (setf itree (ft/it::itree-insert* itree 0 0 :a))
+    (is (equal (convert 'list itree) '((0 :a))))
+    (setf itree (ft/it::itree-insert* itree 10 11 :b))
+    (is (equal (convert 'list itree) '((0 :a) ((10 . 11) :b))))
+    (setf itree (ft/it::itree-insert* itree 5 5 :c))
+    (is (equal (convert 'list itree) '((0 :a) (5 :c) ((10 . 11) :b))))))
 
 (deftest it.2 ()
   (let* ((vals (iota 20))
@@ -1564,6 +1602,17 @@ diagnostic information on error or failure."
                          (assert (equal (mapcar-car (convert 'list itree)) (seq-to-intervals vals-left))))))))
     (is (eql result niL))))
 
+(deftest it.4 ()
+  (let ((itree (convert 'ft/it:itree '(((1 . 2) :a) ((3 . 4) :b) (5 :c)))))
+    (is (equal (ft/it:itree-size itree) 3))
+    (is (null (ft/it:itree-find 0 itree)))
+    (is (equal (multiple-value-list (ft/it:itree-find 1 itree)) '(1 2 :a)))
+    (is (equal (multiple-value-list (ft/it:itree-find 2 itree)) '(1 2 :a)))
+    (is (equal (multiple-value-list (ft/it:itree-find 3 itree)) '(3 4 :b)))
+    (is (equal (multiple-value-list (ft/it:itree-find 4 itree)) '(3 4 :b)))
+    (is (equal (multiple-value-list (ft/it:itree-find 5 itree)) '(5 5 :c)))
+    (is (null (ft/it:itree-find 6 itree)))))
+
 (defun intervals-of-list (vals)
   (let ((vals (sort (copy-seq vals) #'<)))
     (iter (while vals)
@@ -1580,7 +1629,7 @@ diagnostic information on error or failure."
         (when (< (random 1.0) p)
           (collecting i))))
         
-(deftest it.intervals-of-tree (&key (reps 1000) (size 20) (p 0.5))
+(deftest it.intervals-of-itree (&key (reps 1000) (size 20) (p 0.5))
   (let ((result
           (iter (repeat reps)
                 (let* ((vals (random-integers size p))
@@ -1596,7 +1645,7 @@ diagnostic information on error or failure."
     (is (null result))))
 
         
-(deftest it.intervals-of-tree.2 (&key (reps 1000) (size 20) (p 0.5))
+(deftest it.intervals-of-itree.2 (&key (reps 1000) (size 20) (p 0.5))
   (let ((result
           (iter (repeat reps)
                 (let* ((vals (random-integers size p))
@@ -1613,6 +1662,11 @@ diagnostic information on error or failure."
                       (return (list intervals sorted-other-intervals ints-of-tree))))))))
     (is (null result))))
 
+(deftest it.intervals-of-itree.3 ()
+  (let ((itree (ft/it:itree-add-intervals (convert 'ft/it::itree nil) '((1 :a) (5 :b) (9 :c)))))
+    (is (equal (ft/it:intervals-of-itree itree)
+               '((1 . 1) (5 . 5) (9 . 9))))))
+
 (deftest it.itree-merge-root-nodes (&key (reps 1000) (size 20) (p 0.5))
   (let ((result
           (iter (repeat reps)
@@ -1627,3 +1681,66 @@ diagnostic information on error or failure."
                                             (not (ft/it:itree-find-node i itree)))))
                     (return (list vals (convert 'list itree))))))))
     (is (null result))))
+
+(deftest it.insert.collision ()
+  (let ((itree (convert 'ft/it:itree '(((1 . 3) :a)))))
+    (is (null (ft/it:itree-find 0 itree)))
+    (is (null (ft/it:itree-find 4 itree)))
+    (iter (for i from 1 to 3)
+          (is (eql (handler-case (progn (ft/it:itree-insert itree i i t) :bad1)
+                     (ft/it:interval-collision-error () :good))
+                   :good))))
+  (let ((itree (convert 'ft/it:itree '(((1 . 2) :a) ((5 . 6) :c)))))
+    (is (eql (handler-case (progn (ft/it:itree-insert itree 3 5 :b) :bad2)
+               (ft/it:interval-collision-error () :good))
+             :good)))
+  (is (equal (with-standard-io-syntax
+               (with-output-to-string (s)
+                 (write (make-condition 'ft/it:interval-collision-error :key1 '(1 . 4) :key2 '(2 . 3))
+                        :escape nil :stream s)))
+             "Interval collision: [1,4] intersects [2,3]")))
+
+(deftest it.print ()
+  (is (equal (format nil "~a" (convert 'ft/it:itree '((1 2)))) "#<1=>2>"))
+  (is (equal (format nil "~a" (convert 'ft/it:itree '(((1 . 3) 2)))) "#<[1,3]=>2>"))
+  (is (equal (format nil "~a" (ft/it:itree-root (convert 'ft/it:itree '((1 2))))) "#<1 2 NIL NIL>"))
+  (is (equal (format nil "~a" (ft/it:itree-root (convert 'ft/it:itree '((1 t))))) "#<1 NIL NIL>"))
+  (is (equal (format nil "~a" (ft/it:itree-root (convert 'ft/it:itree '(((1 . 3) 2))))) "#<(1 3) 2 NIL NIL>")))
+
+(deftest it.glb.1 ()
+  (let ((itree (convert 'ft/it:itree '(((1 . 2) :a) (4 :b) ((6 . 8) :c)))))
+    (iter (for i from -1 to 0)
+          (is (equal (multiple-value-list (ft/it:itree-glb i itree)) '(nil))))
+    (iter (for i from 1 to 3)
+          (is (equal (multiple-value-list (ft/it:itree-glb i itree))
+                     '(1 2 :a))))
+    (iter (for i from 4 to 5)
+          (is (equal (multiple-value-list (ft/it:itree-glb i itree))
+                     '(4 4 :b))))
+    (iter (for i from 6 to 10)
+          (is (equal (multiple-value-list (ft/it:itree-glb i itree)) '(6 8 :c))))))
+
+(deftest it.lub.1 ()
+  (let ((itree (convert 'ft/it:itree '(((1 . 2) :a) (4 :b) ((6 . 8) :c)))))
+    (iter (for i from 0 to 2)
+          (is (equal (multiple-value-list (ft/it:itree-lub i itree))
+                     '(1 2 :a))))
+    (iter (for i from 3 to 4)
+          (is (equal (multiple-value-list (ft/it:itree-lub i itree))
+                     '(4 4 :b))))
+    (iter (for i from 5 to 8)
+          (is (equal (multiple-value-list (ft/it:itree-lub i itree)) '(6 8 :c))))
+    (iter (for i from 9 to 10)
+          (is (equal (multiple-value-list (ft/it:itree-lub i itree)) '(nil))))))
+
+(deftest it.min/max-node ()
+    (let ((root (ft/it:itree-root (convert 'ft/it:itree '(1 11 4 9)))))
+      (multiple-value-bind (node rpath) (ft/it::max-node root)
+        (is (equal (convert 'list node) '((11 t))))
+        (is (equal (convert 'list (car rpath)) '((1 t) (4 t) (9 t) (11 t))))
+        (is (null (cdr rpath))))
+      (multiple-value-bind (node rpath) (ft/it::min-node root)
+        (is (equal (convert 'list node) '((1 t))))
+        (is (equal (convert 'list (car rpath)) '((1 t) (4 t))))
+        (is (equal (convert 'list (cadr rpath)) '((1 t) (4 t) (9 t) (11 t))))
+        (is (null (cddr rpath))))))
