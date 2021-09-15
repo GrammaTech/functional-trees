@@ -50,8 +50,14 @@ for integer intervals."))
   (assert (<= lo hi))
   (if (eql lo hi) lo (cons lo hi)))
 
-(defun key-lo (key) (car key))
-(defun key-hi (key) (or (cdr key) (car key)))
+(defun key-lo (key)
+  (etypecase key
+    (integer key)
+    (cons (car key))))
+(defun key-hi (key)
+  (etypecase key
+    (integer key)
+    (cons (or (cdr key) (car key)))))
 
 (defun interval-range (interval)
   (etypecase interval
@@ -338,7 +344,7 @@ some node.  Return NIL if there is no next node."
   (declare (ignore data))
   (error (make-condition 'interval-collision-error
                          :key1 (make-key lo hi)
-                         :key2 (node-key node))))
+                         :key2 (make-key (node-lo node) (node-hi node)))))
 
 (defun merge-intervals (interval-list)
   "Combine intervals with the same datum.  Assumes INTERVAL-LIST
