@@ -112,17 +112,11 @@ for integer intervals."))
                        (key-lo key1) (key-hi key1)
                        (key-lo key2) (key-hi key2))))))
 
-(declaim (ftype (function (bound itree) (or null node))
-                itree-find-node
-                itree-glb-node
-                itree-lub-node)
-         (ftype (function (bound itree) (values (or null node) list))))
-
 ;;; TODO -- in the itree-find... functions, move the found node
 ;;; (or last node in the path) to the root.  This will involve
 ;;; modifying the itree object, but this is ok as it is still
 ;;; a representation of the same map
-(defun itree-find-node (key tree)
+(defun itree-find-node (tree key)
   "Return the NODE whose interval contains KEY, or NIL if none.
 Also return the depth of the node (or the NIL leaf) in the tree."
   (declare (type bound key)
@@ -141,7 +135,19 @@ Also return the depth of the node (or the NIL leaf) in the tree."
              (return-from itree-find-node (values node depth)))))
     (values nil depth)))
 
-(defun itree-find-node-path (key tree)
+(defun itree-find-node-splay (tree key)
+  "Find the node in TREE that has the interval containing KEY,
+or NIL if none.  At the same time, splay that node to the root
+of TREE.  The structure TREE is modified, but the tree is updated
+functionally."
+  (multiple-value-bind (node rpath depth)
+      (itree-find-node-path tree key)
+    (declare (ignore depth))
+    (when node
+      (setf (itree-root tree) (insert-node node rpath))
+      (itree-root tree))))
+
+(defun itree-find-node-path (tree key)
   "Return the NODE whose interval contains KEY, or NIL if none,
 and the reversed path to that node (or NIL leaf).  Also return
 the depth of the node, which is the length of the path."
@@ -167,14 +173,14 @@ the depth of the node, which is the length of the path."
              (return-from itree-find-node-path (values node path depth)))))
     (values nil path depth)))
 
-(defun itree-find (key tree)
+(defun itree-find (tree key)
   "Find the interval in TREE containins KEY.  Returns three values:
 the lo key, the hi key (giving the interval [lo,hi]) and the datum.
 If no such interval is found, return NIL."
-  (when-let ((node (itree-find-node key tree)))
+  (when-let ((node (itree-find-node tree key)))
     (values (node-lo node) (node-hi node) (node-data node))))
 
-(defun itree-glb-node (key tree)
+(defun itree-glb-node (tree key)
   "Find the highest interval in TREE for which KEY is >= LO, or NIL
 if none."
   (declare (type bound key)
@@ -193,11 +199,11 @@ if none."
                  (return)))))
     glb))
 
-(defun itree-glb (key tree)
-  (when-let ((node (itree-glb-node key tree)))
+(defun itree-glb (tree key)
+  (when-let ((node (itree-glb-node tree key)))
     (values (node-lo node) (node-hi node) (node-data node))))
 
-(defun itree-lub-node-path (key tree)
+(defun itree-lub-node-path (tree key)
    "Find the lowest interval in TREE for which KEY is <= HI, or NIL
 if none.  Returns the path to the node (list of ancestors of node,
 in decreasing order of depth) if it exists."
@@ -223,11 +229,11 @@ in decreasing order of depth) if it exists."
                  (return)))))
     (if lub (values lub lub-path) nil)))
 
-(defun itree-lub-node (key tree)
-  (values (itree-lub-node-path key tree)))
+(defun itree-lub-node (tree key)
+  (values (itree-lub-node-path tree key)))
 
-(defun itree-lub (key tree)
-  (when-let ((node (itree-lub-node-path key tree)))
+(defun itree-lub (tree key)
+  (when-let ((node (itree-lub-node-path tree key)))
     (values (node-lo node) (node-hi node) (node-data node))))
 
 (defun move-node (node left right)
@@ -426,7 +432,7 @@ have data satisfying the TEST comparison function.")
 Return the new tree.  If the interval overlaps an interval
 already in the tree signal an error"
   (multiple-value-bind (node path)
-      (itree-find-node-path lo tree)
+      (itree-find-node-path tree lo)
     (when node
       (collision node lo hi data))
     (when path
@@ -445,7 +451,7 @@ abut the newly inserted node."
 
 (defun itree-delete (tree val &key error)
   (multiple-value-bind (node path)
-      (itree-find-node-path val tree)
+      (itree-find-node-path tree val)
     (cond
       (node (itree-delete-node tree node path))
       (error (error "Attempted to delete a value not in the tree: ~a" val))
@@ -513,7 +519,7 @@ overlaps one already in the tree."
 (defun itree-remove-interval (itree lo hi)
   "Remove the interval [LO,HI] from ITREE"
   (iter (while (<= lo hi))
-        (multiple-value-bind (node path) (itree-lub-node-path lo itree)
+        (multiple-value-bind (node path) (itree-lub-node-path itree lo)
           (while node)
           (let ((n-lo (node-lo node))
                 (n-hi (node-hi node)))

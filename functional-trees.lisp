@@ -492,7 +492,12 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 (defmethod initialize-instance :after
   ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
   (when serial-number-p
-    (setf (slot-value node 'serial-number) serial-number)))
+    (setf (slot-value node 'serial-number)
+          (or serial-number
+              #+sbcl
+              (sb-ext:atomic-incf fset::*sbcl-next-serial-number*)
+              #-sbcl
+              (serial-number (make-instance fset::identity-ordering-mixin))))))
 
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
   (setf (slot-value obj 'size)
@@ -628,7 +633,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
     (if (listp val) val (list val))))
 
 (defun child-slot-with-sn (node sn)
-  (when-let ((itree-node (ft/it::itree-find-node sn (descendant-map node))))
+  (when-let ((itree-node (ft/it::itree-find-node-splay (descendant-map node) sn)))
      (ft/it:node-data itree-node)))
 
 (defgeneric rpath-to-node (root node &key error)
@@ -676,9 +681,9 @@ return NIL, unless ERROR is true, in which case error.")
           (let ((child found)
                 (path nil))
             (iter (for a in rpath)
-                  (let ((slot (when-let ((itree-node (ft/it::itree-find-node
-                                                      (serial-number child)
+                  (let ((slot (when-let ((itree-node (ft/it::itree-find-node-splay
                                                       (descendant-map a)
+                                                      (serial-number child)
                                                       )))
                                         (ft/it:node-data itree-node))))
                     (assert slot () "Could not find SLOT of ~a in descendant map of ~a" child a)
