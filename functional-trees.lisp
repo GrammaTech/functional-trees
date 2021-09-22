@@ -88,18 +88,9 @@ many slots."))
                      :reader descendant-map
                      :documentation "Map from serial numbers to child slots"))
     (:documentation "Mixin for the descendant-map slot"))
+
   (defclass node (identity-ordering-mixin descendant-map-mixin)
-    (#+nil
-     (root-info :reader root-info
-                :initarg :root-info
-                :initform nil
-                ;; TODO: change the back pointer to a weak vector
-                ;; containing the pointer.
-                ;; :type (or null node path-transform #+sbcl sb-ext:weak-pointer)
-                :type (or null root-info)
-                :documentation "If non-nil, the ROOT-INFO object that
-contains TRANSFORMS and other root-only information.")
-     (size :reader size
+    ((size :reader size
            :type (integer 1)
            :documentation "Number of nodes in tree rooted here.")
      (child-slots :reader child-slots
@@ -116,12 +107,7 @@ specifies a specific number of children held in the slot.")
                             :allocation :class
                             :type list
                             :documentation "The list CHILD-SLOTS
-converted to a list of slot-specifier objects")
-     #+nil
-     (finger :reader finger
-             :initform nil
-             :type (or null node finger)
-             :documentation "A finger back to the root of the (a?) tree."))
+converted to a list of slot-specifier objects"))
     (:documentation "A node in a tree."))
 
   (defclass slot-specifier ()
@@ -650,7 +636,7 @@ signal an error if ERROR is true.")
             (child-slot (child-slot-with-sn root sn)))
         (iter (while node)
               (unless child-slot
-                (if error 
+                (if error
                     (error "Serial number ~a not found in tree ~a" sn root)
                     (return (values nil nil))))
               (push node rpath)
