@@ -72,17 +72,6 @@
 
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  #+nil
-  (defclass root-info ()
-    ((transform :reader transform
-                :initarg :transform
-                :initform nil
-                :type (or null node path-transform #+sbcl sb-ext:weak-pointer)
-                :documentation "If non-nil, is either a PATH-TRANSFORM object
-to this node, or the node that led to this node."))
-    (:documentation "Information that is associated with the root of an AST.  This
-is placed in a separate object so we don't have to burden non-root nodes with too
-many slots."))
   (defclass descendant-map-mixin ()
     ((descendant-map :initarg :descendant-map
                      :reader descendant-map
@@ -770,22 +759,6 @@ calling FN on each node."))
   (funcall fn node)
   (map-children node fn))
 
-#|
-(defgeneric update-predecessor-tree (old-tree new-tree)
-  (:documentation "Sets the back pointer of NEW-TREE to be OLD-TREE,
-if NEW-TREE lacks a back pointer.  Returns NEW-TREE."))
-
-(defmethod update-predecessor-tree ((old-tree t) (new-tree t)) new-tree)
-
-(defmethod update-predecessor-tree ((old-tree node) (new-tree node))
-  (or (eql old-tree new-tree)
-      (setf (slot-value new-tree 'root-info)
-            (if-let ((ri (slot-value new-tree 'root-info)))
-                    (copy ri :transform old-tree)
-                    (make-instance 'root-info :transform old-tree))))
-  new-tree)
-|#
-
 (defgeneric traverse-tree (node fn)
   (:documentation "Traverse tree rooted at NODE in preorder.  At each
 node, call FN.  If the returned value is non-nil, it replaces the node
@@ -998,6 +971,7 @@ are compared with each other using fset:compare"
 tree has its predecessor set to TREE."
   (funcall rewrite-fn tree))
 
+;;; This is deprecated
 (defmacro with-encapsulation (tree &body body)
   (let ((var (gensym)))
     `(encapsulate ,tree #'(lambda (,var) (declare (ignore ,var)) ,@body))))
@@ -1012,22 +986,10 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node node) (path cons))
   (etypecase path
     (proper-list
-#|     ;; If the path has a named child with an index
-     (if (and (first path) (second path)
-              (typep (first path) 'symbol)
-              (typep (second path) 'number))
-         ;; then handle them both at once.
-         (lookup (lookup (lookup node (first path)) (second path)) (cddr path)) |#
      (lookup (lookup node (car path)) (cdr path)))
-    ;; )
     (cons
      (destructuring-bind (slot . i) path
        (lookup (slot-value node slot) i)))))
-#|
-(defmethod lookup ((node node) (finger finger))
-  (let ((new-finger (transform-finger finger node)))
-    (values (lookup node (path new-finger)) (residue new-finger))))
-|#
 (defmethod lookup ((node node) (slot null))
   node)
 (defmethod lookup ((node node) (slot symbol))
@@ -1227,14 +1189,6 @@ functions."
     (with-encapsulation tree (call-next-method))))
 
 (defmethod size ((other t)) 0)
-
-#|
-(defmethod print-object ((obj root-info) stream)
-  (if *print-readably*
-      (call-next-method)
-      (print-unreadable-object (obj stream :type t)
-        (format stream "~a" (transform obj)))))
-|#
 
 (defmethod print-object ((obj node) stream)
   (if *print-readably*
