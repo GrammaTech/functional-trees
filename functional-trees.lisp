@@ -472,7 +472,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
               #+sbcl
               (sb-ext:atomic-incf fset::*sbcl-next-serial-number*)
               #-sbcl
-              (serial-number (make-instance fset::identity-ordering-mixin))))))
+              (serial-number (make-instance 'fset::identity-ordering-mixin))))))
 
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
   (setf (slot-value obj 'size)
