@@ -74,7 +74,6 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defclass descendant-map-mixin ()
     ((descendant-map :initarg :descendant-map
-                     :reader descendant-map
                      :documentation "Map from serial numbers to child slots"))
     (:documentation "Mixin for the descendant-map slot"))
 
@@ -112,6 +111,10 @@ converted to a list of slot-specifier objects"))
             :initarg :arity
             :documentation "The arity of the slot"))
     (:documentation "Object that represents the slots of a class")))
+
+(declaim (inline descendant-map))
+(defun descendant-map (obj)
+  (slot-value obj 'descendant-map))
 
 (defun make-slot-specifier (&rest args)
   (apply #'make-instance 'slot-specifier args))
@@ -389,6 +392,30 @@ of NODE to their members")
                                   `(slot-value node ',slot))))
                           child-slots))))
 
+(defun store-actual-slot (key actual-slot)
+  (assert (keywordp key))
+  (assert (equal (symbol-name key)
+                 (symbol-name actual-slot)))
+  (let ((a (get key 'actual-slot)))
+    (when (and a (not (eql a actual-slot)))
+      (error "Keyword ~s corresponds to two different slots: ~s and ~s"
+             key a actual-slot))
+    (unless a
+      (setf (get key 'actual-slot) actual-slot))
+    actual-slot))
+
+(defun get-actual-slot (slot)
+  (etypecase slot
+    (keyword (or (get slot 'actual-slot)
+                 (error "Keyword ~a does not correspond to an actual slot" slot)))
+    (symbol slot)))
+
+(defmethod lookup ((obj node) (slot symbol))
+  (if-let ((actual-slot (and (keywordp slot)
+                             (get-actual-slot slot))))
+          (slot-value obj actual-slot)
+          (call-next-method)))
+
 (eval-when (:compile-toplevel :load-toplevel)
   (defun slot-setf-expander (node slot-name env)
     (nest
@@ -406,16 +433,22 @@ of NODE to their members")
                 ,store-form
                 ,val-temp)
              `(lookup ,access-form ',key)))))
+
+;;; TODO -- change this so keywords are handled differently
 (defun expand-lookup-specialization (class child-slots)
-  `(progn
-     ,@(cl:mapcar (lambda (form)
-                    (let ((slot (etypecase form
-                                  (symbol form)
-                                  (cons (car form)))))
-                      `(defmethod lookup
-                           ((obj ,class) (key (eql ,(make-keyword slot))))
-                         (slot-value obj ',slot))))
-                  child-slots)))
+  (let ((child-slot-names
+          (iter (for cs in child-slots)
+                (collect (etypecase cs
+                           (symbol cs)
+                           (cons (car cs)))))))
+    (dolist (slot child-slot-names) (store-actual-slot (make-keyword slot) slot))
+    (unless (subtypep class 'node)
+      `(progn
+         ,@(cl:mapcar (lambda (slot)
+                        `(defmethod lookup
+                             ((obj ,class) (key (eql ,(make-keyword slot))))
+                           (slot-value obj ',slot)))
+                      child-slot-names)))))
 
 (defun expand-setf-error-methods (class child-slots)
   "Generate (setf <slot>) methods for CLASS that just signal errors
@@ -989,11 +1022,11 @@ tree has its predecessor set to TREE."
      (lookup (lookup node (car path)) (cdr path)))
     (cons
      (destructuring-bind (slot . i) path
-       (lookup (slot-value node slot) i)))))
+       (lookup (slot-value node (get-actual-slot slot)) i)))))
 (defmethod lookup ((node node) (slot null))
   node)
 (defmethod lookup ((node node) (slot symbol))
-  (slot-value node slot))
+  (slot-value node (get-actual-slot slot)))
 (defmethod lookup ((node node) (i integer))
   (elt (children node) i))
 
