@@ -396,6 +396,7 @@ of NODE to their members")
   (assert (keywordp key))
   (assert (equal (symbol-name key)
                  (symbol-name actual-slot)))
+  (assert (not (eql key actual-slot)))
   (let ((a (get key 'actual-slot)))
     (when (and a (not (eql a actual-slot)))
       (error "Keyword ~s corresponds to two different slots: ~s and ~s"
