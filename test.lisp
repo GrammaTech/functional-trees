@@ -42,6 +42,12 @@
    :subst-if
    :subst-if-not
    :with-encapsulation)
+
+  (:shadowing-import-from
+   :functional-trees/attrs
+   :def-attr-fun
+   :*attrs*
+   :with-attr-table)
    
   (:shadowing-import-from
    :fset
@@ -1743,3 +1749,28 @@ diagnostic information on error or failure."
         (is (equal (convert 'list (car rpath)) '((1 t) (4 t))))
         (is (equal (convert 'list (cadr rpath)) '((1 t) (4 t) (9 t) (11 t))))
         (is (null (cddr rpath))))))
+
+;;; Tests of attribute functions
+
+(deftest attr.1 ()
+  (def-attr-fun attr.1-fn (parent)
+    "Label each node with its parent"
+    (:method ((node node) &optional parent)
+      (mapc {attr.1-fn _ node} (children node))
+      parent))
+  (let ((t1 (convert 'node-with-data '(a b c))))
+    (with-attr-table t1
+      (is (eql (attr.1-fn t1 nil) nil))
+      (is (eql (attr.1-fn t1) nil))
+      (is (eql (attr.1-fn (first (children t1))) t1))
+      (is (eql (attr.1-fn (second (children t1))) t1)))))
+
+(deftest attr.2 ()
+  (def-attr-fun attr.2-fun ()
+    "Size function"
+    (:method ((node node))
+      (reduce #'+ (children node) :key #'attr.2-fun :initial-value 1)))
+  (let ((t1 (convert 'node-with-data '(a (b c) (d e)))))
+    (with-attr-table t1
+      (is (eql (attr.2-fun t1) 5))
+      (is (eql (attr.2-fun t1) 5)))))
