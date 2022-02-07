@@ -17,6 +17,7 @@
   (:shadowing-import-from
    :fset
    :map
+   :set
    :convert
    :empty-map)
   (:shadowing-import-from
@@ -51,6 +52,8 @@
       (is (equal? (st (third (children root)))
                   (convert 'map '(("x" . "int") ("y" . "int")))))
       (is (equal? (defs (third (children root)))
-                  (convert 'map '(("z" . "char"))))))))
+                  (convert 'map '(("z" . "char")))))
+      (is (equal? (uses root) (set "x" "y" "z"))))))
+
 
 

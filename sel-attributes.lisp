@@ -10,9 +10,10 @@
    :curry-compose-reader-macros
    :named-readtables)
   (:shadowing-import-from :software-evolution-library/software/parseable
-                          :source-text)
-  (:shadowing-import-from :functional-trees :map)
-  (:export :st :defs)
+                          :source-text :text)
+  (:shadowing-import-from :fset :set :map :union :empty-set :empty-map
+                          :restrict)
+  (:export :st :defs :uses)
   (:documentation "Package for integration of SEL with FT attributes."))
 
 (in-package :functional-trees/sel-attributes)
@@ -24,16 +25,22 @@
 (defun st-add (st key value)
   (if key (fset:with st key value) st))
 
-;;; There are two attr functions in this example.
+;;; There are three attr functions in this example.
 ;;; The first, st, is the symbol table map coming into the node.
 ;;; The second, defs, is the map of definitions produced by and
 ;;; exported by the node.
+;;; The third, uses, is a set of names that occur in a subtree.
 
 (def-attr-fun st (in)
   "Compute the symbol table at this node."
   ;; Default method: propagate down
   (:method ((node node) &optional in)
-    (mapc-attrs-children #'st (list in) node)
+    ;; This passes the full ST down to the subtree
+    ;; (mapc-attrs-children #'st (list in) node)
+    ;; but this prunes off all the symbols not used in the subtree,
+    ;; which may make incrementalization easier.
+    (mapc (lambda (n) (st n (restrict in (uses n))))
+          (children node))
     in)
   ;; Perhaps include a superclass that means definitions propagate across
   ;; the children
@@ -58,6 +65,14 @@
     (decl-map node))
   )
 
+(def-attr-fun uses ()
+  "Set of names that occur in a subtree"
+  (:method ((node node))
+    (reduce #'union (children node)
+            :key #'uses :initial-value (fset:empty-set)))
+  (:method ((node c-identifier))
+    (fset:set (text node))))
+
 (defgeneric decl-map (node)
   (:documentation "Construct a map that gives the declarations produced by NODE")
   ;; This is a very simple prototype, handling only simple declarations
@@ -67,5 +82,5 @@
            (alist
              (iter (for declarator in (c-declarator node))
                    (when-let ((name declarator))
-                     (collect (cons (source-text name) (source-text type)))))))
+                     (collect (cons (text name) (text type)))))))
       (convert 'fset:map alist))))
