@@ -72,10 +72,17 @@ If not there, invoke the thunk THUNK and memoize the values returned."
       ;; additional pushes onto the alist may occur in the call to THUNK,
       ;; so get the push of p onto the list out of the way now.  If we
       ;; tried to assign after the call we might lose information.
-      (setf (gethash node table) (cons p alist))
-      (let ((vals (multiple-value-list (funcall thunk))))
-        (setf (cdr p) vals)
-        (values-list vals)))))
+      (unwind-protect
+           (progn
+             (setf (gethash node table) (cons p alist))
+             (let ((vals (multiple-value-list (funcall thunk))))
+               (setf (cdr p) vals)
+               (values-list vals)))
+        ;; If a non-local return occured from THUNK, we need
+        ;; to remove p from the alist, otherwise we will never
+        ;; be able to compute the function here
+        (when (eql (cdr p) :in-process)
+          (removef (gethash node table) p))))))
        
 (defun mapc-attrs (fn vals nodes)
   (mapc (lambda (node) (apply fn node vals)) nodes))
