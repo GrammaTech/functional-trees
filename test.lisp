@@ -1774,3 +1774,11 @@ diagnostic information on error or failure."
     (with-attr-table t1
       (is (eql (attr.2-fun t1) 5))
       (is (eql (attr.2-fun t1) 5)))))
+
+(deftest attr-circular ()
+  (def-attr-fun attr.3-fn ()
+    (:method ((node node)) (attr.3-fn node)))
+  (let ((t1 (convert 'node-with-data '(a))))
+    (with-attr-table t1
+      (is (handler-case (progn (attr.3-fn t1) nil)
+            (error () t))))))

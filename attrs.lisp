@@ -64,13 +64,18 @@ If not there, invoke the thunk THUNK and memoize the values returned."
          (alist (gethash node table)))
     (iter (for p in alist)
           (when (eql (car p) fn-name)
-            (return-from memoize-attr-fun (values-list (cdr p)))))
-    (let ((vals (multiple-value-list (funcall thunk))))
-      (if alist
-          (push (cons fn-name vals) (cdr alist))
-          (setf (gethash node table)
-                (list (cons fn-name vals))))
-      (values-list vals))))
+            (let ((vals (cdr p)))
+              (if (listp vals)
+                  (return-from memoize-attr-fun (values-list (cdr p)))
+                  (error "Circularity detected when computing ~a" fn-name)))))
+    (let ((p (cons fn-name :in-process)))
+      ;; additional pushes onto the alist may occur in the call to THUNK,
+      ;; so get the push of p onto the list out of the way now.  If we
+      ;; tried to assign after the call we might lose information.
+      (setf (gethash node table) (cons p alist))
+      (let ((vals (multiple-value-list (funcall thunk))))
+        (setf (cdr p) vals)
+        (values-list vals)))))
        
 (defun mapc-attrs (fn vals nodes)
   (mapc (lambda (node) (apply fn node vals)) nodes))
