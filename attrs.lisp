@@ -59,7 +59,7 @@
 (defun memoize-attr-fun (node fn-name thunk)
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
-  (declaim (type function thunk))
+  (declare (type function thunk))
   (let* ((table (attrs-table *attrs*))
          (alist (gethash node table)))
     (iter (for p in alist)
