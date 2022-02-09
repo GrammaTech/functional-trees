@@ -16,12 +16,26 @@ functions on nodes that have the following properties:
 - The first argument is the node to which the attribute belongs.
 - The remaining arguments are optional.
 - The optional arguments are values that are passed in from other nodes that are then used to compute the value of the attribute.
-- The value also depends on a special variable `*root*`, which is the root of the tree in which the node resides.
-- For any given value of `*root*` and any given node, the function may only be called with one set of values of its optional arguments.
+- The values depend on a special variable `*attrs`, in which is stored the attribute values, the root of the tree on which the attributes are being computed, and any other information needed.
+- The variable `*attrs*` is initialized by the macro `with-attr-table`, setting up an attribute context.  After that, its value may be retrieved from that variable, and bound later to `*attrs*` to access the attributes that were set up in that context.
+- Attribute values do not persist between different attribute contexts.
+- For a given attribute context and any given node, the function may only be called with one set of values of its optional arguments.
 - After that, calling the function returns the value(s) computed in that call (they have been cached.)
 - Calling the function with no optional arguments before that is an error.
 - If a function has no optional arguments, then the first time it is called
   it will be computed, and the cached value computed will be used thereafter.
+
+## Roots of Attribute Contexts
+
+As designed, the root given in `with-attr-table` is the root of an
+AST.  However, it could be useful to make it be a software object or a
+project.  For example, the attributes of a file may depend on the
+attributes computed for another file (an include file, for example).
+
+TODO: determine the best solution here.  It is likely that we still
+need a way to import attributes from outside a project (consider
+library header files, which we don't want to have to copy into a
+project.)
 
 ## Dependencies
 
@@ -64,6 +78,22 @@ values computed on the car of suffix of the list can be passed to the
 cdr of the list.  Special attribute functions will be defined that
 take the parent node, the child slot name, and the cons cell (or null)
 as required arguments (along with what optional arguments are needed.)
+
+## Persistent Attributes
+
+It may be useful to make some attributes persistent: that is, they
+would carry over to a new version of a tree in a new context.  This
+may be a special case of incrementalization, or it may be orthogonal.
+
+TODO: think about the design issues for these attributes.
+
+## Lazy Attributes
+
+As designed, attributes are computed eagerly (for downward flowing information,
+by invoking functions on the root) and then retrieved from a cache.  It might
+also be useful to reverse this flow, computing things on an as-needed basis.
+
+TODO: consider how lazy attributes could fit into this scheme.
 
 ## Example
 
