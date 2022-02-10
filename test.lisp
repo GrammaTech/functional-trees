@@ -47,7 +47,9 @@
    :functional-trees/attrs
    :def-attr-fun
    :*attrs*
-   :with-attr-table)
+   :with-attr-table
+   :attr-missing
+   :attrs-root)
    
   (:shadowing-import-from
    :fset
@@ -1782,3 +1784,27 @@ diagnostic information on error or failure."
     (with-attr-table t1
       (is (handler-case (progn (attr.3-fn t1) nil)
             (error () t))))))
+
+(deftest attr.4 ()
+  (def-attr-fun attr.4-fn (parent)
+    (:method ((node node) &optional parent)
+      (mapc {attr.4-fn _ node} (children node))
+      parent))
+  (defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.4-fn)) (node node))
+    (let ((root (attrs-root *attrs*)))
+      (attr.4-fn root nil)))
+  (let* ((r (convert 'node-with-data '(a b (c d))))
+         (n1 (first (children r)))
+         (n2 (second (children r)))
+         (n3 (first (children n2))))
+    (with-attr-table r
+      (is r)
+      (is n1)
+      (is n2)
+      (is n3)
+      (is (eql (attr.4-fn n3) n2))
+      (is (eql (attr.4-fn n2) r))
+      (is (eql (attr.4-fn n1) r))
+      (is (eql (attr.4-fn r) nil)))))
+
+
