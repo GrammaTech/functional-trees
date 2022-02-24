@@ -78,7 +78,7 @@
               (t
                (assert (eql (cdr p) :in-progress))
                (error "Circularity detected when computing ~a" fn-name)))))
-    nil))
+    (values alist nil)))
 
 (defun cached-attr-fn (node fn-name)
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING

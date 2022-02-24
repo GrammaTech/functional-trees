@@ -1806,5 +1806,3 @@ diagnostic information on error or failure."
       (is (eql (attr.4-fn n2) r))
       (is (eql (attr.4-fn n1) r))
       (is (eql (attr.4-fn r) nil)))))
-
-
