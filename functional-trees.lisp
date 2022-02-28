@@ -39,7 +39,8 @@
                 :slot-definition-allocation
                 :slot-definition-initform
                 :slot-definition-initargs
-                :class-slots)
+                :class-slots
+                :ensure-finalized)
   (:export :copy :tree-copy
            :copy-with-children-alist
            :node :child-slots
@@ -468,8 +469,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                                          &environment env)
   (let ((class (find-class class-name env)))
     (assert class () "No class found for ~s" class-name)
-    ;; create an instance to cause the class to be finalized
-    (make-instance class-name)
+    (ensure-finalized class)
     (let ((child-slots
            (nest (eval)
                  (slot-definition-initform)
