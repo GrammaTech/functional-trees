@@ -11,6 +11,7 @@
    :def-attr-fun
    :with-attr-table
    :*attrs*
+   :attrs-root*
    :mapc-attrs
    :mapc-attrs-children
    :mapc-attrs-slot
@@ -35,6 +36,10 @@
     :weakness :key
     :test #'eq
     (values-list args)))
+
+(defun attrs-root* ()
+  "Get the root of the current attrs table."
+  (attrs-root *attrs*))
 
 (defmacro with-attr-table (root &body body)
   "Create an ATTRS structure with root ROOT
