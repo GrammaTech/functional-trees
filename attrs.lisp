@@ -45,8 +45,14 @@
   "Create an ATTRS structure with root ROOT
    and bind it to *ATTRS*, then evaluate BODY
    in an implicit PROGN."
-  `(let ((*attrs* (make-attrs :root ,root)))
-     ,@body))
+  (once-only (root)
+    `(let ((*attrs*
+             (if (and (boundp '*attrs*)
+                      (eql (attrs-root *attrs*)
+                           ,root))
+                 *attrs*
+                 (make-attrs :root ,root))))
+       ,@body)))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
   (assert (symbolp name))
