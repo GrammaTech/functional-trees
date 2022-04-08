@@ -94,7 +94,9 @@
 (defun cached-attr-fn (node fn-name)
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
 function on it if not found at first."
-  (declare (type function thunk))
+  (declare (type function))
+  (unless (boundp '*attrs*)
+    (error (make-condition 'unbound-attrs :fn-name fn-name)))
   (let* ((table (attrs-table *attrs*)))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node fn-name table)
@@ -111,6 +113,8 @@ function on it if not found at first."
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
+  (unless (boundp '*attrs*)
+    (error (make-condition 'unbound-attrs :fn-name fn-name)))
   (let* ((table (attrs-table *attrs*))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
@@ -144,6 +148,19 @@ If not there, invoke the thunk THUNK and memoize the values returned."
              (format stream "Uncomputed attr function ~a on node ~a"
                      (uncomputed-attr-fn condition)
                      (uncomputed-attr-node condition)))))
+
+(define-condition unbound-attrs (unbound-variable)
+  ((fn-name :initarg :fn-name :initform nil
+            :reader unbound-attrs-fn-name))
+  (:documentation "Error to be used when *attrs* is unbound while calling an
+ attrs function")
+  (:report
+   (lambda (condition stream)
+     (with-slots (fn-name) condition
+       (format stream
+               "Special variable ~s unbound while trying to compute attribute ~s.
+~s should be used to set ~s before trying to populate any attributes."
+               '*attrs* fn-name 'with-attr-table '*attrs*)))))
 
 (defgeneric attr-missing (fn-name node)
   (:documentation
