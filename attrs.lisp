@@ -17,7 +17,8 @@
    :mapc-attrs-slot
    :attr-missing
    :attrs-table
-   :attrs-root))
+   :attrs-root
+   :attr-proxy))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -27,6 +28,7 @@
 
 (defstruct attrs
   (table (make-attr-table))
+  (proxies (make-attr-table))
   (root  nil))
 
 (declaim (special *attrs*))
@@ -40,6 +42,13 @@
 (defun attrs-root* ()
   "Get the root of the current attrs table."
   (attrs-root *attrs*))
+
+(defun attr-proxy (attr)
+  (gethash attr (attrs-proxies *attrs*)))
+
+(defun (setf attr-proxy) (value attr)
+  (setf (gethash attr (attrs-proxies *attrs*))
+        value))
 
 (defmacro with-attr-table (root &body body)
   "Create an ATTRS structure with root ROOT
@@ -104,10 +113,15 @@ function on it if not found at first."
       (attr-missing fn-name node)
       (setf (values alist p)
             (retrieve-memoized-attr-fn node fn-name table))
-      (unless p 
-         ;; We tried once, it's still missing, so fail
-        (error (make-condition 'uncomputed-attr :node node :fn fn-name)))
-      (values-list (cdr p)))))
+      (if p
+          (values-list (cdr p))
+          ;; We tried once, it's still missing, so fail
+          (block nil
+            (when-let (proxy (attr-proxy node))
+              (ignore-some-conditions (uncomputed-attr)
+                (return (cached-attr-fn proxy fn-name))))
+            ;; The proxy also failed.
+            (error (make-condition 'uncomputed-attr :node node :fn fn-name)))))))
 
 (defun memoize-attr-fun (node fn-name thunk)
   "Look for a memoized value for attr function FN-NAME on NODE.
@@ -168,7 +182,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
     The default method signals an error.")
   (:method ((fn-name symbol) (node node))
     (error (make-condition 'uncomputed-attr :node node :fn fn-name))))
-       
+
 (defun mapc-attrs (fn vals nodes)
   (mapc (lambda (node) (apply fn node vals)) nodes))
 
