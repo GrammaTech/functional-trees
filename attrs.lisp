@@ -7,6 +7,7 @@
    :named-readtables)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
+  (:import-from :serapeum :standard/context)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -76,9 +77,10 @@
                (memoize-attr-fun ,node ',name #',fn))))
       `(defgeneric ,name (,node &optional ,@optional-args)
          ,@(when docstring `((:documentation ,docstring)))
-         (:method :around (,node &optional ,@(when optional-args
-                                               `((,(car optional-args) nil ,present?)
-                                                 ,@(cdr optional-args))))
+         (:method-combination standard/context)
+         (:method :context (,node &optional ,@(when optional-args
+                                                `((,(car optional-args) nil ,present?)
+                                                  ,@(cdr optional-args))))
            ,@(when optional-args
                `((declare (ignorable ,@optional-args))))
            ,(if optional-args
