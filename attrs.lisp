@@ -75,11 +75,11 @@
             `(flet ((,fn () (call-next-method)))
                (declare (dynamic-extent #',fn))
                (memoize-attr-fun ,node ',name #',fn))))
-      `(defgeneric ,name (,node &optional ,@optional-args)
+      `(defgeneric ,name (,node ,@(when optional-args `(&optional ,@optional-args)))
          ,@(when docstring `((:documentation ,docstring)))
          (:method-combination standard/context)
-         (:method :context (,node &optional ,@(when optional-args
-                                                `((,(car optional-args) nil ,present?)
+         (:method :context (,node ,@(when optional-args
+                                      `(&optional (,(car optional-args) nil ,present?)
                                                   ,@(cdr optional-args))))
            ,@(when optional-args
                `((declare (ignorable ,@optional-args))))
