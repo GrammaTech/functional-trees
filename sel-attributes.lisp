@@ -57,11 +57,11 @@
             :initial-value in))
   )
 
-(def-attr-fun defs (in)
+(def-attr-fun defs ()
   "Map of definitions from a node"
-  (:method ((node node) &optional in)
+  (:method ((node node))
     (empty-map))
-  (:method ((node c-declaration) &optional in)
+  (:method ((node c-declaration))
     (decl-map node))
   )
 
