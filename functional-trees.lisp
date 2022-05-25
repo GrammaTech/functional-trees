@@ -1060,7 +1060,8 @@ handle lambda lists for method argments."
 
 
 ;;; TODO change this to work with slot-specifier objects
-(defmacro descend ((name &key other-args extra-args replace splice checks)
+(defmacro descend ((name &key other-args extra-args replace splice checks
+                           (missing :error))
                    &body new
                      ;; VARS is used to generate IGNORABLE declarations to avoid
                      ;; style warnings
@@ -1074,20 +1075,28 @@ additional arguments that are not used.  REPLACE is a boolean flagging
 if NEW replaces the target or is added alongside the target.  SPLICE
 is a boolean flagging if NEW is inserted or spliced.  CHECKS allows
 for the specification of checks to run at the beginning of the
-functions."
+functions.  MISSING specifies what to do if a node argument
+is not present in the tree:  :ERROR means signal an error,
+:NOOP means do nothing (return the unchanged tree), and :ROOT
+act on the root of the tree (the previous behavior)."
   (flet ((arg-values (args) (cl:mapcar #'car (cl:remove '&optional args))))
     `(progn
-       (defmethod
-           ,name :around ((tree node) (path t) ,@other-args ,@extra-args)
-           (declare (ignorable ,@vars))
-           (with-encapsulation tree (call-next-method)))
        (defmethod ,name ((tree node) (path null) ,@other-args ,@extra-args)
           (declare (ignorable ,@vars))
          ,@checks (values ,@new))
        (defmethod ,name ((tree node) (location node) ,@other-args ,@extra-args)
-          (declare (ignorable ,@vars))
-         ,@checks (,name tree (path-of-node tree location)
-                         ,@(arg-values other-args)))
+         (declare (ignorable ,@vars))
+         ,@checks
+         (let ((path (path-of-node tree location)))
+           ,(ecase missing
+              (:root `(,name tree path ,@(arg-values other-args)))
+              (:noop `(if (and (null path) (not (eql location tree)))
+                          tree
+                          (,name tree path ,@(arg-values other-args))))
+              (:error `(if (and (null path) (not (eql location tree)))
+                           (error "In ~a, node ~a not found in tree ~a"
+                                  ',name location tree)
+                           (,name tree path ,@(arg-values other-args)))))))
        (defmethod ,name ((tree node) (slot symbol) ,@other-args ,@extra-args)
           (declare (ignorable ,@vars))
          ,@checks (copy tree (make-keyword slot) ,@new))
