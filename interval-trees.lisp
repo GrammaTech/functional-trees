@@ -388,7 +388,8 @@ have data satisfying the TEST comparison function.")
                 (root-left (node-left root))
                 (root-right (node-right root)))
             (block nil
-              (labels ((%max-left (n)
+              (labels ((%max-left (n &optional moves)
+                         (declare (optimize (debug 0))) ;tail recursion
                          (unless n (return))
                          (if (null (node-right n))
                              (progn
@@ -398,12 +399,18 @@ have data satisfying the TEST comparison function.")
                                ;; Merge this node into root
                                (decf size)
                                (setf root-lo (node-lo n))
-                               (node-left n))
-                             (let ((new-right (%max-left (node-right n))))
-                               (move-node n (node-left n) new-right)))))
+                               (reduce
+                                (lambda (right move)
+                                  (move-node move
+                                             (node-left move)
+                                             right))
+                                moves
+                                :initial-value (node-left n)))
+                             (%max-left (node-right n) (cons n moves)))))
                 (setf root-left (%max-left root-left))))
             (block nil
-              (labels ((%max-right (n)
+              (labels ((%max-right (n &optional moves)
+                         (declare (optimize (debug 0))) ;tail recursion
                          (unless n (return))
                          (if (null (node-left n))
                              (progn
@@ -413,9 +420,14 @@ have data satisfying the TEST comparison function.")
                                ;; Merge this node into root
                                (decf size)
                                (setf root-hi (node-hi n))
-                               (node-right n))
-                             (let ((new-left (%max-right (node-left n))))
-                               (move-node n new-left (node-right n))))))
+                               (reduce
+                                (lambda (left move)
+                                  (move-node move
+                                             left
+                                             (node-right move)))
+                                moves
+                                :initial-value (node-right n)))
+                             (%max-right (node-left n) (cons n moves)))))
                 (setf root-right (%max-right root-right))))
             (if (< size (itree-size tree))
                 (let ((new-root (make-node :data root-data
