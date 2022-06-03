@@ -406,6 +406,10 @@ of NODE to their members")
       (setf (get key 'actual-slot) actual-slot))
     actual-slot))
 
+(defun store-actual-slots (slot-names)
+  (dolist (slot-name slot-names)
+    (store-actual-slot (make-keyword slot-name) slot-name)))
+
 (defun get-actual-slot (slot)
   (etypecase slot
     (keyword (or (get slot 'actual-slot)
@@ -443,10 +447,11 @@ of NODE to their members")
                 (collect (etypecase cs
                            (symbol cs)
                            (cons (car cs)))))))
-    (dolist (slot child-slot-names) (store-actual-slot (make-keyword slot) slot))
-    (unless (subtypep class 'node)
-      `(progn
-         ,@(cl:mapcar (lambda (slot)
+    `(progn
+       ,@(when child-slot-names
+           `((store-actual-slots ',child-slot-names)))
+       ,@(unless (subtypep class 'node)
+           (cl:mapcar (lambda (slot)
                         `(defmethod lookup
                              ((obj ,class) (key (eql ,(make-keyword slot))))
                            (slot-value obj ',slot)))
