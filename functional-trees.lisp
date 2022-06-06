@@ -448,6 +448,9 @@ of NODE to their members")
                            (symbol cs)
                            (cons (car cs)))))))
     `(progn
+       ;; Storing the actual slot needs to be done as part of the
+       ;; macroexpansion, within an eval-when form, rather than in the
+       ;; macro itself, so the mapping persists beyond compile time.
        ,@(when child-slot-names
            `((store-actual-slots ',child-slot-names)))
        ,@(unless (subtypep class 'node)
