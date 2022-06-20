@@ -966,19 +966,19 @@ diagnostic information on error or failure."
 (deftest remove-tree-if ()
   ;; NOTE: Counterintuitively, because the "0" node is the parent of
   ;; the rest of the tree.
-  (is (zerop (length (convert 'list (remove-if #'evenp (convert 'node-with-data
-                                                                (iota 100))
-                                               :key #'data)))))
-  (is (= 50 (length (convert 'list (remove-if #'oddp (convert 'node-with-data
-                                                              (iota 100))
-                                              :key #'data))))))
+  (is (emptyp (convert 'list (remove-if #'evenp (convert 'node-with-data
+                                                         (iota 100))
+                                        :key #'data))))
+  (is (length= 50 (convert 'list (remove-if #'oddp (convert 'node-with-data
+                                                            (iota 100))
+                                            :key #'data)))))
 
 (deftest remove-tree-if-not ()
-  (is (= 50 (length (convert 'list
-                             (remove-if-not #'evenp
-                                            (convert 'node-with-data
-                                                     (iota 100))
-                                            :key #'data)))))
+  (is (length= 50 (convert 'list
+                           (remove-if-not #'evenp
+                                          (convert 'node-with-data
+                                                   (iota 100))
+                                          :key #'data))))
   (is (equal (convert 'list (remove-if-not (lambda (a)
                                              (or (not (integerp a))
                                                  (<= 2 a 4)))
@@ -1120,15 +1120,13 @@ diagnostic information on error or failure."
     (is (zerop (count 3 two-fives :key #'data))))
   ;; Should replace (5 6 7 8) with :TOUCHED.
   (is (nest
-       (= 6)
-       (length)
+       (length= 6)
        (flatten)
        (convert 'list)
        (with (convert 'node-with-data '(1 2 3 4 (5 6 7 8) (9))) '(3)
              (make-instance 'node-with-data :data :touched))))
   ;; Should replace 6 with :TOUCHED.
-  (is (nest (= 9)
-            (length)
+  (is (nest (length= 9)
             (flatten)
             (convert 'list)
             (with (convert 'node-with-data
@@ -1158,7 +1156,7 @@ diagnostic information on error or failure."
 (deftest less-test ()
   (let ((no-threes (less (convert 'node-with-data (iota 10)) '(2))))
     (is (zerop (count 3 no-threes)))
-    (is (= 9 (length (convert 'list no-threes)))))
+    (is (length= 9 (convert 'list no-threes))))
   (let* ((r (convert 'node-with-data '(:a 1 (:b 2) (:c 3) 4)))
          (n (@ r 2)))
     (is (equal (flatten (convert 'list (less r n)))
