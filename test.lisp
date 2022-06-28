@@ -1718,7 +1718,7 @@ diagnostic information on error or failure."
              :good)))
   (is (equal (with-standard-io-syntax
                (with-output-to-string (s)
-                 (write (make-condition 'ft/it:interval-collision-error :key1 '(1 . 4) :key2 '(2 . 3))
+                 (write (make-condition 'ft/it:interval-collision-error :lo1 1 :hi1 4 :lo2 2 :hi2 3)
                         :escape nil :stream s)))
              "Interval collision: [1,4] intersects [2,3]")))
 

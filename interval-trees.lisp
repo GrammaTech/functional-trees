@@ -27,37 +27,23 @@ for integer intervals."))
 
 (deftype bound ()
   "The type of endpoints of the intervals"
-  'integer)
+  '(integer 0 (#.(1- (ash 1 61)))))
+
+(deftype key-type ()
+  "The type of keys in the interval tree, which should subsume BOUND"
+  '(integer -1 #.(1- (ash 1 61))))
 
 (defstruct node
   (left nil :type (or null node))
   (right nil :type (or null node))
-  ;; Key is either an integer (representing the interval
-  ;; containing just that integer) or a cons (representing
-  ;; the interval [car,cdr]).
-  (key nil :type (or null bound (cons bound bound)))
+  (lo nil :type bound)
+  (hi nil :type bound)
   (data nil :type t))
 
-(defun node-lo (node)
-  (let ((key (node-key node)))
-    (if (consp key) (car key) key)))
-
-(defun node-hi (node)
-  (let ((key (node-key node)))
-    (if (consp key) (cdr key) key)))
-
-(defun make-key (lo hi)
-  (assert (<= lo hi))
-  (if (eql lo hi) lo (cons lo hi)))
-
-(defun key-lo (key)
-  (etypecase key
-    (integer key)
-    (cons (car key))))
-(defun key-hi (key)
-  (etypecase key
-    (integer key)
-    (cons (or (cdr key) (car key)))))
+(defun node-key (node)
+  (let ((lo (node-lo node))
+        (hi (node-hi node)))
+    (if (eql lo hi) lo (cons lo hi))))
 
 (defun interval-range (interval)
   (etypecase interval
@@ -66,7 +52,7 @@ for integer intervals."))
 
 (defstruct itree
   (root nil :type (or null node))
-  (size 0 :type (integer 0)))
+  (size 0 :type bound))
 
 (defgeneric nodes (tree)
   (:documentation "Returns the nodes in TREE")
@@ -102,15 +88,14 @@ for integer intervals."))
           (format s " ~a ~a" (node-left node) (node-right node))))))
 
 (define-condition interval-collision-error (error)
-  ((key1 :accessor key1 :initarg :key1)
-   (key2 :accessor key2 :initarg :key2))
+  ((lo1 :accessor lo1 :initarg :lo1)
+   (hi1 :accessor hi1 :initarg :hi1)
+   (lo2 :accessor lo2 :initarg :lo2)
+   (hi2 :accessor hi2 :initarg :hi2))
   (:documentation "Error thrown when an inserted interval overlaps an existing interval")
   (:report (lambda (cnd s)
-             (let ((key1 (key1 cnd))
-                   (key2 (key2 cnd)))
-               (format s "Interval collision: [~a,~a] intersects [~a,~a]"
-                       (key-lo key1) (key-hi key1)
-                       (key-lo key2) (key-hi key2))))))
+             (format s "Interval collision: [~a,~a] intersects [~a,~a]"
+                     (lo1 cnd) (hi1 cnd) (lo2 cnd) (hi2 cnd)))))
 
 ;;; TODO -- in the itree-find... functions, move the found node
 ;;; (or last node in the path) to the root.  This will involve
@@ -119,10 +104,11 @@ for integer intervals."))
 (defun itree-find-node (tree key)
   "Return the NODE whose interval contains KEY, or NIL if none.
 Also return the depth of the node (or the NIL leaf) in the tree."
-  (declare (type bound key)
+  (declare (type key-type key)
            (type itree tree))
   (let ((node (itree-root tree))
         (depth 0))
+    (declare (type bound depth))
     (iter (while node)
           (cond
             ((< key (node-lo node))
@@ -154,7 +140,7 @@ the depth of the node, which is the length of the path."
   ;; TODO -- also return the GLB and LUB nodes, and return
   ;; their reversed paths as well (these will be suffixes of the
   ;; reversed path to the NIL leaf itself.)
-  (declare (type bound key)
+  (declare (type key-type key)
            (type itree tree))
   (let ((node (itree-root tree))
         (path nil)
@@ -183,7 +169,7 @@ If no such interval is found, return NIL."
 (defun itree-glb-node (tree key)
   "Find the highest interval in TREE for which KEY is >= LO, or NIL
 if none."
-  (declare (type bound key)
+  (declare (type key-type key)
            (type itree tree))
   (let ((node (itree-root tree))
         (glb nil))
@@ -207,7 +193,7 @@ if none."
    "Find the lowest interval in TREE for which KEY is <= HI, or NIL
 if none.  Returns the path to the node (list of ancestors of node,
 in decreasing order of depth) if it exists."
-  (declare (type bound key)
+  (declare (type key-type key)
            (type itree tree))
   (let ((node (itree-root tree))
         (lub nil)
@@ -241,7 +227,8 @@ in decreasing order of depth) if it exists."
   (declare (type node node))
   (make-node :left left
              :right right
-             :key (node-key node)
+             :lo (node-lo node)
+             :hi (node-hi node)
              :data (node-data node)))
 
 (defun intervals-of-itree (itree)
@@ -349,8 +336,8 @@ some node.  Return NIL if there is no next node."
 (defun collision (node lo hi data)
   (declare (ignore data))
   (error (make-condition 'interval-collision-error
-                         :key1 (make-key lo hi)
-                         :key2 (make-key (node-lo node) (node-hi node)))))
+                         :lo1 lo :hi1 hi
+                         :lo2 (node-lo node) :hi2 (node-hi node))))
 
 (defun merge-intervals (interval-list)
   "Combine intervals with the same datum.  Assumes INTERVAL-LIST
@@ -358,11 +345,12 @@ is fresh and can be modified."
   (setf interval-list (sort interval-list #'< :key #'caar))
   (when interval-list 
     (destructuring-bind ((lo . hi) datum) (car interval-list)
+      (declare (type bound lo hi))
       (nconc
        (iter (for interval in (cdr interval-list))
          (destructuring-bind ((next-lo . next-hi) next-datum)
              interval
-           (if (and (eql next-lo (1+ hi))
+           (if (and (eql next-lo (the bound (1+ hi)))
                     (eql next-datum datum))
                (setf hi next-hi)
                (progn
@@ -387,6 +375,7 @@ have data satisfying the TEST comparison function.")
                 (root-hi (node-hi root))
                 (root-left (node-left root))
                 (root-right (node-right root)))
+            (declare (type bound root-lo root-hi))
             (block nil
               (labels ((%max-left (n &optional moves)
                          (declare (optimize (debug 0))) ;tail recursion
@@ -431,18 +420,21 @@ have data satisfying the TEST comparison function.")
                 (setf root-right (%max-right root-right))))
             (if (< size (itree-size tree))
                 (let ((new-root (make-node :data root-data
-                                           :key (make-key root-lo root-hi) :left root-left :right root-right)))
+                                           :lo root-lo
+                                           :hi root-hi
+                                           :left root-left :right root-right)))
                   (make-itree :root new-root :size size))
               tree))
           tree))))
 
 (defun itree-insert (tree lo hi data
                           &aux (new-node
-                                (make-node :key (if (eql lo hi) lo (cons lo hi))
+                                (make-node :lo lo :hi hi
                                            :data data)))
   "Insert an interval [lo,hi] mapping to data into tree.
 Return the new tree.  If the interval overlaps an interval
 already in the tree signal an error"
+  (declare (type bound lo hi))
   (multiple-value-bind (node path)
       (itree-find-node-path tree lo)
     (when node
@@ -530,6 +522,7 @@ overlaps one already in the tree."
 
 (defun itree-remove-interval (itree lo hi)
   "Remove the interval [LO,HI] from ITREE"
+  (declare (type bound lo hi))
   (iter (while (<= lo hi))
         (multiple-value-bind (node path) (itree-lub-node-path itree lo)
           (while node)
@@ -541,18 +534,19 @@ overlaps one already in the tree."
                (if (> n-hi hi)
                    ;; remove internal interval
                    (let* ((new2 (make-node :left nil :right (node-right node)
-                                           :key (make-key (1+ hi) n-hi)
+                                           :lo (1+ hi) :hi n-hi
                                            :data (node-data node)))
                           (new1 (make-node :left (node-left node)
                                            :right new2
-                                           :key (make-key n-lo (1- lo))
+                                           :lo n-lo :hi (1- lo)
                                            :data (node-data node))))
                      (setf itree (itree-replace-node itree new1 path 1))
                      (return))
                    (let ((new (make-node :left (node-left node)
                                          :right (node-right node)
                                          :data (node-data node)
-                                         :key (make-key n-lo (1- lo)))))
+                                         :lo n-lo :hi (1- lo)
+                                         )))
                      (setf itree (itree-replace-node itree new path))
                      (return))))
               ;; (>= n-lo lo)
@@ -561,7 +555,8 @@ overlaps one already in the tree."
                (let ((new (make-node :left (node-left node)
                                      :right (node-right node)
                                      :data (node-data node)
-                                     :key (make-key (1+ hi) n-hi))))
+                                     :lo (1+ hi) :hi n-hi
+                                     )))
                  (setf itree (itree-replace-node itree new path)))
                (return))
               (t
