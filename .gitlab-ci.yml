@@ -41,9 +41,18 @@ scheduled-build:
   stage: build
   inherit:
     default: false
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  tags: ["kubernetes", "cluster"]
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
   script:
-    - docker build --no-cache -t $DOCKER_REGISTRY/$CI_PROJECT_PATH .
-    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN $DOCKER_REGISTRY
-    - docker push $DOCKER_REGISTRY/$CI_PROJECT_PATH
+    - >-
+      /kaniko/executor
+      --context=$CI_PROJECT_DIR/
+      --dockerfile=$CI_PROJECT_DIR/Dockerfile
+      --destination=$CI_REGISTRY_IMAGE
   only:
     - schedules
