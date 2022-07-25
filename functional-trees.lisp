@@ -34,7 +34,8 @@
   (:shadowing-import-from :alexandria :compose)
   (:shadowing-import-from :functional-trees/interval-trees)
   (:import-from :uiop/utility :nest)
-  (:import-from :serapeum :queue :qconc :qpreconc :qlist)
+  (:import-from :serapeum :queue :qconc :qpreconc :qlist
+                :set-hash-table :length< :memq)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -589,8 +590,29 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                    (new (slot-value new-node slot)))
               (cond
                 ((and (listp old) (listp new))
-                 (let* ((removed-children (set-difference old new))
-                        (added-children (set-difference new old)))
+                 (multiple-value-bind (removed-children added-children)
+                     (let ((old-set
+                             (if (length< old 20)
+                                 old
+                                 (set-hash-table old :strict nil)))
+                           (new-set
+                             (if (length< new 20)
+                                 new
+                                 (set-hash-table new :strict nil))))
+                       (values (remove-if
+                                (if (listp new-set)
+                                    (lambda (x)
+                                      (memq x new-set))
+                                    (lambda (x)
+                                      (gethash x new-set)))
+                                old)
+                               (remove-if
+                                (if (listp old-set)
+                                    (lambda (x)
+                                      (memq x old-set))
+                                    (lambda (x)
+                                      (gethash x old-set)))
+                                new)))
                    ;; (format t "Removed children: ~a~%" removed-children)
                    ;; (format t "Added children: ~a~%" added-children)
                    (iter (for removed-child in removed-children)
