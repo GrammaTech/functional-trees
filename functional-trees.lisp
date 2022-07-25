@@ -34,6 +34,7 @@
   (:shadowing-import-from :alexandria :compose)
   (:shadowing-import-from :functional-trees/interval-trees)
   (:import-from :uiop/utility :nest)
+  (:import-from :serapeum :queue :qconc :qpreconc :qlist)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -579,9 +580,9 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                                   (slot-value new-node slot))
                        (collecting slot-spec)))))
            (old-sn (serial-number old-node))
-           (intervals-to-remove `((,old-sn . ,old-sn)))
+           (intervals-to-remove (queue `(,old-sn . ,old-sn)))
            (new-sn (serial-number new-node))
-           (intervals-to-add `(((,new-sn . ,new-sn)))))
+           (intervals-to-add (queue `((,new-sn . ,new-sn)))))
       (iter (for slot-spec in differing-child-slot-specifiers)
             (let* ((slot (slot-specifier-slot slot-spec))
                    (old (slot-value old-node slot))
@@ -592,27 +593,18 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                         (added-children (set-difference new old)))
                    ;; (format t "Removed children: ~a~%" removed-children)
                    ;; (format t "Added children: ~a~%" added-children)
-                   (setf intervals-to-remove
-                         (nconc
-                          (iter (for removed-child in removed-children)
-                                (nconcing (intervals-of-node removed-child)))
-                          intervals-to-remove))
-                   (setf intervals-to-add
-                         (nconc
-                          (iter (for added-child in added-children)
-                                (nconcing (add-slot-to-intervals (intervals-of-node added-child) slot)))
-                          intervals-to-add))))
+                   (iter (for removed-child in removed-children)
+                         (qconc intervals-to-remove (intervals-of-node removed-child)))
+                   (iter (for added-child in added-children)
+                         (qconc intervals-to-add (add-slot-to-intervals (intervals-of-node added-child) slot)))))
                 (t ;; was (and (not (listp old)) (not (listp new)))
-                 (setf intervals-to-remove
-                       (nconc (intervals-of-node old) intervals-to-remove))
-                 (setf intervals-to-add
-                       (nconc (add-slot-to-intervals (intervals-of-node new) slot)
-                              intervals-to-add)))
-                )))
+                 (qpreconc (intervals-of-node old) intervals-to-remove)
+                 (qpreconc (add-slot-to-intervals (intervals-of-node new) slot) intervals-to-add)))))
       (setf (slot-value new-node 'descendant-map)
             (ft/it:itree-add-intervals
-             (ft/it:itree-remove-intervals old-dm intervals-to-remove)
-             intervals-to-add)))
+             (ft/it:itree-remove-intervals old-dm
+                                           (qlist intervals-to-remove))
+             (qlist intervals-to-add))))
     new-node))
 
 ;;; TODO -- specialize this in define-node-class
