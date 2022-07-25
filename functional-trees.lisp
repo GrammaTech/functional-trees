@@ -825,8 +825,7 @@ into subtrees."))
 code duplication here before."
   ;; TODO: change this to work with slot-specifier objects
   `(defmethod ,name ((node node) (index list) (fn function))
-     (let* ((child-slots (child-slots node))
-            (num-slots (length child-slots)))
+     (let* ((child-slots (child-slots node)))
        (declare (type fixnum))
        (dolist (child-slot child-slots)
          (let ((name (slot-spec-slot child-slot)))
