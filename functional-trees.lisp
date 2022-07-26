@@ -553,7 +553,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
           (convert 'ft/it:itree (cons (list (cons sn sn) nil) intervals)))))
 
 (defgeneric intervals-of-node (node)
-  (:documentation "Compute a list of intervals for the subtree rooted at NODE")
+  (:documentation "Compute a fresh list of intervals for the subtree rooted at NODE.")
   (:method ((node node))
     (ft/it:intervals-of-itree (descendant-map node)))
   (:method ((node t)) nil))

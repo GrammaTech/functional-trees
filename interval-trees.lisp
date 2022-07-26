@@ -232,7 +232,7 @@ in decreasing order of depth) if it exists."
              :data (node-data node)))
 
 (defun intervals-of-itree (itree)
-  "Return list of all the intervals in ITREE"
+  "Return a fresh list of all the intervals in ITREE"
   (let ((intervals nil))
     (labels ((%walk (node)
                (iter (while node)
