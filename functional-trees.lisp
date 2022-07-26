@@ -35,7 +35,7 @@
   (:shadowing-import-from :functional-trees/interval-trees)
   (:import-from :uiop/utility :nest)
   (:import-from :serapeum :queue :qconc :qpreconc :qlist
-                :set-hash-table :length< :memq)
+                :set-hash-table :length<)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -562,6 +562,17 @@ telling the user to use (setf (@ ... :<slot>) ...)"
   "Returns a fresh list of (interval slot) pairs"
   (mapcar (lambda (interval) (list interval slot)) intervals))
 
+(defun set-difference/hash (list1 list2)
+  "Like `set-difference', but use a hash table if the set is large enough.
+Duplicates are allowed in both lists."
+  (if (length< list2 20)
+      (set-difference list1 list2)
+      ;; Allow duplicates.
+      (let ((hash-set (set-hash-table list2 :strict nil)))
+        (remove-if (lambda (x)
+                     (gethash x hash-set))
+                   list1))))
+
 ;;; Fill in the descendant-map field of a node after copy
 
 ;;; TODO -- do not fill in the map if the node's size is below
@@ -590,29 +601,8 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                    (new (slot-value new-node slot)))
               (cond
                 ((and (listp old) (listp new))
-                 (multiple-value-bind (removed-children added-children)
-                     (let ((old-set
-                             (if (length< old 20)
-                                 old
-                                 (set-hash-table old :strict nil)))
-                           (new-set
-                             (if (length< new 20)
-                                 new
-                                 (set-hash-table new :strict nil))))
-                       (values (remove-if
-                                (if (listp new-set)
-                                    (lambda (x)
-                                      (memq x new-set))
-                                    (lambda (x)
-                                      (gethash x new-set)))
-                                old)
-                               (remove-if
-                                (if (listp old-set)
-                                    (lambda (x)
-                                      (memq x old-set))
-                                    (lambda (x)
-                                      (gethash x old-set)))
-                                new)))
+                 (let ((removed-children (set-difference/hash old new))
+                       (added-children (set-difference/hash new old)))
                    ;; (format t "Removed children: ~a~%" removed-children)
                    ;; (format t "Added children: ~a~%" added-children)
                    (iter (for removed-child in removed-children)
