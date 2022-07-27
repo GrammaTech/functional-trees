@@ -27,7 +27,7 @@ test-ccl:
 readme:
   stage: test
   script:
-    - make check-readme
+    - make dependencies check-readme
   except:
     - schedules
 
