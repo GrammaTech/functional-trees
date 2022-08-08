@@ -1775,8 +1775,15 @@ diagnostic information on error or failure."
     (:method ((node node) &optional parent)
       (mapc {attr.1-fn _ node} (children node))
       parent))
-  (let ((t1 (convert 'node-with-data '(a b c))))
+  (let ((t1 (convert 'node-with-data '(a b c)))
+        at)
     (with-attr-table t1
+      (setf at *attrs*)
+      (is (eql (attr.1-fn t1 nil) nil))
+      (is (eql (attr.1-fn t1) nil))
+      (is (eql (attr.1-fn (first (children t1))) t1))
+      (is (eql (attr.1-fn (second (children t1))) t1)))
+    (with-attr-table at
       (is (eql (attr.1-fn t1 nil) nil))
       (is (eql (attr.1-fn t1) nil))
       (is (eql (attr.1-fn (first (children t1))) t1))

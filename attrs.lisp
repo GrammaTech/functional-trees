@@ -54,14 +54,17 @@
 (defmacro with-attr-table (root &body body)
   "Create an ATTRS structure with root ROOT
    and bind it to *ATTRS*, then evaluate BODY
-   in an implicit PROGN."
+   in an implicit PROGN.  If ROOT is an ATTRS
+   structure, simply bind *ATTRS* to it."
   (once-only (root)
     `(let ((*attrs*
-             (if (and (boundp '*attrs*)
-                      (eql (attrs-root *attrs*)
-                           ,root))
-                 *attrs*
-                 (make-attrs :root ,root))))
+             (cond
+               ((typep ,root 'attrs) ,root)
+               ((and (boundp '*attrs*)
+                     (eql (attrs-root *attrs*)
+                          ,root))
+                *attrs*)
+               (t (make-attrs :root ,root)))))
        ,@body)))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
