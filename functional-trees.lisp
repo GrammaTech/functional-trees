@@ -565,13 +565,15 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 (defun set-difference/hash (list1 list2)
   "Like `set-difference', but use a hash table if the set is large enough.
 Duplicates are allowed in both lists."
-  (if (length< list2 20)
-      (set-difference list1 list2)
-      ;; Allow duplicates.
-      (let ((hash-set (set-hash-table list2 :strict nil)))
-        (remove-if (lambda (x)
-                     (gethash x hash-set))
-                   list1))))
+  (cond ((equal list1 list2) nil)
+        ((length< list2 20)
+         (set-difference list1 list2))
+        ;; Allow duplicates.
+        (t
+         (let ((hash-set (set-hash-table list2 :strict nil)))
+           (remove-if (lambda (x)
+                        (gethash x hash-set))
+                      list1)))))
 
 ;;; Fill in the descendant-map field of a node after copy
 
