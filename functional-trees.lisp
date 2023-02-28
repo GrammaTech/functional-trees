@@ -12,7 +12,7 @@
 ;;;; and no official endorsement should be inferred.
 (defpackage :functional-trees
   (:nicknames :ft :functional-trees/functional-trees)
-  (:use :common-lisp :alexandria :iterate :cl-store)
+  (:use :common-lisp :alexandria :iterate :cl-store :bordeaux-threads)
   (:import-from :serapeum
                 :with-item-key-function
                 :with-two-arg-test
@@ -80,6 +80,36 @@
 
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+
+  (defparameter *serial-number-index* 0)
+  (defparameter *serial-number-block-size* 10000)
+  (defparameter *current-serial-number-block* nil)
+  (defstruct serial-number-block start end index)
+  (defparameter *serial-number-lock*
+    (bt:make-lock "functional-trees serial-number"))
+
+  (defun allocate-serial-number-block ()
+    (bt:with-lock-held (*serial-number-lock*)
+      (let* ((serial-block
+               (make-serial-number-block  :start *serial-number-index*
+                                          :end (+ *serial-number-index*
+                                                  *serial-number-block-size*)
+                                          :index *serial-number-index*)))
+        (incf *serial-number-index* *serial-number-block-size*)
+        serial-block)))
+
+  (defun next-serial-number ()
+    "Return the next serial number in the current thread's block"
+    ;; if first call on thread, initialize block
+    (if (or (null *current-serial-number-block*)
+            (= (serial-number-block-index *current-serial-number-block*)
+               (serial-number-block-end *current-serial-number-block*)))
+        (setf *current-serial-number-block* (allocate-serial-number-block)))
+    (1- (incf (serial-number-block-index *current-serial-number-block*))))
+
+  ;; ensure that each thread gets its own binding of serial number block
+  (push '*current-serial-number-block* bt:*default-special-bindings*)
+
   (defclass descendant-map-mixin ()
     ((descendant-map :initarg :descendant-map
                      :documentation "Map from serial numbers to child slots"))
@@ -524,11 +554,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
   ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
   (when serial-number-p
     (setf (slot-value node 'serial-number)
-          (or serial-number
-              #+sbcl
-              (sb-ext:atomic-incf fset::*sbcl-next-serial-number*)
-              #-sbcl
-              (serial-number (make-instance 'fset::identity-ordering-mixin))))))
+          (or serial-number (next-serial-number)))))
 
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
   (setf (slot-value obj 'size)
