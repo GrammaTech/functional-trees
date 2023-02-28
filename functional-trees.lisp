@@ -108,14 +108,25 @@
     (1- (incf (serial-number-block-index *current-serial-number-block*))))
 
   ;; ensure that each thread gets its own binding of serial number block
-  (push '*current-serial-number-block* bt:*default-special-bindings*)
+  (push (cons '*current-serial-number-block* 'nil) bt:*default-special-bindings*)
 
   (defclass descendant-map-mixin ()
     ((descendant-map :initarg :descendant-map
                      :documentation "Map from serial numbers to child slots"))
     (:documentation "Mixin for the descendant-map slot"))
 
-  (defclass node (identity-ordering-mixin descendant-map-mixin)
+  (defclass node-identity-ordering-mixin (identity-ordering-mixin) ())
+
+  ;;; NOTE: We might want to propose a patch to FSet to allow setting
+  ;;; serial-number with an initialization argument.
+  (defmethod initialize-instance :after
+      ((node node-identity-ordering-mixin)
+       &key (serial-number nil) &allow-other-keys)
+    (setf (slot-value node 'serial-number)
+          (or serial-number (next-serial-number)))
+    node)
+
+  (defclass node (node-identity-ordering-mixin descendant-map-mixin)
     ((size :reader size
            :type (integer 1)
            :documentation "Number of nodes in tree rooted here.")
@@ -547,14 +558,6 @@ telling the user to use (setf (@ ... :<slot>) ...)"
          ,(expand-lookup-specialization class child-slots)
          ,(expand-setf-error-methods class child-slots)
          ))))
-
-;;; NOTE: We might want to propose a patch to FSet to allow setting
-;;; serial-number with an initialization argument.
-(defmethod initialize-instance :after
-  ((node node) &key (serial-number nil serial-number-p) &allow-other-keys)
-  (when serial-number-p
-    (setf (slot-value node 'serial-number)
-          (or serial-number (next-serial-number)))))
 
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
   (setf (slot-value obj 'size)
