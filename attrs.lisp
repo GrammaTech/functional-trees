@@ -30,7 +30,8 @@
 (defstruct attrs
   (table (make-attr-table))
   (proxies (make-attr-table))
-  (root  nil))
+  (root  nil)
+  (previous nil))
 
 (declaim (special *attrs*))
 
@@ -51,21 +52,41 @@
   (setf (gethash attr (attrs-proxies *attrs*))
         value))
 
+(defun attrs-tables (attrs)
+  "Return list of tables from dynamically active attrs."
+  (loop for ats = attrs then (attrs-previous ats)
+        while ats
+        collect (attrs-table ats)))
+
+(defun call/attr-table (root fn)
+  "Invoke FN with an attrs instance for ROOT.
+ROOT might be an attrs instance itself.
+
+If the active attrs instance has ROOT for its root, it is not
+replaced."
+  (let ((*attrs*
+          (cond
+            ((typep root 'attrs) root)
+            ((and (boundp '*attrs*)
+                  (eql (attrs-root *attrs*)
+                       root))
+             *attrs*)
+            (t
+             (make-attrs :root root
+                         :previous
+                         (and (boundp '*attrs*)
+                              (symbol-value '*attrs*)))))))
+    (funcall fn)))
+
 (defmacro with-attr-table (root &body body)
   "Create an ATTRS structure with root ROOT
    and bind it to *ATTRS*, then evaluate BODY
    in an implicit PROGN.  If ROOT is an ATTRS
    structure, simply bind *ATTRS* to it."
-  (once-only (root)
-    `(let ((*attrs*
-             (cond
-               ((typep ,root 'attrs) ,root)
-               ((and (boundp '*attrs*)
-                     (eql (attrs-root *attrs*)
-                          ,root))
-                *attrs*)
-               (t (make-attrs :root ,root)))))
-       ,@body)))
+  (with-gensyms (attr-table-fn)
+    `(flet ((,attr-table-fn () ,@body))
+       (declare (dynamic-extent #',attr-table-fn))
+       (call/attr-table ,root #',attr-table-fn))))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
   (assert (symbolp name))
@@ -93,17 +114,28 @@
                 body))
          ,@methods))))
 
-(defun retrieve-memoized-attr-fn (node fn-name table)
-  "Look up memoized value for FN-NAME on NODE"
-  (let* ((alist (gethash node table)))
-    (iter (for p in alist)
-          (when (eql (car p) fn-name)
-            (etypecase (cdr p)
-              (list (return-from retrieve-memoized-attr-fn (values alist p)))
-              (t
-               (assert (eql (cdr p) :in-progress))
-               (error "Circularity detected when computing ~a" fn-name)))))
-    (values alist nil)))
+(defun retrieve-memoized-attr-fn (node fn-name tables)
+  "Look up memoized value for FN-NAME on NODE.
+Return the node's alist, and the pair for FN-NAME if the alist has
+one."
+  (flet ((scan-alist (alist)
+           (iter (for p in alist)
+                 (when (eql (car p) fn-name)
+                   (etypecase (cdr p)
+                     ;; Return the match. This should not be written
+                     ;; to.
+                     (list (return-from retrieve-memoized-attr-fn (values alist p)))
+                     (t
+                      (assert (eql (cdr p) :in-progress))
+                      (error "Circularity detected when computing ~a" fn-name)))))))
+    (destructuring-bind (table . aux-tables) (ensure-list tables)
+      (let* ((initial-alist (gethash node table)))
+        (scan-alist initial-alist)
+        (dolist (table aux-tables)
+          (scan-alist (gethash node table)))
+        ;; Return the initial alist, which is all that should be
+        ;; written to.
+        (values initial-alist nil)))))
 
 (defun cached-attr-fn (node fn-name)
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
@@ -111,13 +143,13 @@ function on it if not found at first."
   (declare (type function))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((table (attrs-table *attrs*)))
+  (let* ((tables (attrs-tables *attrs*)))
     (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn node fn-name table)
+        (retrieve-memoized-attr-fn node fn-name tables)
       (when p (return-from cached-attr-fn (values-list (cdr p))))
       (attr-missing fn-name node)
       (setf (values alist p)
-            (retrieve-memoized-attr-fn node fn-name table))
+            (retrieve-memoized-attr-fn node fn-name tables))
       (if p
           (values-list (cdr p))
           ;; We tried once, it's still missing, so fail
@@ -134,10 +166,11 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((table (attrs-table *attrs*))
+  (let* ((tables (attrs-tables *attrs*))
+         (table (car tables))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn node fn-name table)
+        (retrieve-memoized-attr-fn node fn-name tables)
       (when p
         (typecase (cdr p)
           (list (return-from memoize-attr-fun (values-list (cdr p))))
