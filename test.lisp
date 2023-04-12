@@ -1828,3 +1828,53 @@ diagnostic information on error or failure."
       (is (eql (attr.4-fn n2) r))
       (is (eql (attr.4-fn n1) r))
       (is (eql (attr.4-fn r) nil)))))
+
+(defvar *attr-run* nil)
+
+(deftest attr.5 ()
+  "Inheritance without invalidation."
+  (def-attr-fun attr.5-fun ()
+    "Size function"
+    (:method ((node node))
+      (setf *attr-run* t)
+      (reduce #'+ (children node) :key #'attr.5-fun :initial-value 1)))
+  (let ((t1 (convert 'node-with-data '(a (b c) (d e)))))
+    (with-attr-table t1
+      (let ((*attr-run*))
+        (is (eql (attr.5-fun t1) 5))
+        (is *attr-run*))
+      (let* ((new (convert 'node-with-data '(d e f)))
+             (t2 (with t1 (second (children t1)) new)))
+        (with-attr-table t2
+          (let ((*attr-run*))
+            (attr.5-fun (first (children t2)))
+            ;; The attribute was not recomputed for the unchanged
+            ;; child.
+            (is (null *attr-run*))))))))
+
+(deftest attr.6 ()
+  "Inheritance with invalidation."
+  (def-attr-fun attr.6-fun (in)
+    "Previous sibling"
+    (:method ((node node) &optional in)
+      (prog1 in
+        (reduce (lambda (prev child)
+                  (attr.6-fun child prev)
+                  child)
+                (children node)
+                :initial-value nil))))
+  (defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.6-fun))
+                                    (node node))
+    (attr.6-fun (ft/attrs:attrs-root*) nil))
+  (let ((t1 (convert 'node-with-data '(a (b) (c) (d) (e)))))
+    (with-attr-table t1
+      (is (eql
+           (first (children t1))
+           (attr.6-fun (second (children t1)))))
+      (let* ((new (convert 'node-with-data '(f)))
+             (t2 (with t1 (first (children t1)) new)))
+        (with-attr-table t2
+          (is (eql new (first (children t2))))
+          (ft/attrs:invalid (second (children t2)) t)
+          (is (eql (first (children t2))
+                   (attr.6-fun (second (children t2))))))))))
