@@ -1875,6 +1875,6 @@ diagnostic information on error or failure."
              (t2 (with t1 (first (children t1)) new)))
         (with-attr-table t2
           (is (eql new (first (children t2))))
-          (ft/attrs:invalid (second (children t2)) t)
+          (ft/attrs:attr-invalid (second (children t2)) t)
           (is (eql (first (children t2))
                    (attr.6-fun (second (children t2))))))))))

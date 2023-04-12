@@ -20,7 +20,7 @@
    :attrs-table
    :attrs-root
    :attr-proxy
-   :invalid))
+   :attr-invalid))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -132,8 +132,8 @@ one."
     (destructuring-bind (table . aux-tables) (ensure-list tables)
       (let* ((initial-alist (gethash node table)))
         (scan-alist initial-alist)
-        (unless (or (eql fn-name 'invalid)
-                    (invalid node))
+        (unless (or (eql fn-name 'attr-invalid)
+                    (attr-invalid node))
           (dolist (table aux-tables)
             (scan-alist (gethash node table))))
         ;; Return the initial alist, which is all that should be
@@ -233,11 +233,11 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 (defun mapc-attrs-slot (fn vals node slot)
   (mapc-attrs fn vals (slot-value node slot)))
 
-(def-attr-fun invalid (in)
+(def-attr-fun attr-invalid (in)
   "Whether the attributes for an object are invalid."
   (:method ((obj t) &optional in)
     in))
 
-(defmethod attr-missing ((fn-name (eql 'invalid))
+(defmethod attr-missing ((fn-name (eql 'attr-invalid))
                          obj)
-  (invalid obj nil))
+  (attr-invalid obj nil))
