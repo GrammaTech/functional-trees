@@ -153,7 +153,9 @@ one."
       (let* ((initial-alist (gethash node table)))
         (scan-alist initial-alist)
         (unless (or (eql fn-name 'attrs-invalid)
-                    (attrs-invalid node))
+                    (let ((mask (attrs-invalid node)))
+                      (or (eql mask t)
+                          (member fn-name mask))))
           (dolist (table aux-tables)
             (scan-alist (gethash node table))))
         ;; Return the initial alist, which is all that should be
@@ -254,7 +256,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (mapc-attrs fn vals (slot-value node slot)))
 
 (def-attr-fun attrs-invalid (in)
-  "Whether the attributes for an object are invalid."
+  "Whether the attributes for an object are invalid.
+Can return T to invalidate all attributes, or a list of attributes to
+invalidate."
   (:method ((obj t) &optional in)
     in))
 

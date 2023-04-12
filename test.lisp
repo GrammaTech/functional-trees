@@ -1872,7 +1872,7 @@ diagnostic information on error or failure."
           do (when prev
                (when (and (ft/attrs:has-attributes-p child)
                           (not (ft/attrs:has-attributes-p prev)))
-                 (ft/attrs::attrs-invalid child t)))
+                 (ft/attrs::attrs-invalid child '(attr.6-fun))))
              (ft/attrs:prune-attrs child)))
   (let ((t1 (convert 'node-with-data '(a (b) (c) (d) (e)))))
     (with-attr-table t1
