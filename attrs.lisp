@@ -22,7 +22,8 @@
    :attr-proxy
    :attrs-invalid
    :prune-attrs
-   :has-attributes-p))
+   :has-attributes-p
+   :has-attribute-p))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -129,6 +130,10 @@ replaced."
 (defun has-attributes-p (node &aux (tables (attrs-tables *attrs*)))
   (loop for table in tables
         thereis (nth-value 1 (gethash node table))))
+
+(defun has-attribute-p (node fn-name &aux (tables (attrs-tables *attrs*)))
+  (loop for table in tables
+        thereis (assoc fn-name (gethash node table))))
 
 (defun retrieve-memoized-attr-fn (node fn-name tables)
   "Look up memoized value for FN-NAME on NODE.
