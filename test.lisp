@@ -1866,6 +1866,14 @@ diagnostic information on error or failure."
   (defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.6-fun))
                                     (node node))
     (attr.6-fun (ft/attrs:attrs-root*) nil))
+  (defmethod ft/attrs:prune-attrs ((node node-with-data))
+    (loop for prev = nil then child
+          for child in (children node)
+          do (when prev
+               (when (and (ft/attrs:has-attributes-p child)
+                          (not (ft/attrs:has-attributes-p prev)))
+                 (ft/attrs::attrs-invalid child t)))
+             (ft/attrs:prune-attrs child)))
   (let ((t1 (convert 'node-with-data '(a (b) (c) (d) (e)))))
     (with-attr-table t1
       (is (eql
@@ -1875,6 +1883,5 @@ diagnostic information on error or failure."
              (t2 (with t1 (first (children t1)) new)))
         (with-attr-table t2
           (is (eql new (first (children t2))))
-          (ft/attrs:attr-invalid (second (children t2)) t)
           (is (eql (first (children t2))
                    (attr.6-fun (second (children t2))))))))))

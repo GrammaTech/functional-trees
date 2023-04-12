@@ -20,7 +20,9 @@
    :attrs-table
    :attrs-root
    :attr-proxy
-   :attr-invalid))
+   :attrs-invalid
+   :prune-attrs
+   :has-attributes-p))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -59,24 +61,33 @@
         while ats
         collect (attrs-table ats)))
 
+(defgeneric prune-attrs (root)
+  (:method-combination standard/context)
+  (:documentation "Hook to prune attributes.")
+  (:method ((root t))))
+
 (defun call/attr-table (root fn)
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
 If the active attrs instance has ROOT for its root, it is not
 replaced."
-  (let ((*attrs*
-          (cond
-            ((typep root 'attrs) root)
-            ((and (boundp '*attrs*)
-                  (eql (attrs-root *attrs*)
-                       root))
-             *attrs*)
-            (t
-             (make-attrs :root root
-                         :previous
-                         (and (boundp '*attrs*)
-                              (symbol-value '*attrs*)))))))
+  (multiple-value-bind (*attrs* new)
+      (cond
+        ((typep root 'attrs) root)
+        ((and (boundp '*attrs*)
+              (eql (attrs-root *attrs*)
+                   root))
+         *attrs*)
+        (t
+         (values
+          (make-attrs :root root
+                      :previous
+                      (and (boundp '*attrs*)
+                           (symbol-value '*attrs*)))
+          t)))
+    (when new
+      (prune-attrs root))
     (funcall fn)))
 
 (defmacro with-attr-table (root &body body)
@@ -115,6 +126,10 @@ replaced."
                 body))
          ,@methods))))
 
+(defun has-attributes-p (node &aux (tables (attrs-tables *attrs*)))
+  (loop for table in tables
+        thereis (nth-value 1 (gethash node table))))
+
 (defun retrieve-memoized-attr-fn (node fn-name tables)
   "Look up memoized value for FN-NAME on NODE.
 Return the node's alist, and the pair for FN-NAME if the alist has
@@ -132,8 +147,8 @@ one."
     (destructuring-bind (table . aux-tables) (ensure-list tables)
       (let* ((initial-alist (gethash node table)))
         (scan-alist initial-alist)
-        (unless (or (eql fn-name 'attr-invalid)
-                    (attr-invalid node))
+        (unless (or (eql fn-name 'attrs-invalid)
+                    (attrs-invalid node))
           (dolist (table aux-tables)
             (scan-alist (gethash node table))))
         ;; Return the initial alist, which is all that should be
@@ -233,11 +248,11 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 (defun mapc-attrs-slot (fn vals node slot)
   (mapc-attrs fn vals (slot-value node slot)))
 
-(def-attr-fun attr-invalid (in)
+(def-attr-fun attrs-invalid (in)
   "Whether the attributes for an object are invalid."
   (:method ((obj t) &optional in)
     in))
 
-(defmethod attr-missing ((fn-name (eql 'attr-invalid))
+(defmethod attr-missing ((fn-name (eql 'attrs-invalid))
                          obj)
-  (attr-invalid obj nil))
+  (attrs-invalid obj nil))
