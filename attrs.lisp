@@ -21,7 +21,7 @@
    :attrs-root
    :attr-proxy
    :attrs-invalid
-   :prune-attrs
+   :invalidate-attrs
    :has-attributes-p
    :has-attribute-p))
 
@@ -62,9 +62,9 @@
         while ats
         collect (attrs-table ats)))
 
-(defgeneric prune-attrs (root)
+(defgeneric invalidate-attrs (root)
   (:method-combination standard/context)
-  (:documentation "Hook to prune attributes.")
+  (:documentation "Hook to invalidate attributes.")
   (:method ((root t))))
 
 (defun call/attr-table (root fn)
@@ -88,7 +88,7 @@ replaced."
                            (symbol-value '*attrs*)))
           t)))
     (when new
-      (prune-attrs root))
+      (invalidate-attrs root))
     (funcall fn)))
 
 (defmacro with-attr-table (root &body body)
