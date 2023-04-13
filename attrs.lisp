@@ -32,10 +32,10 @@
 ;;; nodes to list of values.
 
 (defstruct attrs
-  (table (make-attr-table))
-  (proxies (make-attr-table))
-  (root  nil)
-  (previous nil))
+  (table (make-attr-table) :read-only t :type hash-table)
+  (proxies (make-attr-table) :read-only t :type hash-table)
+  (root  nil :read-only t)
+  (previous nil :type list :read-only t))
 
 (declaim (special *attrs*))
 
@@ -58,9 +58,8 @@
 
 (defun attrs-tables (attrs)
   "Return list of tables from dynamically active attrs."
-  (loop for ats = attrs then (attrs-previous ats)
-        while ats
-        collect (attrs-table ats)))
+  (cons (attrs-table attrs)
+        (attrs-previous attrs)))
 
 (defgeneric invalidate-attrs (root)
   (:method-combination standard/context)
@@ -85,7 +84,8 @@ replaced."
           (make-attrs :root root
                       :previous
                       (and (boundp '*attrs*)
-                           (symbol-value '*attrs*)))
+                           (cons (attrs-table *attrs*)
+                                 (attrs-previous *attrs*))))
           t)))
     (when new
       (invalidate-attrs root))
