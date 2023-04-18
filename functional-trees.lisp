@@ -13,6 +13,10 @@
 (defpackage :functional-trees
   (:nicknames :ft :functional-trees/functional-trees)
   (:use :common-lisp :alexandria :iterate :cl-store)
+  (:import-from :serapeum
+                :with-item-key-function
+                :with-two-arg-test
+                :with-boolean)
   (:shadowing-import-from :fset
                           :@ :do-seq :seq :lookup :alist :size
                           :unionf :appendf :with :less :splice :insert :removef
@@ -528,7 +532,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 (defmethod copy ((node node) &rest keys)
   (nest
    (compute-descendant-map node)
-   (apply #'make-instance (class-name (class-of node)))
+   (apply #'make-instance (class-of node))
    (apply #'append keys)
    (cl:mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
    (cl:remove-if-not (lambda (slot) (slot-boundp node slot)))
@@ -634,7 +638,7 @@ Duplicates are allowed in both lists."
                                        (list (make-keyword slot)
                                              (slot-value node slot))))
                                 slot-names))
-         (new-node (apply #'make-instance (class-name (class-of node))
+         (new-node (apply #'make-instance (class-of node)
                           initializers)))
     ;; Now write over the child slots
     ;; This is ok, as the descendant-map slot is uninitialized
@@ -1001,6 +1005,7 @@ are compared with each other using fset:compare"
   (:method ((a t) (b t)) (fset:equal? a b))
   (:method ((node1 node) (node2 node))
     (and (eql (serial-number node1) (serial-number node2))
+         (eql (type-of node1) (type-of node2))
          (let ((c1 (children node1))
                (c2 (children node2)))
            (and (length= c1 c2)
@@ -1310,9 +1315,10 @@ act on the root of the tree (the previous behavior)."
 
 (defmethod mapc (function (tree node) &rest more)
   (fset::check-two-arguments more 'mapc 'node)
-  (do-tree (node tree :value tree)
-    (funcall function node)
-    nil))
+  (let ((function (ensure-function function)))
+    (do-tree (node tree :value tree)
+      (funcall function node)
+      nil)))
 
 (defgeneric mapcar (function container &rest more)
   (:documentation "Map FUNCTION over CONTAINER.")
@@ -1331,7 +1337,7 @@ act on the root of the tree (the previous behavior)."
   (:method (predicate (seq seq) &rest more &aux result)
     ;; TODO: handle MORE.
     (declare (ignorable more))
-    (let ((predicate (coerce predicate 'function)))
+    (let ((predicate (ensure-function predicate)))
       (do-seq (element seq)
         (push (funcall predicate element) result))
       (convert 'seq (nreverse result))))
@@ -1343,17 +1349,20 @@ act on the root of the tree (the previous behavior)."
 Non-nil return values of FUNCTION replace the current node in the tree
 and nil return values of FUNCTION leave the existing node."
   (fset::check-two-arguments more 'mapcar 'node)
-  (do-tree (node tree :rebuild t)
-    (or (funcall function node) node)))
+  (let ((function (ensure-function function)))
+    (do-tree (node tree :rebuild t)
+      (or (funcall function node) node))))
 
 (defmethod reduce
     (fn (node node)
       &key key initial-value ;; start end from-end
       &allow-other-keys
       &aux (accumulator initial-value))
-  (do-tree (node node :value accumulator)
-    (setf accumulator (funcall fn accumulator (if key (funcall key node) node)))
-    nil))
+  (let ((fn (ensure-function fn)))
+    (with-item-key-function (key)
+      (do-tree (node node :value accumulator)
+        (setf accumulator (funcall fn accumulator (key node)))
+        nil))))
 
 (defmacro test-handler (fn)
   "This macro is an idiom that occurs in many methods.  It handles
@@ -1373,11 +1382,12 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                         (cl:mapcar #'cons
                                    (list from-end end start)
                                    '(from-end end start)))))
-  (when key (setf key (coerce key 'function)))
   (block done
-    (do-tree (node node)
-      (when (funcall predicate (if key (funcall key node) node))
-        (return-from done node)))))
+    (let ((predicate (ensure-function predicate)))
+      (with-item-key-function (key)
+        (do-tree (node node)
+          (when (funcall predicate (key node))
+            (return-from done node)))))))
 
 (defmethod find-if-not
     (predicate (node node) &key (key nil key-p) &allow-other-keys)
@@ -1400,11 +1410,12 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                         (cl:mapcar #'cons
                                    (list from-end end start)
                                    '(from-end end start)))))
-  (when key (setf key (coerce key 'function)))
-  (do-tree (node node :value count)
-    (when (funcall predicate (if key (funcall key node) node))
-      (incf count))
-    nil))
+  (let ((predicate (ensure-function predicate)))
+    (with-item-key-function (key)
+      (do-tree (node node :value count)
+        (when (funcall predicate (key node))
+          (incf count))
+        nil))))
 
 (defmethod count-if-not (predicate (node node)
                          &key (key nil key-p) &allow-other-keys)
@@ -1429,10 +1440,11 @@ checking and normalization of :TEST and :TEST-NOT arguments."
                         (cl:mapcar #'cons
                                    (list from-end end start)
                                    '(from-end end start)))))
-  (when key (setf key (coerce key 'function)))
-  (do-tree (node node :index index)
-    (when (funcall predicate (if key (funcall key node) node))
-      (return-from position-if (values (nreverse index) t)))))
+  (let ((predicate (ensure-function predicate)))
+    (with-item-key-function (key)
+      (do-tree (node node :index index)
+        (when (funcall predicate (key node))
+          (return-from position-if (values (nreverse index) t)))))))
 
 (defmethod position-if-not (predicate (node node) &rest args
                             &key &allow-other-keys)
@@ -1456,23 +1468,24 @@ checking and normalization of :TEST and :TEST-NOT arguments."
   (nest
    (block done)
    (map-only-children/i node nil)
-   (if key
-       (lambda (c i) (when (funcall predicate (funcall key c))
-                       (return-from done i))))
-       (lambda (c i) (when (funcall predicate c)
-                       (return-from done i)))))
+   (let ((predicate (ensure-function predicate))))
+   (with-item-key-function (key))
+   (lambda (c i) (when (funcall predicate (key c))
+              (return-from done i)))))
 
 (defgeneric child-position (value node &key key test)
   (:documentation "Like POSITION, but apply to the children of NODE.
 Returns the path from NODE to the child, or NIL if not found.")
   (:method ((value t) (node node) &key key (test #'eql))
-    (child-position-if (lambda (c) (funcall test value c)) node :key key)))
+    (with-two-arg-test (test)
+      (child-position-if (lambda (c) (test value c)) node :key key))))
 
 (defmethod remove-if (predicate (node node) &key key &allow-other-keys)
-  (when key (setf key (coerce key 'function)))
-  (do-tree (node node :rebuild t)
-    (and (not (funcall predicate (if key (funcall key node) node)))
-         node)))
+  (let ((predicate (ensure-function predicate)))
+    (with-item-key-function (key)
+      (do-tree (node node :rebuild t)
+        (and (not (funcall predicate (key node)))
+             node)))))
 
 ;; TODO -- remove this
 (defmethod remove-if :around (predicate (node node) &key &allow-other-keys)
@@ -1496,10 +1509,15 @@ Returns the path from NODE to the child, or NIL if not found.")
 (defmethod substitute-if (newitem predicate (node node)
                           &key (copy nil copy-p) key &allow-other-keys)
   (when copy-p (setf copy (coerce copy 'function)))
-  (do-tree (node node :rebuild t)
-    (if (funcall predicate (if key (funcall key node) node))
-        (if copy-p (funcall copy newitem) newitem)
-        node)))
+  (let ((predicate (ensure-function predicate)))
+    (with-item-key-function (key)
+      (with-boolean (copy-p)
+        (let ((copy (:if copy-p (ensure-function copy) nil)))
+          (declare (ignorable copy))
+          (do-tree (node node :rebuild t)
+            (if (funcall predicate (key node))
+                (:if copy-p (funcall copy newitem) newitem)
+                node)))))))
 
 (defmethod substitute-if-not (newitem predicate (node node)
                               &key key copy &allow-other-keys)

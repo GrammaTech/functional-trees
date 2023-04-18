@@ -368,7 +368,8 @@ have data satisfying the TEST comparison function.")
   (:method ((tree itree) &key (test #'eql))
     ;; Merge before root
     (let ((root (itree-root tree))
-          (size (itree-size tree)))
+          (size (itree-size tree))
+          (test (ensure-function test)))
       (if root
           (let ((root-data (node-data root))
                 (root-lo (node-lo root))
