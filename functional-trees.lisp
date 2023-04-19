@@ -721,7 +721,7 @@ return NIL, unless ERROR is true, in which case error.")
                              (assert pos () "Could not find ~a in slot ~a of ~a" child slot a)
                              (cons slot pos))
                            (progn
-                             (assert (eql v child) () "Child ~a is not the value of slot ~a of ~a" child slot a)
+                             (assert (eq v child) () "Child ~a is not the value of slot ~a of ~a" child slot a)
                              slot))
                        path)))
                   (setf child a))
@@ -886,7 +886,7 @@ returning a plist suitable for passing to COPY"))
       (let ((children
              (cl:mapcar (lambda (child)
                           (let ((new (traverse-tree child fn)))
-                            (unless (eql new child) (setf modifiedp t))
+                            (unless (eq new child) (setf modifiedp t))
                             new))
                         (child-list node child-slot))))
         ;; Adjust the children list for special arities.
@@ -941,7 +941,7 @@ below ROOT and produce a valid tree."))
     ;; Populate serial-number table
     (do-tree (n root)
       ;; Do not store serial-numbers at or below at-node
-      (if (eql n at-node)
+      (if (eq n at-node)
           t
           (prog1 nil
             (setf (gethash (slot-value n 'serial-number) serial-number-table)
@@ -1465,13 +1465,14 @@ checking and normalization of :TEST and :TEST-NOT arguments."
   (:documentation "Like POSITION-IF, but only apply to the children of NODE"))
 
 (defmethod child-position-if (predicate (node node) &key (key nil))
-  (nest
-   (block done)
-   (map-only-children/i node nil)
-   (let ((predicate (ensure-function predicate))))
-   (with-item-key-function (key))
-   (lambda (c i) (when (funcall predicate (key c))
-              (return-from done i)))))
+  (block done
+    (let ((predicate (ensure-function predicate)))
+      (with-item-key-function (key)
+        (flet ((fn (c i)
+                 (when (funcall predicate (key c))
+                   (return-from done i))))
+          (declare (dynamic-extent #'fn))
+          (map-only-children/i node nil #'fn))))))
 
 (defgeneric child-position (value node &key key test)
   (:documentation "Like POSITION, but apply to the children of NODE.
