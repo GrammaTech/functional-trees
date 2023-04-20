@@ -48,13 +48,13 @@
 (defun dominating-subroot (root node)
   "Strictly dominating subroot of NODE."
   ;; TODO Enforce only one subroot?
-  (let ((path (path-of-node root node)))
-    (when (null path)
-      (unless (eql root node)
-        (error "~a is not reachable from ~a" node root)))
-    (iter (for subpath on (rest (reverse path)))
-          (for parent = (fset:lookup root (reverse subpath)))
-          (finding parent such-that (subroot? parent)))))
+  (if (eql root node) nil
+      (let ((path (path-of-node root node)))
+        (if (null path)
+            (error "~a is not reachable from ~a" node root)
+            (iter (for subpath on (rest (reverse path)))
+                  (for parent = (fset:lookup root (reverse subpath)))
+                  (finding parent such-that (subroot? parent)))))))
 
 (defun current-subroot (node)
   (let ((attrs-root (attrs-root *attrs*)))
@@ -65,7 +65,7 @@
   (subroots (make-attr-table) :read-only t :type hash-table)
   (subroot-deps (make-attr-table) :read-only t :type hash-table)
   (proxies (make-attr-table) :read-only t :type hash-table)
-  (root (error "No root") :type node :read-only t))
+  (root (error "No root") :type t :read-only t))
 
 (declaim (special *attrs*))
 
