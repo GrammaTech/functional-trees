@@ -65,7 +65,7 @@
   (subroots (make-attr-table) :read-only t :type hash-table)
   (subroot-deps (make-attr-table) :read-only t :type hash-table)
   (proxies (make-attr-table) :read-only t :type hash-table)
-  (root  nil :read-only t))
+  (root (error "No root") :type node :read-only t))
 
 (declaim (special *attrs*))
 
@@ -132,7 +132,24 @@ replaced."
                        root))
              *attrs*)
             (t (make-attrs :root root)))))
+    (invalidate-subroots *attrs*)
     (funcall fn)))
+
+(defun invalidate-subroots (attrs)
+  (let ((root (attrs-root attrs))
+        (subroots-table (attrs-subroots attrs))
+        (subroot-deps (attrs-subroot-deps attrs))
+        (removed '()))
+    (iter (for (subroot nil) in-hashtable subroots-table)
+          (unless (path-of-node root subroot)
+            (remhash subroot subroots-table))
+          (pushnew subroot removed))
+    (iter (for (subroot deps) in-hashtable subroot-deps)
+          (when (iter (for dep in deps)
+                      (thereis (not (gethash dep subroots-table))))
+            (remhash subroot subroot-deps)
+            (remhash subroot subroots-table)))
+    removed))
 
 (defmacro with-attr-table (root &body body)
   "Create an ATTRS structure with root ROOT
