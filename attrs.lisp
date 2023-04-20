@@ -5,6 +5,7 @@
    :functional-trees/functional-trees
    :curry-compose-reader-macros
    :named-readtables)
+  (:import-from :fset)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
   (:import-from :serapeum :standard/context)
@@ -23,7 +24,9 @@
    :attrs-invalid
    :invalidate-attrs
    :has-attributes-p
-   :has-attribute-p))
+   :has-attribute-p
+   :subroot
+   :subroot?))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -31,11 +34,38 @@
 ;;; Attributes are stored in a hash table mapping
 ;;; nodes to list of values.
 
+(defclass subroot ()
+  ()
+  (:documentation "Mixin that marks a class as a subroot."))
+
+(defgeneric subroot? (x)
+  (:documentation "Is X a subroot?")
+  (:method ((x t))
+    nil)
+  (:method ((x subroot))
+    t))
+
+(defun dominating-subroot (root node)
+  "Strictly dominating subroot of NODE."
+  ;; TODO Enforce only one subroot?
+  (let ((path (path-of-node root node)))
+    (when (null path)
+      (unless (eql root node)
+        (error "~a is not reachable from ~a" node root)))
+    (iter (for subpath on (rest (reverse path)))
+          (for parent = (fset:lookup root (reverse subpath)))
+          (finding parent such-that (subroot? parent)))))
+
+(defun current-subroot (node)
+  (let ((attrs-root (attrs-root *attrs*)))
+    (or (dominating-subroot attrs-root node)
+        attrs-root)))
+
 (defstruct attrs
-  (table (make-attr-table) :read-only t :type hash-table)
+  (subroots (make-attr-table) :read-only t :type hash-table)
+  (subroot-deps (make-attr-table) :read-only t :type hash-table)
   (proxies (make-attr-table) :read-only t :type hash-table)
-  (root  nil :read-only t)
-  (previous nil :type list :read-only t))
+  (root  nil :read-only t))
 
 (declaim (special *attrs*))
 
@@ -49,17 +79,29 @@
   "Get the root of the current attrs table."
   (attrs-root *attrs*))
 
+(defun node-subroot-table (node)
+  (subroot-table (current-subroot node)))
+
+(defun subroot-table (subroot)
+  (ensure-gethash subroot
+                  (attrs-subroots *attrs*)
+                  (make-attr-table)))
+
+(defun subroot-deps (subroot)
+  (gethash subroot (attrs-subroot-deps *attrs*)))
+
+(defun subroot-tables (node)
+  (let ((subroot (current-subroot node)))
+    (cons (subroot-table subroot)
+          (mapcar #'subroot-table
+                  (subroot-deps subroot)))))
+
 (defun attr-proxy (attr)
   (gethash attr (attrs-proxies *attrs*)))
 
 (defun (setf attr-proxy) (value attr)
   (setf (gethash attr (attrs-proxies *attrs*))
         value))
-
-(defun attrs-tables (attrs)
-  "Return list of tables from dynamically active attrs."
-  (cons (attrs-table attrs)
-        (attrs-previous attrs)))
 
 (defgeneric invalidate-attrs (root)
   (:method-combination standard/context)
@@ -72,23 +114,14 @@ ROOT might be an attrs instance itself.
 
 If the active attrs instance has ROOT for its root, it is not
 replaced."
-  (multiple-value-bind (*attrs* new)
-      (cond
-        ((typep root 'attrs) root)
-        ((and (boundp '*attrs*)
-              (eql (attrs-root *attrs*)
-                   root))
-         *attrs*)
-        (t
-         (values
-          (make-attrs :root root
-                      :previous
-                      (and (boundp '*attrs*)
-                           (cons (attrs-table *attrs*)
-                                 (attrs-previous *attrs*))))
-          t)))
-    (when new
-      (invalidate-attrs root))
+  (let ((*attrs*
+          (cond
+            ((typep root 'attrs) root)
+            ((and (boundp '*attrs*)
+                  (eql (attrs-root *attrs*)
+                       root))
+             *attrs*)
+            (t (make-attrs :root root)))))
     (funcall fn)))
 
 (defmacro with-attr-table (root &body body)
@@ -152,10 +185,11 @@ one."
     (destructuring-bind (table . aux-tables) (ensure-list tables)
       (let* ((initial-alist (gethash node table)))
         (scan-alist initial-alist)
-        (unless (or (eql fn-name 'attrs-invalid)
-                    (let ((mask (attrs-invalid node)))
-                      (or (eql mask t)
-                          (member fn-name mask))))
+        (unless (or ;; (eql fn-name 'attrs-invalid)
+                    ;; (let ((mask (attrs-invalid node)))
+                    ;;   (or (eql mask t)
+                    ;;       (member fn-name mask)))
+                 )
           (dolist (table aux-tables)
             (scan-alist (gethash node table))))
         ;; Return the initial alist, which is all that should be
@@ -168,7 +202,7 @@ function on it if not found at first."
   (declare (type function))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((tables (attrs-tables *attrs*)))
+  (let* ((tables (subroot-tables node)))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node fn-name tables)
       (when p (return-from cached-attr-fn (values-list (cdr p))))
@@ -191,7 +225,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((tables (attrs-tables *attrs*))
+  (let* ((tables (subroot-tables node))
          (table (car tables))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
