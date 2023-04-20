@@ -69,6 +69,12 @@
 
 (declaim (special *attrs*))
 
+(defvar *subroot-stack* nil
+  "Stack of subroots whose attributes are being computed.
+While subroots cannot be nested in the node tree, computation of their
+attributes can be dynamically nested when one depends on the other.")
+(declaim (special *subroot-stack*))
+
 (defun make-attr-table (&rest args)
   (multiple-value-call #'make-weak-hash-table
     :weakness :key
@@ -89,6 +95,10 @@
 
 (defun subroot-deps (subroot)
   (gethash subroot (attrs-subroot-deps *attrs*)))
+
+(defun (setf subroot-deps) (value subroot)
+  (setf (gethash subroot (attrs-subroot-deps *attrs*))
+        value))
 
 (defun subroot-tables (node)
   (let ((subroot (current-subroot node)))
@@ -277,6 +287,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (:documentation
    "Function invoked when an attr function has not been computed on NODE.
     The default method signals an error.")
+  (:method :around ((fn-name symbol) (node node))
+    (let* ((current-subroot (current-subroot node))
+           (*subroot-stack* (cons current-subroot *subroot-stack*)))
+      (iter (for (subroot . deps) on (reverse *subroot-stack*))
+            (setf (subroot-deps subroot)
+                  (union deps (subroot-deps current-subroot))))
+      (call-next-method)))
   (:method ((fn-name symbol) (node node))
     (error (make-condition 'uncomputed-attr :node node :fn fn-name))))
 
