@@ -63,9 +63,14 @@ This is important; it controls subroot copying behavior."))
       (setf (subroot-index result) idx))
     result))
 
-(defstruct subroot-index-entry
+(defstruct (subroot-index-entry (:copier nil))
   (subroots (make-attr-table) :read-only t :type hash-table)
   (subroot-deps (make-attr-table) :read-only t :type hash-table))
+
+(defun copy-subroot-index-entry (entry)
+  (make-subroot-index-entry
+   :subroots (copy-attr-table (subroot-index-entry-subroots entry))
+   :subroot-deps (copy-attr-table (subroot-index-entry-subroot-deps entry))))
 
 (defclass subroot ()
   ()
@@ -115,6 +120,12 @@ attributes can be dynamically nested when one depends on the other.")
     :weakness :key
     :test #'eq
     (values-list args)))
+
+(defun copy-attr-table (table-in &rest args)
+  (let ((table-out (apply #'make-attr-table :size (hash-table-size table-in) args)))
+    (iter (for (k v) in-hashtable table-in)
+          (setf (gethash k table-out) v))
+    table-out))
 
 (defvar *subroot-registry* (make-attr-table))
 
