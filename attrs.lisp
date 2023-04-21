@@ -220,18 +220,24 @@ replaced."
         (subroot-deps (attrs-subroot-deps attrs))
         (removed '()))
     (when (and subroots-table subroot-deps)
+      ;; Remove unreachable subroots from the table.
       (iter (for (subroot nil) in-hashtable subroots-table)
-            (unless (subroot-path root subroot)
-              (remhash subroot subroots-table))
-            (pushnew subroot removed))
-      (iter (for (subroot deps) in-hashtable subroot-deps)
-            (when (iter (for dep in deps)
-                        (thereis
-                         (not
-                          (gethash (tg:weak-pointer-value dep)
-                                   subroots-table))))
-              (remhash subroot subroot-deps)
-              (remhash subroot subroots-table))))
+            (unless (or (eql root subroot)
+                        (subroot-path root subroot))
+              (remhash subroot subroots-table)
+              (pushnew subroot removed)))
+      ;; Uncache any suroot that depends on an unreachable subroot.
+      (iter (for newly-removed =
+                 (iter (for (subroot deps) in-hashtable subroot-deps)
+                       (when (iter (for dep in deps)
+                                   (thereis
+                                    (not (gethash (tg:weak-pointer-value dep)
+                                                  subroots-table))))
+                         (remhash subroot subroot-deps)
+                         (remhash subroot subroots-table)
+                         (pushnew subroot removed)
+                         (collect subroot))))
+            (while newly-removed)))
     removed))
 
 (defmacro with-attr-table (root &body body)
@@ -263,11 +269,12 @@ replaced."
                                                   ,@(cdr optional-args))))
            ,@(when optional-args
                `((declare (ignorable ,@optional-args))))
-           ,(if optional-args
-                `(if ,present?
-                     ,body
-                     (cached-attr-fn ,node ',name))
-                body))
+           (with-record-subroot-deps (,node)
+             ,(if optional-args
+                  `(if ,present?
+                       ,body
+                       (cached-attr-fn ,node ',name))
+                  body)))
          ,@methods))))
 
 (defun has-attributes-p (node &aux (tables (subroot-tables node)))
@@ -349,7 +356,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
              (progn
                (setf (gethash node table) (cons p alist))
                (let ((vals (multiple-value-list
-                            (call/record-subroot-deps node thunk))))
+                            (funcall thunk))))
                  (setf (cdr p) vals)
                  (values-list vals)))
           ;; If a non-local return occured from THUNK, we need
@@ -388,6 +395,12 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           (pushnew current-subroot
                    (subroot-deps depender)))
     (funcall fn)))
+
+(defmacro with-record-subroot-deps ((node) &body body)
+  (with-gensyms (fn)
+    `(flet ((,fn () ,@body))
+       (declare (dynamic-extent #',fn))
+       (call/record-subroot-deps ,node #',fn))))
 
 (defgeneric attr-missing (fn-name node)
   (:documentation

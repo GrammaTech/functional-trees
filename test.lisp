@@ -51,6 +51,7 @@
    :attr-missing
    :attrs-root
    :subroot
+   :subroot-path
    :subroot?)
    
   (:shadowing-import-from
@@ -1892,12 +1893,15 @@ diagnostic information on error or failure."
 (defclass project (parent attrs-root)
   ())
 
+(defmethod print-object ((self project) stream)
+  (print-unreadable-object (self stream :type t :identity t)))
+
 (defclass file (node)
   ((name :initarg :name :type string :reader name)
    (exports :initarg :exports :type list :reader exports)))
 
 (defmethod print-object ((self file) stream)
-  (print-unreadable-object (self stream :type t)
+  (print-unreadable-object (self stream :type t :identity t)
     (format stream "~a" (name self))))
 
 (defclass impl-file (file subroot)
@@ -1912,29 +1916,33 @@ diagnostic information on error or failure."
 
 (def-attr-fun trivial-symbol-table (in)
   (:method ((h header-file) &optional in)
-    (append in (exports h)))
+    (copy-list (append in (exports h))))
   (:method ((p project) &optional in)
-    (reduce (lambda (in2 child)
-              (trivial-symbol-table child in2))
-            (let ((children (children p)))
-              (append
-               (remove-if-not (of-type 'impl-file) children)
-               (remove-if-not (of-type 'header-file) children)))
-            :initial-value in))
+    (copy-list
+     (reduce (lambda (in2 child)
+               (trivial-symbol-table child in2))
+             (let ((children (children p)))
+               (append
+                (remove-if-not (of-type 'impl-file) children)
+                (remove-if-not (of-type 'header-file) children)))
+             :initial-value in)))
   (:method ((f impl-file) &optional in)
-    (append
-     (reduce (lambda (in2 dep)
-               (trivial-symbol-table dep in2))
-             (mapcar (lambda (d)
-                       (find-dep (ft/attrs:attrs-root*) d))
-                     (deps f))
-             :initial-value in)
-     (exports f))))
+    (copy-list
+     (append
+      (reduce (lambda (in2 dep)
+                (trivial-symbol-table dep in2))
+              (mapcar (lambda (d)
+                        (find-dep (ft/attrs:attrs-root*) d))
+                      (deps f))
+              :initial-value in)
+      (exports f)))))
 
 (defmethod attr-missing ((fn-name (eql 'trivial-symbol-table)) (node t))
   (trivial-symbol-table (ft/attrs:attrs-root*) nil))
 
 (defun symbol-table-alist (project)
+  ;; TODO Should work without.
+  (trivial-symbol-table project)
   (iter (for file in (children project))
         (collect (cons (name file)
                        (trivial-symbol-table file)))))
@@ -1979,7 +1987,7 @@ diagnostic information on error or failure."
     (let* ((old-alist
              (with-attr-table project
                (symbol-table-alist project)))
-           (new-cc-file (copy cc-file-1))
+           (new-cc-file (tree-copy cc-file-1))
            (new-project
              (with project
                    cc-file-1
@@ -1990,8 +1998,9 @@ diagnostic information on error or failure."
       (is (not (eql new-project project))
           "The project must have changed")
       (is (not (eql cc-file-1
-                    (find (name cc-file-1)
-                          (children project))))
+                    (is (find (name cc-file-1)
+                              (children new-project)
+                              :key #'name))))
           "The cc file must have changed")
       (dolist (file (list cc-file-2 cc-file-3 header-file-1 header-file-2))
         (is (eql (is (cdr (assoc (name file) old-alist :test #'equal)))
@@ -2002,7 +2011,7 @@ diagnostic information on error or failure."
     (let* ((old-alist
              (with-attr-table project
                (symbol-table-alist project)))
-           (new-header-file (copy header-file-1))
+           (new-header-file (tree-copy header-file-1))
            (new-project
              (with project header-file-1 new-header-file))
            (new-alist
@@ -2011,12 +2020,18 @@ diagnostic information on error or failure."
       (is (not (eql new-project project))
           "The project must have changed")
       (is (not (eql header-file-1
-                    (find (name header-file-1)
-                          (children project))))
+                    (is (find (name header-file-1)
+                              (children new-project)
+                              :key #'name))))
           "The header file must have changed")
+      (is (subroot-path new-project new-header-file))
+      (is (not (subroot-path new-project header-file-1)))
       (dolist (file (list cc-file-3 header-file-2))
         (is (eql-for-key (name file) old-alist new-alist)
-            "The header file and its dependencies must be recalculated."))
-      (dolist (file (list cc-file-1 cc-file-2 header-file-1))
+            "Unrelated symbol tables must be left alone."))
+      (dolist (file (list header-file-1))
         (is (not (eql-for-key (name file) old-alist new-alist))
-            "Unrelated symbol tables must be left alone.")))))
+            "The header file must be recalculated."))
+      (dolist (file (list cc-file-1 cc-file-2))
+        (is (not (eql-for-key (name file) old-alist new-alist))
+            "The dependencies must be recalculated.")))))
