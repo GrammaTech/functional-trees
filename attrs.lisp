@@ -8,7 +8,7 @@
   (:import-from :fset)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
-  (:import-from :serapeum :standard/context)
+  (:import-from :serapeum :standard/context :defplace :assure :filter-map)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -34,9 +34,26 @@
 ;;; Attributes are stored in a hash table mapping
 ;;; nodes to list of values.
 
+(defclass root ()
+  ()
+  (:documentation "Mixin that marks a class as a root.
+This is important; it controls subroot copying behavior."))
+
+(defmethod copy :around ((root node) &key)
+  (let ((result (call-next-method)))
+    (when-let (idx (subroot-index result))
+      (setf (subroot-index result) idx))
+    result))
+
+(defstruct subroot-index-entry
+  (subroots (make-attr-table) :read-only t :type hash-table)
+  (subroot-deps (make-attr-table) :read-only t :type hash-table))
+
 (defclass subroot ()
   ()
-  (:documentation "Mixin that marks a class as a subroot."))
+  (:documentation "Mixin that marks a class as a subroot.
+This is for convenience and entirely equivalent to specializing
+`subroot?' to return non-nil."))
 
 (defgeneric subroot? (x)
   (:documentation "Is X a subroot?")
@@ -62,8 +79,6 @@
         attrs-root)))
 
 (defstruct attrs
-  (subroots (make-attr-table) :read-only t :type hash-table)
-  (subroot-deps (make-attr-table) :read-only t :type hash-table)
   (proxies (make-attr-table) :read-only t :type hash-table)
   (root (error "No root") :type t :read-only t))
 
@@ -81,6 +96,31 @@ attributes can be dynamically nested when one depends on the other.")
     :test #'eq
     (values-list args)))
 
+(defvar *subroot-registry* (make-attr-table))
+
+(defun subroot-index (root &key (ensure t))
+  (symbol-macrolet ((index (gethash root *subroot-registry*)))
+    (if (null index)
+        (if ensure
+            (values (setf index (make-subroot-index-entry))
+                    t)
+            (values nil nil))
+        index)))
+
+(defun (setf subroot-index) (value root)
+  (setf (gethash root *subroot-registry*)
+        (assure subroot-index-entry value)))
+
+(defun attrs-subroots (attrs &key (ensure t))
+  (when-let (index
+             (subroot-index (attrs-root attrs) :ensure ensure))
+    (subroot-index-entry-subroots index)))
+
+(defun attrs-subroot-deps (attrs &key (ensure t))
+  (when-let (index
+             (subroot-index (attrs-root attrs) :ensure ensure))
+    (subroot-index-entry-subroot-deps index)))
+
 (defun attrs-root* ()
   "Get the root of the current attrs table."
   (attrs-root *attrs*))
@@ -88,23 +128,28 @@ attributes can be dynamically nested when one depends on the other.")
 (defun node-subroot-table (node)
   (subroot-table (current-subroot node)))
 
-(defun subroot-table (subroot)
-  (ensure-gethash subroot
-                  (attrs-subroots *attrs*)
-                  (make-attr-table)))
+(defun subroot-table (subroot &key ensure)
+  (when-let (subroots (attrs-subroots *attrs* :ensure ensure))
+    (ensure-gethash subroot
+                    subroots
+                    (make-attr-table))))
 
 (defun subroot-deps (subroot)
-  (gethash subroot (attrs-subroot-deps *attrs*)))
+  (when-let (table (attrs-subroot-deps *attrs*))
+    (filter-map #'tg:weak-pointer-value
+                (gethash subroot table))))
 
 (defun (setf subroot-deps) (value subroot)
-  (setf (gethash subroot (attrs-subroot-deps *attrs*))
-        value))
+  (let ((table (attrs-subroot-deps *attrs* :ensure t)))
+    (setf (gethash subroot table)
+          (mapcar #'tg:make-weak-pointer value))))
 
 (defun subroot-tables (node)
   (let ((subroot (current-subroot node)))
-    (cons (subroot-table subroot)
-          (mapcar #'subroot-table
-                  (subroot-deps subroot)))))
+    (assure (cons hash-table t)
+      (cons (subroot-table subroot :ensure t)
+            (mapcar #'subroot-table
+                    (subroot-deps subroot))))))
 
 (defun attr-proxy (attr)
   (gethash attr (attrs-proxies *attrs*)))
@@ -140,15 +185,16 @@ replaced."
         (subroots-table (attrs-subroots attrs))
         (subroot-deps (attrs-subroot-deps attrs))
         (removed '()))
-    (iter (for (subroot nil) in-hashtable subroots-table)
-          (unless (path-of-node root subroot)
-            (remhash subroot subroots-table))
-          (pushnew subroot removed))
-    (iter (for (subroot deps) in-hashtable subroot-deps)
-          (when (iter (for dep in deps)
-                      (thereis (not (gethash dep subroots-table))))
-            (remhash subroot subroot-deps)
-            (remhash subroot subroots-table)))
+    (when (and subroots-table subroot-deps)
+      (iter (for (subroot nil) in-hashtable subroots-table)
+            (unless (path-of-node root subroot)
+              (remhash subroot subroots-table))
+            (pushnew subroot removed))
+      (iter (for (subroot deps) in-hashtable subroot-deps)
+            (when (iter (for dep in deps)
+                        (thereis (not (gethash dep subroots-table))))
+              (remhash subroot subroot-deps)
+              (remhash subroot subroots-table))))
     removed))
 
 (defmacro with-attr-table (root &body body)
@@ -187,13 +233,13 @@ replaced."
                 body))
          ,@methods))))
 
-(defun has-attributes-p (node &aux (tables (attrs-tables *attrs*)))
-  (loop for table in tables
-        thereis (nth-value 1 (gethash node table))))
+;; (defun has-attributes-p (node &aux (tables (attrs-tables *attrs*)))
+;;   (loop for table in tables
+;;         thereis (nth-value 1 (gethash node table))))
 
-(defun has-attribute-p (node fn-name &aux (tables (attrs-tables *attrs*)))
-  (loop for table in tables
-        thereis (assoc fn-name (gethash node table))))
+;; (defun has-attribute-p (node fn-name &aux (tables (attrs-tables *attrs*)))
+;;   (loop for table in tables
+;;         thereis (assoc fn-name (gethash node table))))
 
 (defun retrieve-memoized-attr-fn (node fn-name tables)
   "Look up memoized value for FN-NAME on NODE.
