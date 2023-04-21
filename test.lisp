@@ -418,7 +418,7 @@ bucket getting at least 1.  Return as a list."
 
 ;;;; Test suite.
 (defroot test)
-(defsuite test "Functional trees top-level test suite.")
+(defsuite ft-test "Functional trees top-level test suite.")
 
 ;;; Simple Copy Tests
 (deftest simple-copy-tests ()
@@ -1889,18 +1889,7 @@ diagnostic information on error or failure."
           (is (eql 5 (attr.5-fun t2)))))
       t2)))
 
-(defclass project (node attrs-root)
-  ((project-root :initarg :project-root :reader project-root)
-   (child-slots :initform '((project-root . 1)) :allocation :class)
-   (child-slot-specifiers :allocation :class)))
-
-(defmethod subroot-path ((p project) subroot)
-  (path-of-node (project-root p) subroot))
-
-(defmethod subroot-lookup ((p project) path)
-  (lookup (project-root p) path))
-
-(defclass project-root (parent)
+(defclass project (parent attrs-root)
   ())
 
 (defclass file (node)
@@ -1918,19 +1907,17 @@ diagnostic information on error or failure."
   ())
 
 (defun find-dep (p name)
-  (or (find name (children (project-root p)) :key #'name :test #'equal)
+  (or (find name (children p) :key #'name :test #'equal)
       (error "No such dependency: ~a" name)))
 
 (def-attr-fun trivial-symbol-table (in)
   (:method ((h header-file) &optional in)
     (append in (exports h)))
-  (:method ((p project-root) &optional in)
+  (:method ((p project) &optional in)
     (reduce (lambda (in2 child)
               (trivial-symbol-table child in2))
             (children p)
             :initial-value in))
-  (:method ((p project) &optional in)
-    (trivial-symbol-table (project-root p) in))
   (:method ((f impl-file) &optional in)
     (append
      (reduce (lambda (in2 dep)
@@ -1945,7 +1932,7 @@ diagnostic information on error or failure."
   (trivial-symbol-table (ft/attrs:attrs-root*) nil))
 
 (defun symbol-table-alist (project)
-  (iter (for file in (children (project-root project)))
+  (iter (for file in (children project))
         (collect (cons (name file)
                        (trivial-symbol-table file)))))
 
@@ -1979,14 +1966,12 @@ diagnostic information on error or failure."
              :exports (list "other_class")))
          (project
            (make-instance 'project
-             :project-root
-             (make-instance 'project-root
-               :children (list
-                          cc-file-1
-                          cc-file-2
-                          cc-file-3
-                          header-file-1
-                          header-file-2)))))
+             :children (list
+                        cc-file-1
+                        cc-file-2
+                        cc-file-3
+                        header-file-1
+                        header-file-2))))
     ;; Test that changing one .cc file doesn't change them all.
     (let* ((old-alist
              (with-attr-table project
@@ -2003,7 +1988,7 @@ diagnostic information on error or failure."
           "The project must have changed")
       (is (not (eql cc-file-1
                     (find (name cc-file-1)
-                          (children (project-root project)))))
+                          (children project))))
           "The cc file must have changed")
       (dolist (file (list cc-file-2 cc-file-3 header-file-1 header-file-2))
         (is (eql (is (cdr (assoc (name file) old-alist :test #'equal)))
@@ -2024,7 +2009,7 @@ diagnostic information on error or failure."
           "The project must have changed")
       (is (not (eql header-file-1
                     (find (name header-file-1)
-                          (children (project-root project)))))
+                          (children project))))
           "The header file must have changed")
       (dolist (file (list cc-file-3 header-file-2))
         (is (eql-for-key (name file) old-alist new-alist)
