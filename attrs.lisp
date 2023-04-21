@@ -54,8 +54,8 @@ This is important; it controls subroot copying behavior."))
 ;;; Subroot dependencies are recorded when calculating the attributes.
 ;;; When an attribute is being calculated on a node, that node's
 ;;; dominating subroot is placed on a stack. All subroots already on
-;;; the stack when calculating a node's attributes become dependencies
-;;; of the dominating subroot.
+;;; the stack when calculating a node's attributes are marked as
+;;; depending on the current nodes' dominating subroot.
 
 (defmethod copy :around ((root attrs-root) &key)
   (let ((result (call-next-method)))
@@ -216,7 +216,10 @@ replaced."
             (pushnew subroot removed))
       (iter (for (subroot deps) in-hashtable subroot-deps)
             (when (iter (for dep in deps)
-                        (thereis (not (gethash dep subroots-table))))
+                        (thereis
+                         (not
+                          (gethash (tg:weak-pointer-value dep)
+                                   subroots-table))))
               (remhash subroot subroot-deps)
               (remhash subroot subroots-table))))
     removed))
@@ -335,7 +338,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         (unwind-protect
              (progn
                (setf (gethash node table) (cons p alist))
-               (let ((vals (multiple-value-list (funcall thunk))))
+               (let ((vals (multiple-value-list
+                            (call/record-subroot-deps node thunk))))
                  (setf (cdr p) vals)
                  (values-list vals)))
           ;; If a non-local return occured from THUNK, we need
@@ -365,17 +369,20 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 ~s should be used to set ~s before trying to populate any attributes."
                '*attrs* fn-name 'with-attr-table '*attrs*)))))
 
+(defun call/record-subroot-deps (node fn)
+  (let* ((current-subroot (current-subroot node))
+         (*subroot-stack*
+           (remove-if-not #'subroot?
+                          (cons current-subroot *subroot-stack*))))
+    (iter (for depender in (rest *subroot-stack*))
+          (pushnew current-subroot
+                   (subroot-deps depender)))
+    (funcall fn)))
+
 (defgeneric attr-missing (fn-name node)
   (:documentation
    "Function invoked when an attr function has not been computed on NODE.
     The default method signals an error.")
-  (:method :around ((fn-name symbol) (node node))
-    (let* ((current-subroot (current-subroot node))
-           (*subroot-stack* (cons current-subroot *subroot-stack*)))
-      (iter (for (subroot . deps) on (reverse *subroot-stack*))
-            (setf (subroot-deps subroot)
-                  (union deps (subroot-deps current-subroot))))
-      (call-next-method)))
   (:method ((fn-name symbol) (node node))
     (error (make-condition 'uncomputed-attr :node node :fn fn-name))))
 
