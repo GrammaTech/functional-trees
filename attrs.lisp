@@ -21,8 +21,6 @@
    :attrs-table
    :attrs-root
    :attr-proxy
-   :attrs-invalid
-   :invalidate-attrs
    :has-attributes-p
    :has-attribute-p
    :subroot
@@ -161,11 +159,6 @@ attributes can be dynamically nested when one depends on the other.")
   (setf (gethash attr (attrs-proxies *attrs*))
         value))
 
-(defgeneric invalidate-attrs (root)
-  (:method-combination standard/context)
-  (:documentation "Hook to invalidate attributes.")
-  (:method ((root t))))
-
 (defun call/attr-table (root fn)
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
@@ -261,13 +254,8 @@ one."
     (destructuring-bind (table . aux-tables) (ensure-list tables)
       (let* ((initial-alist (gethash node table)))
         (scan-alist initial-alist)
-        (unless (or ;; (eql fn-name 'attrs-invalid)
-                    ;; (let ((mask (attrs-invalid node)))
-                    ;;   (or (eql mask t)
-                    ;;       (member fn-name mask)))
-                 )
-          (dolist (table aux-tables)
-            (scan-alist (gethash node table))))
+        (dolist (table aux-tables)
+          (scan-alist (gethash node table)))
         ;; Return the initial alist, which is all that should be
         ;; written to.
         (values initial-alist nil)))))
@@ -371,14 +359,3 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 
 (defun mapc-attrs-slot (fn vals node slot)
   (mapc-attrs fn vals (slot-value node slot)))
-
-(def-attr-fun attrs-invalid (in)
-  "Whether the attributes for an object are invalid.
-Can return T to invalidate all attributes, or a list of attributes to
-invalidate."
-  (:method ((obj t) &optional in)
-    in))
-
-(defmethod attr-missing ((fn-name (eql 'attrs-invalid))
-                         obj)
-  (attrs-invalid obj nil))
