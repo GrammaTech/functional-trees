@@ -25,7 +25,9 @@
    :has-attribute-p
    :subroot
    :subroot?
-   :attrs-root))
+   :attrs-root
+   :subroot-path
+   :subroot-lookup))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -85,17 +87,25 @@ This is for convenience and entirely equivalent to specializing
   (:method ((x subroot))
     t))
 
+(defgeneric subroot-path (root subroot)
+  (:method ((root node) (subroot node))
+    (path-of-node root subroot)))
+
+(defgeneric subroot-lookup (root path)
+  (:method ((root node) path)
+    (fset:lookup root path)))
+
 (defun dominating-subroot (root node)
   "Dominating subroot of NODE."
   ;; TODO Enforce only one subroot?
   (cond ((eql root node) nil)
         ((subroot? node) node)
         (t
-         (let ((path (path-of-node root node)))
+         (let ((path (subroot-path root node)))
            (if (null path)
                (error "~a is not reachable from ~a" node root)
                (iter (for subpath on (rest (reverse path)))
-                     (for parent = (fset:lookup root (reverse subpath)))
+                     (for parent = (subroot-lookup root (reverse subpath)))
                      (finding parent such-that (subroot? parent))))))))
 
 (defun current-subroot (node)
@@ -211,7 +221,7 @@ replaced."
         (removed '()))
     (when (and subroots-table subroot-deps)
       (iter (for (subroot nil) in-hashtable subroots-table)
-            (unless (path-of-node root subroot)
+            (unless (subroot-path root subroot)
               (remhash subroot subroots-table))
             (pushnew subroot removed))
       (iter (for (subroot deps) in-hashtable subroot-deps)
@@ -281,7 +291,7 @@ one."
                      (list (return-from retrieve-memoized-attr-fn (values alist p)))
                      (t
                       (assert (eql (cdr p) :in-progress))
-                      (error "Circularity detected when computing ~a" fn-name)))))))
+                      (error "Circularity detected when computing ~a on ~a" fn-name node)))))))
     (destructuring-bind (table . aux-tables) (ensure-list tables)
       (let* ((initial-alist (gethash node table)))
         (scan-alist initial-alist)

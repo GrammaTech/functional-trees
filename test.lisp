@@ -74,8 +74,7 @@
 (in-package :ft/test)
 (in-readtable :curry-compose-reader-macros)
 
-;;;; Additional infrastructure on node for testing.
-(defclass node-with-data (node)
+(defclass parent (node)
   ((children :reader children
              :type list
              :initarg :children
@@ -84,8 +83,11 @@
              :documentation "The list of children of the node,
 which may be more nodes, or other values.")
    (child-slots :initform '(children) :allocation :class)
-   (child-slot-specifiers :allocation :class)
-   (data :reader data :initarg :data :initform nil
+   (child-slot-specifiers :allocation :class)))
+
+;;;; Additional infrastructure on node for testing.
+(defclass node-with-data (parent)
+  ((data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")))
 
 (defmethod print-object ((obj node-with-data) stream)
@@ -1887,29 +1889,146 @@ diagnostic information on error or failure."
           (is (eql 5 (attr.5-fun t2)))))
       t2)))
 
-(deftest attr.6 ()
-  "Inheritance with invalidation."
-  (def-attr-fun attr.6-fun (in)
-    "Previous sibling"
-    (:method ((node node) &optional in)
-      (prog1 in
-        (reduce (lambda (prev child)
-                  (attr.6-fun child prev)
-                  child)
-                (children node)
-                :initial-value nil))))
-  (defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.6-fun))
-                                    (node node))
-    (attr.6-fun (ft/attrs:attrs-root*) nil))
-  (let ((t1 (convert 'data-root '(a (b) (c) (d) (e)))))
-    (with-attr-table t1
-      (is (eql
-           (first (children t1))
-           (attr.6-fun (second (children t1))))))
-    t1
-    (let* ((new (convert 'data-root '(f)))
-           (t2 (with t1 (first (children t1)) new)))
-      (with-attr-table t2
-        (is (eql new (first (children t2))))
-        (is (eql (first (children t2))
-                 (attr.6-fun (second (children t2)))))))))
+(defclass project (node attrs-root)
+  ((project-root :initarg :project-root :reader project-root)
+   (child-slots :initform '((project-root . 1)) :allocation :class)
+   (child-slot-specifiers :allocation :class)))
+
+(defmethod subroot-path ((p project) subroot)
+  (path-of-node (project-root p) subroot))
+
+(defmethod subroot-lookup ((p project) path)
+  (lookup (project-root p) path))
+
+(defclass project-root (parent)
+  ())
+
+(defclass file (node)
+  ((name :initarg :name :type string :reader name)
+   (exports :initarg :exports :type list :reader exports)))
+
+(defmethod print-object ((self file) stream)
+  (print-unreadable-object (self stream :type t)
+    (format stream "~a" (name self))))
+
+(defclass impl-file (file subroot)
+  ((deps :initarg :deps :type list :reader deps)))
+
+(defclass header-file (file subroot)
+  ())
+
+(defun find-dep (p name)
+  (or (find name (children (project-root p)) :key #'name :test #'equal)
+      (error "No such dependency: ~a" name)))
+
+(def-attr-fun trivial-symbol-table (in)
+  (:method ((h header-file) &optional in)
+    (append in (exports h)))
+  (:method ((p project-root) &optional in)
+    (reduce (lambda (in2 child)
+              (trivial-symbol-table child in2))
+            (children p)
+            :initial-value in))
+  (:method ((p project) &optional in)
+    (trivial-symbol-table (project-root p) in))
+  (:method ((f impl-file) &optional in)
+    (append
+     (reduce (lambda (in2 dep)
+               (trivial-symbol-table dep in2))
+             (mapcar (lambda (d)
+                       (find-dep (ft/attrs:attrs-root*) d))
+                     (deps f))
+             :initial-value in)
+     (exports f))))
+
+(defmethod attr-missing ((fn-name (eql 'trivial-symbol-table)) (node t))
+  (trivial-symbol-table (ft/attrs:attrs-root*) nil))
+
+(defun symbol-table-alist (project)
+  (iter (for file in (children (project-root project)))
+        (collect (cons (name file)
+                       (trivial-symbol-table file)))))
+
+(defun eql-for-key (key alist1 alist2)
+  (eql (cdr (is (assoc key alist1 :test #'equal)))
+       (cdr (is (assoc key alist2 :test #'equal)))))
+
+(deftest attr-project ()
+  (let* ((cc-file-1
+           (make-instance 'impl-file
+             :name "my_class.cc"
+             :deps (list "my_class.h")
+             :exports (list "my_class::do_something()")))
+         (cc-file-2
+           (make-instance 'impl-file
+             :name "my_program.cc"
+             :deps (list "my_class.h" "other_class.h")
+             :exports (list "main")))
+         (cc-file-3
+           (make-instance 'impl-file
+             :name "other_class.cc"
+             :deps (list "other_class.h")
+             :exports (list "other_class::do_something()")))
+         (header-file-1
+           (make-instance 'header-file
+             :name "my_class.h"
+             :exports (list "my_class")))
+         (header-file-2
+           (make-instance 'header-file
+             :name "other_class.h"
+             :exports (list "other_class")))
+         (project
+           (make-instance 'project
+             :project-root
+             (make-instance 'project-root
+               :children (list
+                          cc-file-1
+                          cc-file-2
+                          cc-file-3
+                          header-file-1
+                          header-file-2)))))
+    ;; Test that changing one .cc file doesn't change them all.
+    (let* ((old-alist
+             (with-attr-table project
+               (symbol-table-alist project)))
+           (new-cc-file (copy cc-file-1))
+           (new-project
+             (with project
+                   cc-file-1
+                   new-cc-file))
+           (new-alist
+             (with-attr-table new-project
+               (symbol-table-alist new-project))))
+      (is (not (eql new-project project))
+          "The project must have changed")
+      (is (not (eql cc-file-1
+                    (find (name cc-file-1)
+                          (children (project-root project)))))
+          "The cc file must have changed")
+      (dolist (file (list cc-file-2 cc-file-3 header-file-1 header-file-2))
+        (is (eql (is (cdr (assoc (name file) old-alist :test #'equal)))
+                 (is (cdr (assoc (name file) new-alist :test #'equal))))
+            "Unchanged files must have the same symbol table"))
+      (is (not (eql-for-key (name cc-file-1) old-alist new-alist))
+          "Changed files must have new symbol tables"))
+    (let* ((old-alist
+             (with-attr-table project
+               (symbol-table-alist project)))
+           (new-header-file (copy header-file-1))
+           (new-project
+             (with project header-file-1 new-header-file))
+           (new-alist
+             (with-attr-table new-project
+               (symbol-table-alist new-project))))
+      (is (not (eql new-project project))
+          "The project must have changed")
+      (is (not (eql header-file-1
+                    (find (name header-file-1)
+                          (children (project-root project)))))
+          "The header file must have changed")
+      (dolist (file (list cc-file-3 header-file-2))
+        (is (eql-for-key (name file) old-alist new-alist)
+            "The header file and its dependencies must be recalculated."))
+      (dolist (file (list cc-file-1 cc-file-2 header-file-1))
+        (is (not (eql-for-key (name file) old-alist new-alist))
+            "Unrelated symbol tables must be left alone.")))))
