@@ -49,7 +49,9 @@
    :*attrs*
    :with-attr-table
    :attr-missing
-   :attrs-root)
+   :attrs-root
+   :subroot
+   :subroot?)
    
   (:shadowing-import-from
    :fset
@@ -1831,26 +1833,59 @@ diagnostic information on error or failure."
 
 (defvar *attr-run* nil)
 
+(defclass data-root (attrs-root node-with-data)
+  ())
+
+(defclass data-subroot (subroot node-with-data)
+  ())
+
+(defmethod convert ((to-type (eql 'data-root))
+                    in &key)
+  (let ((in (change-class (convert 'node-with-data in) 'data-root)))
+    (copy in
+          :children
+          (mapc (lambda (child)
+                  (change-class child 'data-subroot))
+                (children in)))))
+
+(defmethod convert ((to-type (eql 'data-subroot))
+                    (in node-with-data) &key)
+  (change-class in 'data-subroot))
+
+(defmethod convert ((to-type (eql 'data-subroot))
+                    in &key)
+  (convert 'data-subroot (convert 'node-with-data in)))
+
 (deftest attr.5 ()
-  "Inheritance without invalidation."
+  "Inheritance without dependencies."
   (def-attr-fun attr.5-fun ()
     "Size function"
     (:method ((node node))
       (setf *attr-run* t)
       (reduce #'+ (children node) :key #'attr.5-fun :initial-value 1)))
-  (let ((t1 (convert 'node-with-data '(a (b c) (d e)))))
+  (let ((t1 (convert 'data-root '((a b) (c d) (e f)))))
+    (is (children t1))
     (with-attr-table t1
       (let ((*attr-run*))
         (is (eql (attr.5-fun t1) 5))
-        (is *attr-run*))
-      (let* ((new (convert 'node-with-data '(d e f)))
-             (t2 (with t1 (second (children t1)) new)))
-        (with-attr-table t2
-          (let ((*attr-run*))
-            (attr.5-fun (first (children t2)))
-            ;; The attribute was not recomputed for the unchanged
-            ;; child.
-            (is (null *attr-run*))))))))
+        (is *attr-run*)))
+    (let* ((t2 (with t1
+                     (second (children t1))
+                     (convert 'data-subroot '(g h)))))
+      (is (not (eql t1 t2)))
+      (with-attr-table t2
+        (let ((*attr-run*))
+          (is (subroot? (first (children t1))))
+          (is (eql (first (children t1))
+                   (first (children t2))))
+          (attr.5-fun (first (children t2)))
+          ;; The attribute was not recomputed for the unchanged
+          ;; subroot.
+          (is (null *attr-run*))
+          (attr.5-fun (second (children t2)))
+          (is *attr-run*)
+          (is (eql 5 (attr.5-fun t2)))))
+      t2)))
 
 (deftest attr.6 ()
   "Inheritance with invalidation."

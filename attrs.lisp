@@ -26,7 +26,8 @@
    :has-attributes-p
    :has-attribute-p
    :subroot
-   :subroot?))
+   :subroot?
+   :attrs-root))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -34,14 +35,17 @@
 ;;; Attributes are stored in a hash table mapping
 ;;; nodes to list of values.
 
-(defclass root ()
-  ()
+(defclass attrs-root ()
+  (;; Would this be better? An extra slot per AST vs. an extra hash
+   ;; table lookup per AST*copies.
+   #+(or) (subroot-index :initarg :subroot-index :accessor subroot-index)
+   )
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
 
-(defmethod copy :around ((root node) &key)
+(defmethod copy :around ((root attrs-root) &key)
   (let ((result (call-next-method)))
-    (when-let (idx (subroot-index result))
+    (when-let (idx (subroot-index root))
       (setf (subroot-index result) idx))
     result))
 
@@ -63,15 +67,17 @@ This is for convenience and entirely equivalent to specializing
     t))
 
 (defun dominating-subroot (root node)
-  "Strictly dominating subroot of NODE."
+  "Dominating subroot of NODE."
   ;; TODO Enforce only one subroot?
-  (if (eql root node) nil
-      (let ((path (path-of-node root node)))
-        (if (null path)
-            (error "~a is not reachable from ~a" node root)
-            (iter (for subpath on (rest (reverse path)))
-                  (for parent = (fset:lookup root (reverse subpath)))
-                  (finding parent such-that (subroot? parent)))))))
+  (cond ((eql root node) nil)
+        ((subroot? node) node)
+        (t
+         (let ((path (path-of-node root node)))
+           (if (null path)
+               (error "~a is not reachable from ~a" node root)
+               (iter (for subpath on (rest (reverse path)))
+                     (for parent = (fset:lookup root (reverse subpath)))
+                     (finding parent such-that (subroot? parent))))))))
 
 (defun current-subroot (node)
   (let ((attrs-root (attrs-root *attrs*)))
@@ -80,7 +86,7 @@ This is for convenience and entirely equivalent to specializing
 
 (defstruct attrs
   (proxies (make-attr-table) :read-only t :type hash-table)
-  (root (error "No root") :type t :read-only t))
+  (root (error "No root") :type attrs-root :read-only t))
 
 (declaim (special *attrs*))
 
@@ -99,6 +105,7 @@ attributes can be dynamically nested when one depends on the other.")
 (defvar *subroot-registry* (make-attr-table))
 
 (defun subroot-index (root &key (ensure t))
+  (declare (node root))
   (symbol-macrolet ((index (gethash root *subroot-registry*)))
     (if (null index)
         (if ensure
@@ -108,6 +115,7 @@ attributes can be dynamically nested when one depends on the other.")
         index)))
 
 (defun (setf subroot-index) (value root)
+  (declare (node root))
   (setf (gethash root *subroot-registry*)
         (assure subroot-index-entry value)))
 
