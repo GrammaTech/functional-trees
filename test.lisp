@@ -1916,7 +1916,10 @@ diagnostic information on error or failure."
   (:method ((p project) &optional in)
     (reduce (lambda (in2 child)
               (trivial-symbol-table child in2))
-            (children p)
+            (let ((children (children p)))
+              (append
+               (remove-if-not (of-type 'impl-file) children)
+               (remove-if-not (of-type 'header-file) children)))
             :initial-value in))
   (:method ((f impl-file) &optional in)
     (append
