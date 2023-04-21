@@ -1771,68 +1771,6 @@ diagnostic information on error or failure."
 
 ;;; Tests of attribute functions
 
-(deftest attr.1 ()
-  (def-attr-fun attr.1-fn (parent)
-    "Label each node with its parent"
-    (:method ((node node) &optional parent)
-      (mapc {attr.1-fn _ node} (children node))
-      parent))
-  (let ((t1 (convert 'node-with-data '(a b c)))
-        at)
-    (with-attr-table t1
-      (setf at *attrs*)
-      (is (eql (attr.1-fn t1 nil) nil))
-      (is (eql (attr.1-fn t1) nil))
-      (is (eql (attr.1-fn (first (children t1))) t1))
-      (is (eql (attr.1-fn (second (children t1))) t1)))
-    (with-attr-table at
-      (is (eql (attr.1-fn t1 nil) nil))
-      (is (eql (attr.1-fn t1) nil))
-      (is (eql (attr.1-fn (first (children t1))) t1))
-      (is (eql (attr.1-fn (second (children t1))) t1)))))
-
-(deftest attr.2 ()
-  (def-attr-fun attr.2-fun ()
-    "Size function"
-    (:method ((node node))
-      (reduce #'+ (children node) :key #'attr.2-fun :initial-value 1)))
-  (let ((t1 (convert 'node-with-data '(a (b c) (d e)))))
-    (with-attr-table t1
-      (is (eql (attr.2-fun t1) 5))
-      (is (eql (attr.2-fun t1) 5)))))
-
-(deftest attr-circular ()
-  (def-attr-fun attr.3-fn ()
-    (:method ((node node)) (attr.3-fn node)))
-  (let ((t1 (convert 'node-with-data '(a))))
-    (with-attr-table t1
-      (is (handler-case (progn (attr.3-fn t1) nil)
-            (error () t))))))
-
-(deftest attr.4 ()
-  (def-attr-fun attr.4-fn (parent)
-    (:method ((node node) &optional parent)
-      (mapc {attr.4-fn _ node} (children node))
-      parent))
-  (defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.4-fn)) (node node))
-    (let ((root (attrs-root *attrs*)))
-      (attr.4-fn root nil)))
-  (let* ((r (convert 'node-with-data '(a b (c d))))
-         (n1 (first (children r)))
-         (n2 (second (children r)))
-         (n3 (first (children n2))))
-    (with-attr-table r
-      (is r)
-      (is n1)
-      (is n2)
-      (is n3)
-      (is (eql (attr.4-fn n3) n2))
-      (is (eql (attr.4-fn n2) r))
-      (is (eql (attr.4-fn n1) r))
-      (is (eql (attr.4-fn r) nil)))))
-
-(defvar *attr-run* nil)
-
 (defclass data-root (attrs-root node-with-data)
   ())
 
@@ -1855,6 +1793,68 @@ diagnostic information on error or failure."
 (defmethod convert ((to-type (eql 'data-subroot))
                     in &key)
   (convert 'data-subroot (convert 'node-with-data in)))
+
+(deftest attr.1 ()
+  (def-attr-fun attr.1-fn (parent)
+    "Label each node with its parent"
+    (:method ((node node) &optional parent)
+      (mapc {attr.1-fn _ node} (children node))
+      parent))
+  (let ((t1 (convert 'data-root '(a b c)))
+        at)
+    (with-attr-table t1
+      (setf at *attrs*)
+      (is (eql (attr.1-fn t1 nil) nil))
+      (is (eql (attr.1-fn t1) nil))
+      (is (eql (attr.1-fn (first (children t1))) t1))
+      (is (eql (attr.1-fn (second (children t1))) t1)))
+    (with-attr-table at
+      (is (eql (attr.1-fn t1 nil) nil))
+      (is (eql (attr.1-fn t1) nil))
+      (is (eql (attr.1-fn (first (children t1))) t1))
+      (is (eql (attr.1-fn (second (children t1))) t1)))))
+
+(deftest attr.2 ()
+  (def-attr-fun attr.2-fun ()
+    "Size function"
+    (:method ((node node))
+      (reduce #'+ (children node) :key #'attr.2-fun :initial-value 1)))
+  (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (with-attr-table t1
+      (is (eql (attr.2-fun t1) 5))
+      (is (eql (attr.2-fun t1) 5)))))
+
+(deftest attr-circular ()
+  (def-attr-fun attr.3-fn ()
+    (:method ((node node)) (attr.3-fn node)))
+  (let ((t1 (convert 'data-root '(a))))
+    (with-attr-table t1
+      (is (handler-case (progn (attr.3-fn t1) nil)
+            (error () t))))))
+
+(deftest attr.4 ()
+  (def-attr-fun attr.4-fn (parent)
+    (:method ((node node) &optional parent)
+      (mapc {attr.4-fn _ node} (children node))
+      parent))
+  (defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.4-fn)) (node node))
+    (let ((root (attrs-root *attrs*)))
+      (attr.4-fn root nil)))
+  (let* ((r (convert 'data-root '(a b (c d))))
+         (n1 (first (children r)))
+         (n2 (second (children r)))
+         (n3 (first (children n2))))
+    (with-attr-table r
+      (is r)
+      (is n1)
+      (is n2)
+      (is n3)
+      (is (eql (attr.4-fn n3) n2))
+      (is (eql (attr.4-fn n2) r))
+      (is (eql (attr.4-fn n1) r))
+      (is (eql (attr.4-fn r) nil)))))
+
+(defvar *attr-run* nil)
 
 (deftest attr.5 ()
   "Inheritance without dependencies."
@@ -1909,12 +1909,12 @@ diagnostic information on error or failure."
                           (not (ft/attrs:has-attributes-p prev)))
                  (ft/attrs::attrs-invalid child '(attr.6-fun))))
              (ft/attrs:invalidate-attrs child)))
-  (let ((t1 (convert 'node-with-data '(a (b) (c) (d) (e)))))
+  (let ((t1 (convert 'data-root '(a (b) (c) (d) (e)))))
     (with-attr-table t1
       (is (eql
            (first (children t1))
            (attr.6-fun (second (children t1)))))
-      (let* ((new (convert 'node-with-data '(f)))
+      (let* ((new (convert 'data-root '(f)))
              (t2 (with t1 (first (children t1)) new)))
         (with-attr-table t2
           (is (eql new (first (children t2))))

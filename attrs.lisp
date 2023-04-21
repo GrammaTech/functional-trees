@@ -38,8 +38,7 @@
 (defclass attrs-root ()
   (;; Would this be better? An extra slot per AST vs. an extra hash
    ;; table lookup per AST*copies.
-   #+(or) (subroot-index :initarg :subroot-index :accessor subroot-index)
-   )
+   (subroot-index :initarg :subroot-index))
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
 
@@ -106,18 +105,14 @@ attributes can be dynamically nested when one depends on the other.")
 
 (defun subroot-index (root &key (ensure t))
   (declare (node root))
-  (symbol-macrolet ((index (gethash root *subroot-registry*)))
-    (if (null index)
-        (if ensure
-            (values (setf index (make-subroot-index-entry))
-                    t)
-            (values nil nil))
-        index)))
+  (if (slot-boundp root 'subroot-index)
+      (slot-value root 'subroot-index)
+      (and ensure
+           (setf (slot-value root 'subroot-index)
+                 (make-subroot-index-entry)))))
 
 (defun (setf subroot-index) (value root)
-  (declare (node root))
-  (setf (gethash root *subroot-registry*)
-        (assure subroot-index-entry value)))
+  (setf (slot-value root 'subroot-index) value))
 
 (defun attrs-subroots (attrs &key (ensure t))
   (when-let (index
