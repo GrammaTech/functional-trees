@@ -40,6 +40,23 @@
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
 
+;;; A root node has a "list" of subroot nodes. When the root is
+;;; copied, the new root has the same list. The subroots are where the
+;;; attributes are actually stored; each subroot has an attribute
+;;; table.
+
+;;; Subroots are invalidated as follows: of course, since functional
+;;; trees are functional, when a given node is changed it and its
+;;; parents (including its subroot) are replaced. Subroots that are no
+;;; longer part of the tree are trivially invalid. Then, recursively,
+;;; any subroot that depends on an invalid subroot is invalidated.
+
+;;; Subroot dependencies are recorded when calculating the attributes.
+;;; When an attribute is being calculated on a node, that node's
+;;; dominating subroot is placed on a stack. All subroots already on
+;;; the stack when calculating a node's attributes become dependencies
+;;; of the dominating subroot.
+
 (defmethod copy :around ((root attrs-root) &key)
   (let ((result (call-next-method)))
     (when-let (idx (subroot-index root))
