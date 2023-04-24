@@ -108,16 +108,16 @@ This is for convenience and entirely equivalent to specializing
                      (for parent = (subroot-lookup root (reverse subpath)))
                      (finding parent such-that (subroot? parent))))))))
 
-(defun current-subroot (node)
-  (let ((attrs-root (attrs-root *attrs*)))
-    (or (dominating-subroot attrs-root node)
-        attrs-root)))
-
 (defstruct attrs
   (proxies (make-attr-table) :read-only t :type hash-table)
   (root (error "No root") :type attrs-root :read-only t))
 
 (declaim (special *attrs*))
+
+(defun current-subroot (node)
+  (let ((attrs-root (attrs-root *attrs*)))
+    (or (dominating-subroot attrs-root node)
+        attrs-root)))
 
 (defvar *subroot-stack* nil
   "Stack of subroots whose attributes are being computed.
