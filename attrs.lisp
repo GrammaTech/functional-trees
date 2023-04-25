@@ -97,7 +97,7 @@ This is for convenience and entirely equivalent to specializing
 
 (defun dominating-subroot (root node)
   "Dominating subroot of NODE."
-  ;; TODO Enforce only one subroot?
+  ;; TODO Enforce that subroots cannot be nested?
   (cond ((eql root node) nil)
         ((subroot? node) node)
         (t
