@@ -119,6 +119,9 @@ converted to a list of slot-specifier objects"))
             :documentation "The arity of the slot"))
     (:documentation "Object that represents the slots of a class")))
 
+(defmethod convert ((to-type (eql 'node)) (node node) &key)
+  node)
+
 (declaim (inline descendant-map))
 (defun descendant-map (obj)
   (slot-value obj 'descendant-map))
