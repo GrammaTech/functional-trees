@@ -146,7 +146,7 @@ attributes can be dynamically nested when one depends on the other.")
 (defvar *subroot-registry* (make-attr-table))
 
 (defun subroot-index (root &key (ensure t))
-  (declare (node root))
+  (declare (attrs-root root))
   (if (slot-boundp root 'subroot-index)
       (slot-value root 'subroot-index)
       (and ensure
