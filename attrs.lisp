@@ -115,12 +115,15 @@ This is for convenience and entirely equivalent to specializing
   (cond ((eql root node) nil)
         ((subroot? node) node)
         (t
-         (let ((path (subroot-path root node)))
+         (let ((path (subroot-path root node))
+               (real-node (fset:convert 'node node)))
            (if (null path)
                (if (eql (fset:convert 'node root)
-                        (fset:convert 'node node))
+                        real-node)
                    nil
-                   (error "~a is not reachable from ~a" node root))
+                   (if-let ((proxy (attr-proxy real-node)))
+                     (dominating-subroot root proxy)
+                     (error "~a is not reachable from ~a" node root)))
                (iter (for subpath on (rest (reverse path)))
                      (for parent = (subroot-lookup root (reverse subpath)))
                      (finding parent such-that (subroot? parent))))))))
