@@ -26,6 +26,7 @@
    :subroot
    :subroot?
    :attrs-root
+   :attrs-node
    :subroot-path
    :subroot-lookup))
 
@@ -88,12 +89,25 @@ This is for convenience and entirely equivalent to specializing
     t))
 
 (defgeneric subroot-path (root subroot)
+  (:documentation "Return the path from ROOT to SUBROOT.")
   (:method ((root node) (subroot node))
-    (path-of-node root subroot)))
+    (path-of-node root subroot))
+  (:method (root subroot)
+    (subroot-path (fset:convert 'node root)
+                  (fset:convert 'node subroot))))
 
 (defgeneric subroot-lookup (root path)
-  (:method ((root node) path)
-    (fset:lookup root path)))
+  (:documentation "Lookup PATH in ROOT.")
+  (:method ((root node) (path list))
+    (fset:lookup root path))
+  (:method ((root node) (path node))
+    (fset:lookup root path))
+  (:method (root (path list))
+    (subroot-lookup (fset:convert 'node root)
+                    path))
+  (:method (root path)
+    (subroot-lookup (fset:convert 'node root)
+                    (fset:convert 'node path))))
 
 (defun dominating-subroot (root node)
   "Dominating subroot of NODE."
@@ -103,7 +117,10 @@ This is for convenience and entirely equivalent to specializing
         (t
          (let ((path (subroot-path root node)))
            (if (null path)
-               (error "~a is not reachable from ~a" node root)
+               (if (eql (fset:convert 'node root)
+                        (fset:convert 'node node))
+                   nil
+                   (error "~a is not reachable from ~a" node root))
                (iter (for subpath on (rest (reverse path)))
                      (for parent = (subroot-lookup root (reverse subpath)))
                      (finding parent such-that (subroot? parent))))))))
