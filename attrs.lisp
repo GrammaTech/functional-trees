@@ -129,6 +129,15 @@ This is for convenience and entirely equivalent to specializing
                      (for parent = (subroot-lookup root (reverse subpath)))
                      (finding parent such-that (subroot? parent))))))))
 
+(defun reachable? (root node)
+  (let* ((real-root (fset:convert 'node root))
+         (real-node (fset:convert 'node node))
+         (path (path-of-node root node)))
+    (or path
+        (eql real-root real-node)
+        (when-let ((proxy (attr-proxy real-node)))
+          (reachable? root proxy)))))
+
 (defclass attrs ()
   ((proxies :initform (make-attr-table) :reader attrs-proxies :type hash-table)
    (root :initform (error "No root")
@@ -249,8 +258,7 @@ replaced."
     (when (and subroots-table subroot-deps)
       ;; Remove unreachable subroots from the table.
       (iter (for (subroot nil) in-hashtable subroots-table)
-            (unless (or (eql root subroot)
-                        (subroot-path root subroot))
+            (unless (reachable? root subroot)
               (remhash subroot subroots-table)
               (pushnew subroot removed)))
       ;; Uncache any suroot that depends on an unreachable subroot.
