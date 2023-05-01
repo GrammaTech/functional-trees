@@ -108,9 +108,15 @@ This is for convenience and entirely equivalent to specializing
                      (for parent = (subroot-lookup root (reverse subpath)))
                      (finding parent such-that (subroot? parent))))))))
 
-(defstruct attrs
-  (proxies (make-attr-table) :read-only t :type hash-table)
-  (root (error "No root") :type attrs-root :read-only t))
+(defclass attrs ()
+  ((proxies :initform (make-attr-table) :reader attrs-proxies :type hash-table)
+   (root :initform (error "No root")
+         :initarg :root
+         :type attrs-root
+         :reader attrs-root)))
+
+(defun make-attrs (&key root)
+  (make-instance 'attrs :root root))
 
 (declaim (special *attrs*))
 
