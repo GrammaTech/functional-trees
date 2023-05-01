@@ -131,9 +131,8 @@ This is for convenience and entirely equivalent to specializing
 
 (defun reachable? (root node)
   (let* ((real-root (fset:convert 'node root))
-         (real-node (fset:convert 'node node))
-         (path (path-of-node root node)))
-    (or path
+         (real-node (fset:convert 'node node)))
+    (or (subroot-path root node)
         (eql real-root real-node)
         (when-let ((proxy (attr-proxy real-node)))
           (reachable? root proxy)))))
