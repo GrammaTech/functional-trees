@@ -264,10 +264,9 @@ replaced."
       ;; Uncache any suroot that depends on an unreachable subroot.
       (iter (for newly-removed =
                  (iter (for (subroot deps) in-hashtable subroot-deps)
-                       (when (iter (for dep in deps)
-                                   (thereis
-                                    (not (gethash (tg:weak-pointer-value dep)
-                                                  subroots-table))))
+                       (when (iter (for ptr in deps)
+                                   (for dep = (tg:weak-pointer-value ptr))
+                                   (thereis (not (gethash dep subroots-table))))
                          (remhash subroot subroot-deps)
                          (remhash subroot subroots-table)
                          (pushnew subroot removed)
