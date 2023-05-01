@@ -392,8 +392,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
            (remove-if-not #'subroot?
                           (cons current-subroot *subroot-stack*))))
     (iter (for depender in (rest *subroot-stack*))
-          (pushnew current-subroot
-                   (subroot-deps depender)))
+          ;; Avoid circular dependencies.
+          (unless (eql current-subroot depender)
+            (pushnew current-subroot
+                     (subroot-deps depender))))
     (funcall fn)))
 
 (defmacro with-record-subroot-deps ((node) &body body)
