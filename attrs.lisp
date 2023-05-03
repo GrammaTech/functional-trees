@@ -110,7 +110,7 @@ This is for convenience and entirely equivalent to specializing
     (subroot-lookup (fset:convert 'node root)
                     (fset:convert 'node path))))
 
-(defun dominating-subroot (root node)
+(defun dominating-subroot (root node &key (error t))
   "Dominating subroot of NODE."
   ;; TODO Enforce that subroots cannot be nested?
   (cond ((eql root node) nil)
@@ -124,7 +124,10 @@ This is for convenience and entirely equivalent to specializing
                    nil
                    (if-let ((proxy (attr-proxy real-node)))
                      (dominating-subroot root proxy)
-                     (error "~a is not reachable from ~a" node root)))
+                     (progn
+                       (when error
+                         (cerror "Continue" "~a is not reachable from ~a" node root))
+                       nil)))
                (iter (for subpath on (rest (reverse path)))
                      (for parent = (subroot-lookup root (reverse subpath)))
                      (finding parent such-that (subroot? parent))))))))
