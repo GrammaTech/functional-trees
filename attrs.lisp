@@ -260,6 +260,7 @@ replaced."
       (iter (for (subroot nil) in-hashtable subroots-table)
             (unless (reachable? root subroot)
               (remhash subroot subroots-table)
+              (remhash subroot subroot-deps)
               (push subroot removed)))
       ;; Uncache any suroot that depends on an unreachable subroot.
       (iter (for newly-removed =
