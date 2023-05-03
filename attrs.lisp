@@ -135,8 +135,9 @@ This is for convenience and entirely equivalent to specializing
     (or (eql real-root real-node)
         (when-let ((path (path-of-node real-root real-node :error nil)))
           (eql real-node (fset:lookup real-root path)))
-        (when-let ((proxy (attr-proxy real-node)))
-          (reachable? root proxy)))))
+        (when (boundp '*attrs*)
+          (when-let ((proxy (attr-proxy real-node)))
+            (reachable? root proxy))))))
 
 (defclass attrs ()
   ((proxies :initform (make-attr-table) :reader attrs-proxies :type hash-table)
