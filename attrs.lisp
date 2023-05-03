@@ -420,18 +420,22 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                '*attrs* fn-name 'with-attr-table '*attrs*)))))
 
 (defun call/record-subroot-deps (node fn)
-  (let* ((current-subroot (current-subroot node))
-         (*subroot-stack*
-           (remove-if-not #'subroot?
-                          (cons current-subroot *subroot-stack*))))
-    (unless (eql current-subroot (attrs-root*))
-      (iter (for depender in (rest *subroot-stack*))
-            ;; Avoid circular dependencies.
-            (unless (or (eql current-subroot depender)
-                        (eql current-subroot (attrs-root*)))
-              (pushnew current-subroot
-                       (subroot-deps depender)))))
-    (funcall fn)))
+  (if (eql node (attrs-root*))
+      ;; If we are computing top-down (after an attr-missing call),
+      ;; mask the subroot stack.
+      (let ((*subroot-stack* '()))
+        (funcall fn))
+      (let* ((current-subroot (current-subroot node))
+             (*subroot-stack*
+               (remove-if-not #'subroot?
+                              (cons current-subroot *subroot-stack*))))
+        (iter (for depender in (rest *subroot-stack*))
+              ;; Avoid circular dependencies.
+              (unless (or (eql current-subroot depender)
+                          (or (eql current-subroot (attrs-root*))))
+                (pushnew current-subroot
+                         (subroot-deps depender))))
+        (funcall fn))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
   (with-gensyms (fn)
