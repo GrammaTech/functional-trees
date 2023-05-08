@@ -127,16 +127,16 @@ This is for convenience and entirely equivalent to specializing
 
 (defun dominating-subroot (root node &key (error t))
   "Dominating subroot of NODE."
+  (declare (optimize (debug 0)))        ;allow tail recursion
   ;; TODO Enforce that subroots cannot be nested?
   (cond ((eql root node) nil)
         ((subroot? node) node)
         (t
-         (let ((path (subroot-path root node))
+         (let ((real-root (fset:convert 'node root))
                (real-node (fset:convert 'node node)))
-           (if (null path)
-               (if (eql (fset:convert 'node root)
-                        real-node)
-                   nil
+           (unless (eql real-root real-node)
+             (let ((rpath (ft::rpath-to-node real-root real-node)))
+               (if (null rpath)
                    (if-let ((proxy (attr-proxy real-node)))
                      (dominating-subroot root proxy)
                      (progn
@@ -144,17 +144,16 @@ This is for convenience and entirely equivalent to specializing
                          (cerror "Continue" 'unreachable-node
                                  :root root
                                  :node node))
-                       nil)))
-               (iter (for subpath on (rest (reverse path)))
-                     (for parent = (subroot-lookup root (reverse subpath)))
-                     (finding parent such-that (subroot? parent))))))))
+                       nil))
+                   (find-if #'subroot? rpath))))))))
 
 (defun reachable? (root node)
   (let* ((real-root (fset:convert 'node root))
          (real-node (fset:convert 'node node)))
     (or (eql real-root real-node)
-        (when-let ((path (path-of-node real-root real-node :error nil)))
-          (eql real-node (fset:lookup real-root path)))
+        (eql real-node
+             (nth-value 1
+               (ft::rpath-to-node real-root real-node :error nil)))
         (when (boundp '*attrs*)
           (when-let ((proxy (attr-proxy real-node)))
             (reachable? root proxy))))))
