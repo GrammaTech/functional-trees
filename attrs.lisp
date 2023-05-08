@@ -194,8 +194,6 @@ attributes can be dynamically nested when one depends on the other.")
           (setf (gethash k table-out) v))
     table-out))
 
-(defvar *subroot-registry* (make-attr-table))
-
 (defun subroot-index (root &key (ensure t))
   (declare (attrs-root root))
   (assert (slot-exists-p root 'subroot-index))
