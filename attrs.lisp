@@ -244,6 +244,7 @@ ROOT might be an attrs instance itself.
 
 If the active attrs instance has ROOT for its root, it is not
 replaced."
+  (declare (optimize (debug 0)))
   (let ((*attrs*
           (cond
             ((typep root 'attrs) root)
@@ -435,7 +436,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
        (format s "~a is not reachable from ~a" node root)))))
 
 (defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
-  (declare (optimize (debug 0)))
+  (declare (optimize (debug 0)))        ;Tail call
   (if (eql node root)
       ;; If we are computing top-down (after an attr-missing call),
       ;; mask the subroot stack.
