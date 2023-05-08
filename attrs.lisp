@@ -184,6 +184,7 @@ attributes can be dynamically nested when one depends on the other.")
 
 (defun subroot-index (root &key (ensure t))
   (declare (attrs-root root))
+  (assert (slot-exists-p root 'subroot-index))
   (if (slot-boundp root 'subroot-index)
       (slot-value root 'subroot-index)
       (and ensure
