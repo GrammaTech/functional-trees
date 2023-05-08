@@ -54,6 +54,7 @@
            :serial-number
            :descendant-map :path
            :path-of-node
+           :rpath-to-node
            :path-equalp
            :path-equalp-butlast
            :path-later-p
@@ -672,7 +673,9 @@ Duplicates are allowed in both lists."
 
 (defgeneric rpath-to-node (root node &key error)
   (:documentation "Returns the (reversed) path from ROOT to a node
-with the same serial number as NODE.  Note that this does not include NODE itself.
+with the same serial number as NODE, as a list of nodes.  Note that this does
+not include NODE itself.
+
 Also return the node found.  If no such node is in the tree, return NIL NIL, or
 signal an error if ERROR is true.")
   (:method ((root node) (node node) &key error)
