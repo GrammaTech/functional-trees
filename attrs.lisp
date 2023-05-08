@@ -447,6 +447,17 @@ If not there, invoke the thunk THUNK and memoize the values returned."
      (with-slots (root node) c
        (format s "~a is not reachable from ~a" node root)))))
 
+(defun record-deps (root current-subroot subroot-stack)
+  (iter (for depender in subroot-stack)
+        ;; Avoid circular dependencies.
+        (unless (or (eql current-subroot depender)
+                    (eql current-subroot root))
+          (unless (member current-subroot
+                          (subroot-deps depender)
+                          :key #'tg:weak-pointer-value)
+            (push (tg:make-weak-pointer current-subroot)
+                  (subroot-deps depender))))))
+
 (defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
   (declare (optimize (debug 0)))        ;Tail call
   (if (eql node root)
@@ -458,15 +469,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
              (*subroot-stack*
                (remove-if-not #'subroot?
                               (cons current-subroot *subroot-stack*))))
-        (iter (for depender in (rest *subroot-stack*))
-              ;; Avoid circular dependencies.
-              (unless (or (eql current-subroot depender)
-                          (or (eql current-subroot root)))
-                (unless (member current-subroot
-                                (subroot-deps depender)
-                                :key #'tg:weak-pointer-value)
-                  (push (tg:make-weak-pointer current-subroot)
-                        (subroot-deps depender)))))
+        (record-deps root current-subroot (rest *subroot-stack*))
         (funcall fn))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
