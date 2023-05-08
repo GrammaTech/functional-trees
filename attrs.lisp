@@ -180,7 +180,6 @@ This is for convenience and entirely equivalent to specializing
   "Stack of subroots whose attributes are being computed.
 While subroots cannot be nested in the node tree, computation of their
 attributes can be dynamically nested when one depends on the other.")
-(declaim (special *subroot-stack*))
 
 (defun make-attr-table (&rest args)
   (multiple-value-call #'make-weak-hash-table
