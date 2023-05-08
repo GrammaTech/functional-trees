@@ -28,7 +28,8 @@
    :attrs-root
    :attrs-node
    :subroot-path
-   :subroot-lookup))
+   :subroot-lookup
+   :unreachable-node))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -126,7 +127,9 @@ This is for convenience and entirely equivalent to specializing
                      (dominating-subroot root proxy)
                      (progn
                        (when error
-                         (cerror "Continue" "~a is not reachable from ~a" node root))
+                         (cerror "Continue" 'unreachable-node
+                                 :root root
+                                 :node node))
                        nil)))
                (iter (for subpath on (rest (reverse path)))
                      (for parent = (subroot-lookup root (reverse subpath)))
@@ -427,6 +430,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 
 (defun call/record-subroot-deps (node fn)
   (if (eql node (attrs-root*))
+(define-condition unreachable-node (error)
+  ((root :initarg :root)
+   (node :initarg :node))
+  (:report
+   (lambda (c s)
+     (with-slots (root node) c
+       (format s "~a is not reachable from ~a" node root)))))
       ;; If we are computing top-down (after an attr-missing call),
       ;; mask the subroot stack.
       (let ((*subroot-stack* '()))
