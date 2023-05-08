@@ -1302,6 +1302,21 @@ act on the root of the tree (the previous behavior)."
 
 
 ;;; FSET sequence operations (+ two) for functional tree.
+
+(defmacro define-map-compiler-macro (ft-fn cl-fn)
+  "Define a compiler macro for mapping functions."
+  `(define-compiler-macro ,ft-fn (&whole call fn container &rest more)
+     (if (not more)
+         (once-only (fn container)
+           `(if (consp ,container)
+                (,',cl-fn ,fn ,container)
+                (locally (declare (notinline ,',ft-fn))
+                  (,',ft-fn ,fn ,container))))
+         call)))
+
+(define-map-compiler-macro mapc cl:mapc)
+(define-map-compiler-macro mapcar cl:mapcar)
+
 (defgeneric mapc (function container &rest more)
   (:documentation "Map FUNCTION over CONTAINER.")
   (:method (function (nothing null) &rest more)
