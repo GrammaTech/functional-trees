@@ -65,17 +65,17 @@ This is important; it controls subroot copying behavior."))
   (let ((result (call-next-method)))
     (when-let (idx (subroot-index root))
       (setf (subroot-index result)
-            (copy-subroot-index-entry idx)))
+            (copy-subroots-table idx)))
     result))
 
-(defstruct (subroot-index-entry (:copier nil))
+(defstruct (subroots-table (:copier nil))
   (subroots (make-attr-table) :read-only t :type hash-table)
   (subroot-deps (make-attr-table) :read-only t :type hash-table))
 
-(defun copy-subroot-index-entry (entry)
-  (make-subroot-index-entry
-   :subroots (copy-attr-table (subroot-index-entry-subroots entry))
-   :subroot-deps (copy-attr-table (subroot-index-entry-subroot-deps entry))))
+(defun copy-subroots-table (entry)
+  (make-subroots-table
+   :subroots (copy-attr-table (subroots-table-subroots entry))
+   :subroot-deps (copy-attr-table (subroots-table-subroot-deps entry))))
 
 (defclass subroot ()
   ()
@@ -189,7 +189,7 @@ attributes can be dynamically nested when one depends on the other.")
       (slot-value root 'subroot-index)
       (and ensure
            (setf (slot-value root 'subroot-index)
-                 (make-subroot-index-entry)))))
+                 (make-subroots-table)))))
 
 (defun (setf subroot-index) (value root)
   (setf (slot-value root 'subroot-index) value))
@@ -197,12 +197,12 @@ attributes can be dynamically nested when one depends on the other.")
 (defun attrs-subroots (attrs &key (ensure t))
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroot-index-entry-subroots index)))
+    (subroots-table-subroots index)))
 
 (defun attrs-subroot-deps (attrs &key (ensure t))
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroot-index-entry-subroot-deps index)))
+    (subroots-table-subroot-deps index)))
 
 (defun attrs-root* ()
   "Get the root of the current attrs table."
