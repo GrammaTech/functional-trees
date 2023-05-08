@@ -51,7 +51,6 @@
    :attr-missing
    :attrs-root
    :subroot
-   :subroot-path
    :subroot?)
    
   (:shadowing-import-from
@@ -2024,8 +2023,8 @@ diagnostic information on error or failure."
                               (children new-project)
                               :key #'name))))
           "The header file must have changed")
-      (is (subroot-path new-project new-header-file))
-      (is (not (subroot-path new-project header-file-1)))
+      (is (path-of-node new-project new-header-file))
+      (is (not (path-of-node new-project header-file-1)))
       (dolist (file (list cc-file-3 header-file-2))
         (is (eql-for-key (name file) old-alist new-alist)
             "Unrelated symbol tables must be left alone."))
