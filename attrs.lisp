@@ -217,20 +217,18 @@ attributes can be dynamically nested when one depends on the other.")
                     (make-attr-table))))
 
 (defun subroot-deps (subroot)
-  (when-let (table (attrs-subroot-deps *attrs*))
-    (filter-map #'tg:weak-pointer-value
-                (gethash subroot table))))
+  (gethash subroot (attrs-subroot-deps *attrs*)))
 
 (defun (setf subroot-deps) (value subroot)
-  (let ((table (attrs-subroot-deps *attrs* :ensure t)))
-    (setf (gethash subroot table)
-          (mapcar #'tg:make-weak-pointer value))))
+  (setf (gethash subroot (attrs-subroot-deps *attrs* :ensure t))
+        (remove-if (compose #'null #'tg:weak-pointer-value)
+                   value)))
 
 (defun subroot-tables (node)
   (let ((subroot (current-subroot node)))
     (assure (cons hash-table t)
       (cons (subroot-table subroot :ensure t)
-            (mapcar #'subroot-table
+            (mapcar (compose #'subroot-table #'tg:weak-pointer-value)
                     (subroot-deps subroot))))))
 
 (defun attr-proxy (attr)
@@ -428,8 +426,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 ~s should be used to set ~s before trying to populate any attributes."
                '*attrs* fn-name 'with-attr-table '*attrs*)))))
 
-(defun call/record-subroot-deps (node fn)
-  (if (eql node (attrs-root*))
 (define-condition unreachable-node (error)
   ((root :initarg :root)
    (node :initarg :node))
@@ -437,6 +433,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (lambda (c s)
      (with-slots (root node) c
        (format s "~a is not reachable from ~a" node root)))))
+
+(defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
+  (declare (optimize (debug 0)))
+  (if (eql node root)
       ;; If we are computing top-down (after an attr-missing call),
       ;; mask the subroot stack.
       (let ((*subroot-stack* '()))
@@ -448,9 +448,12 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         (iter (for depender in (rest *subroot-stack*))
               ;; Avoid circular dependencies.
               (unless (or (eql current-subroot depender)
-                          (or (eql current-subroot (attrs-root*))))
-                (pushnew current-subroot
-                         (subroot-deps depender))))
+                          (or (eql current-subroot root)))
+                (unless (member current-subroot
+                                (subroot-deps depender)
+                                :key #'tg:weak-pointer-value)
+                  (push (tg:make-weak-pointer current-subroot)
+                        (subroot-deps depender)))))
         (funcall fn))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
