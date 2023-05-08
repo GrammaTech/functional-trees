@@ -270,7 +270,7 @@ replaced."
               (remhash subroot subroot-deps)
               (push subroot removed)))
       ;; Uncache any suroot that depends on an unreachable subroot.
-      (iter (for newly-removed =
+      (iter (for newly-removed-count =
                  (iter (for (subroot deps) in-hashtable subroot-deps)
                        (when (iter (for ptr in deps)
                                    (for dep = (tg:weak-pointer-value ptr))
@@ -278,8 +278,8 @@ replaced."
                          (remhash subroot subroot-deps)
                          (remhash subroot subroots-table)
                          (pushnew subroot removed)
-                         (collect subroot))))
-            (while newly-removed)))
+                         (sum 1))))
+            (until (zerop newly-removed-count))))
     removed))
 
 (defmacro with-attr-table (root &body body)
