@@ -348,6 +348,10 @@ its nodes.")
 (defrestore-cl-store (node stream)
   (cl-store::restore-type-object stream))
 
+(define-compiler-macro children (node)
+  `(locally (declare (notinline children))
+     (the list (children ,node))))
+
 (defgeneric children (node)
   (:documentation "Return all children of NODE.")
   (:method ((node node))
