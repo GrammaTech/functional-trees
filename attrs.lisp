@@ -68,14 +68,28 @@ This is important; it controls subroot copying behavior."))
             (copy-subroots-table idx)))
     result))
 
-(defstruct (subroots-table (:copier nil))
-  (subroots (make-attr-table) :read-only t :type hash-table)
-  (subroot-deps (make-attr-table) :read-only t :type hash-table))
+(defclass subroots-table ()
+  ((subroots
+    :initarg :subroots
+    :initform (make-attr-table)
+    :type hash-table
+    :reader subroots-table-subroots)
+   (subroot-deps
+    :initarg :subroot-deps
+    :type hash-table
+    :reader subroots-table-subroot-deps))
+  (:default-initargs
+   :subroots (make-attr-table)
+   :subroot-deps (make-attr-table)))
 
-(defun copy-subroots-table (entry)
-  (make-subroots-table
-   :subroots (copy-attr-table (subroots-table-subroots entry))
-   :subroot-deps (copy-attr-table (subroots-table-subroot-deps entry))))
+(defun make-subroots-table (&rest args &key &allow-other-keys)
+  (apply #'make-instance 'subroots-table args))
+
+(defun copy-subroots-table (table)
+  (with-slots (subroots subroot-deps) table
+    (make-subroots-table
+     :subroots (copy-attr-table subroots)
+     :subroot-deps (copy-attr-table subroot-deps))))
 
 (defclass subroot ()
   ()
