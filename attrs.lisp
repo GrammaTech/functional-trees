@@ -424,18 +424,17 @@ If not there, invoke the thunk THUNK and memoize the values returned."
        (format s "~a is not reachable from ~a" node root)))))
 
 (defun record-deps (root current-subroot subroot-stack)
-  (iter (for depender in subroot-stack)
-        ;; Avoid circular dependencies.
-        (unless (or (eql current-subroot depender)
-                    (eql current-subroot root))
-          (unless (member current-subroot
-                          (subroot-deps depender)
-                          :key #'tg:weak-pointer-value)
-            (push (tg:make-weak-pointer current-subroot)
-                  (subroot-deps depender))))))
+  (unless (eql root current-subroot)
+    (iter (for depender in subroot-stack)
+          ;; Avoid circular dependencies.
+          (unless (eql current-subroot depender)
+            (unless (member current-subroot
+                            (subroot-deps depender)
+                            :key #'tg:weak-pointer-value)
+              (push (tg:make-weak-pointer current-subroot)
+                    (subroot-deps depender)))))))
 
 (defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
-  (declare (optimize (debug 0)))        ;Tail call
   (if (eql node root)
       ;; If we are computing top-down (after an attr-missing call),
       ;; mask the subroot stack.
@@ -443,8 +442,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         (funcall fn))
       (let* ((current-subroot (current-subroot node))
              (*subroot-stack*
-               (remove-if-not #'subroot?
-                              (cons current-subroot *subroot-stack*))))
+               (if (subroot? current-subroot)
+                   (adjoin current-subroot *subroot-stack*)
+                   ;; The "current subroot" is really the root.
+                   *subroot-stack*)))
         (record-deps root current-subroot (rest *subroot-stack*))
         (funcall fn))))
 
