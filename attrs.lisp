@@ -108,6 +108,7 @@ This is for convenience and entirely equivalent to specializing
   ;; TODO Enforce that subroots cannot be nested?
   (cond ((eql root node) nil)
         ((subroot? node) node)
+        ((gethash node *node-subroot-table*))
         (t
          (let ((real-root (fset:convert 'node root))
                (real-node (fset:convert 'node node)))
@@ -142,6 +143,9 @@ This is for convenience and entirely equivalent to specializing
          :type attrs-root
          :reader attrs-root)))
 
+(defmethod fset:convert ((to (eql 'node)) (attrs attrs) &key)
+  (attrs-root attrs))
+
 (defun make-attrs (&key root)
   (make-instance 'attrs :root root))
 
@@ -156,6 +160,30 @@ This is for convenience and entirely equivalent to specializing
   "Stack of subroots whose attributes are being computed.
 While subroots cannot be nested in the node tree, computation of their
 attributes can be dynamically nested when one depends on the other.")
+
+(defvar *node-subroot-table*
+  ;; Constant placeholder value.
+  (load-time-value (make-hash-table) t)
+  "Hash table from AST to subroot.")
+
+(defun compute-node-subroot-table (ast)
+  "Recurse over AST, computing a table from ASTs to their dominating subroots."
+  (declare (optimize (debug 0)))
+  (let ((table (make-hash-table :test 'eq :size 4096)))
+    (labels ((compute-node-subroot-table (ast &optional subroot)
+               (let ((ast (if (typep ast 'node) ast
+                              (fset:convert 'node ast))))
+                 (cond ((null subroot)
+                        (compute-node-subroot-table ast ast))
+                       ((and (not (eq ast subroot))
+                             (subroot? ast))
+                        (compute-node-subroot-table ast ast))
+                       (t
+                        (setf (gethash ast table) subroot)
+                        (dolist (c (children ast))
+                          (compute-node-subroot-table c subroot)))))))
+      (compute-node-subroot-table ast)
+      table)))
 
 (defun make-attr-table (&rest args)
   (multiple-value-call #'make-weak-hash-table
@@ -233,7 +261,9 @@ ROOT might be an attrs instance itself.
 If the active attrs instance has ROOT for its root, it is not
 replaced."
   (declare (optimize (debug 0)))
-  (let ((*attrs*
+  (let ((*node-subroot-table*
+          (compute-node-subroot-table root))
+        (*attrs*
           (cond
             ((typep root 'attrs) root)
             ((and (boundp '*attrs*)
