@@ -275,14 +275,13 @@ replaced."
     (funcall fn)))
 
 (defun invalidate-subroots (attrs)
-  (let ((root (attrs-root attrs))
-        (subroots-table (attrs-subroots attrs))
+  (let ((subroots-table (attrs-subroots attrs))
         (subroot-deps (attrs-subroot-deps attrs))
         (removed '()))
     (when (and subroots-table subroot-deps)
       ;; Remove unreachable subroots from the table.
       (iter (for (subroot nil) in-hashtable subroots-table)
-            (unless (reachable? root subroot)
+            (unless (gethash subroot *node-subroot-table*)
               (remhash subroot subroots-table)
               (remhash subroot subroot-deps)
               (push subroot removed)))
