@@ -351,7 +351,7 @@ its nodes.")
 
 (define-compiler-macro children (node)
   `(locally (declare (notinline children))
-     (the list (children ,node))))
+     (the (values list &optional) (children ,node))))
 
 (defgeneric children (node)
   (:documentation "Return all children of NODE.")
