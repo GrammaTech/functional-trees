@@ -108,8 +108,6 @@ This is for convenience and entirely equivalent to specializing
   ;; TODO Enforce that subroots cannot be nested?
   (cond ((eql root node) nil)
         ((subroot? node) node)
-        ((and (boundp '*attrs*)
-              (gethash node (attrs-node-subroot-table *attrs*))))
         (t
          (let ((real-root (fset:convert 'node root))
                (real-node (fset:convert 'node node)))
@@ -161,7 +159,12 @@ This is for convenience and entirely equivalent to specializing
 
 (defun current-subroot (node)
   (let ((attrs-root (attrs-root *attrs*)))
-    (or (dominating-subroot attrs-root node)
+    (or (when (boundp '*attrs*)
+          (let ((table (attrs-node-subroot-table *attrs*)))
+            (or (gethash node table)
+                (when-let (p (attr-proxy node))
+                  (gethash p table)))))
+        (dominating-subroot attrs-root node)
         attrs-root)))
 
 (defvar *subroot-stack* nil
