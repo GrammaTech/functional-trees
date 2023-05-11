@@ -75,19 +75,28 @@ This is important; it controls subroot copying behavior."))
    (subroot-deps
     :initarg :subroot-deps
     :type hash-table
-    :reader subroots-table-subroot-deps))
+    :reader subroots-table-subroot-deps)
+   (proxies
+    :documentation "Table of AST proxies.
+These may be stored as attribute values so they need to be
+copied along with the subroots."
+    :initarg :proxies
+    :type hash-table
+    :reader subroots-table.proxies))
   (:default-initargs
    :subroots (make-attr-table)
-   :subroot-deps (make-attr-table)))
+   :subroot-deps (make-attr-table)
+   :proxies (make-attr-table)))
 
 (defun make-subroots-table (&rest args &key &allow-other-keys)
   (apply #'make-instance 'subroots-table args))
 
 (defun copy-subroots-table (table)
-  (with-slots (subroots subroot-deps) table
+  (with-slots (subroots subroot-deps proxies) table
     (make-subroots-table
      :subroots (copy-attr-table subroots)
-     :subroot-deps (copy-attr-table subroot-deps))))
+     :subroot-deps (copy-attr-table subroot-deps)
+     :proxies proxies)))
 
 (defclass subroot ()
   ()
@@ -136,8 +145,7 @@ This is for convenience and entirely equivalent to specializing
             (reachable? root proxy))))))
 
 (defclass attrs ()
-  ((proxies :initform (make-attr-table) :reader attrs-proxies :type hash-table)
-   (root :initform (error "No root")
+  ((root :initform (error "No root")
          :initarg :root
          :type attrs-root
          :reader attrs-root)
@@ -225,6 +233,11 @@ attributes can be dynamically nested when one depends on the other.")
              (subroot-index (attrs-root attrs) :ensure ensure))
     (subroots-table-subroot-deps index)))
 
+(defun attrs-proxies (attrs &key (ensure t))
+  (when-let (index
+             (subroot-index (attrs-root attrs) :ensure ensure))
+    (subroots-table.proxies index)))
+
 (defun attrs-root* ()
   "Get the root of the current attrs table."
   (attrs-root *attrs*))
@@ -256,9 +269,12 @@ attributes can be dynamically nested when one depends on the other.")
 (defun attr-proxy (attr)
   (gethash attr (attrs-proxies *attrs*)))
 
-(defun (setf attr-proxy) (value attr)
+(defun set-attr-proxy (attr value)
   (setf (gethash attr (attrs-proxies *attrs*))
         value))
+
+(defun (setf attr-proxy) (value attr)
+  (set-attr-proxy attr value))
 
 (defun call/attr-table (root fn)
   "Invoke FN with an attrs instance for ROOT.
