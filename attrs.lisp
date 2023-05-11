@@ -267,15 +267,19 @@ ROOT might be an attrs instance itself.
 If the active attrs instance has ROOT for its root, it is not
 replaced."
   (declare (optimize (debug 0)))
-  (let ((*attrs*
-          (cond
-            ((typep root 'attrs) root)
-            ((and (boundp '*attrs*)
-                  (eql (attrs-root *attrs*)
-                       root))
-             *attrs*)
-            (t (make-attrs :root root)))))
-    (invalidate-subroots *attrs*)
+  (let* ((new nil)
+         (*attrs*
+           (cond
+             ((typep root 'attrs) root)
+             ((and (boundp '*attrs*)
+                   (eql (attrs-root *attrs*)
+                        root))
+              *attrs*)
+             (t
+              (prog1 (make-attrs :root root)
+                (setf new t))))))
+    (when new
+      (invalidate-subroots *attrs*))
     (funcall fn)))
 
 (defun invalidate-subroots (attrs)
