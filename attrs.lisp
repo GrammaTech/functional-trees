@@ -8,7 +8,9 @@
   (:import-from :fset)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
-  (:import-from :serapeum :standard/context :defplace :assure :filter-map)
+  (:import-from :serapeum
+                :standard/context :defplace :assure
+                :filter-map :nlet :lret)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -32,6 +34,21 @@
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
+
+;;; We want this to be cleared if the system is reloaded.
+(defparameter *cache*
+  (tg:make-weak-hash-table
+   :test 'eq
+   :weakness :key
+   :weakness-matters t))
+
+(defvar *use-cache* t)
+
+(defun cache-lookup (key &key (cache *cache*))
+  (gethash key cache))
+
+(defun (setf cache-lookup) (value key)
+  (setf (gethash key *cache*) value))
 
 ;;; Attributes are stored in a hash table mapping
 ;;; nodes to list of values.
@@ -277,7 +294,7 @@ attributes can be dynamically nested when one depends on the other.")
 (defun (setf attr-proxy) (value attr)
   (set-attr-proxy attr value))
 
-(defun call/attr-table (root fn &key)
+(defun call/attr-table (root fn &key (use-cache *use-cache*))
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
@@ -293,8 +310,12 @@ replaced."
                         root))
               *attrs*)
              (t
-              (prog1 (make-attrs :root root)
-                (setf new t))))))
+              (or (and use-cache
+                       (cache-lookup root))
+                  (serapeum:lret ((attrs (make-attrs :root root)))
+                    (when use-cache
+                      (setf (cache-lookup root) attrs))
+                    (setf new t)))))))
     (when new
       (invalidate-subroots *attrs*))
     (funcall fn)))
