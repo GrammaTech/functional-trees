@@ -12,6 +12,7 @@
   (:export
    :def-attr-fun
    :with-attr-table
+   :with-attr-session
    :*attrs*
    :attrs-root*
    :mapc-attrs
@@ -276,7 +277,7 @@ attributes can be dynamically nested when one depends on the other.")
 (defun (setf attr-proxy) (value attr)
   (set-attr-proxy attr value))
 
-(defun call/attr-table (root fn)
+(defun call/attr-table (root fn &key)
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
@@ -327,10 +328,16 @@ replaced."
    and bind it to *ATTRS*, then evaluate BODY
    in an implicit PROGN.  If ROOT is an ATTRS
    structure, simply bind *ATTRS* to it."
+  `(with-attr-session (,root)
+     ,@body))
+
+(defmacro with-attr-session ((root &rest args &key &allow-other-keys)
+                             &body body)
+  "Like `with-attr-table', but allowing keyword arguments."
   (with-gensyms (attr-table-fn)
     `(flet ((,attr-table-fn () ,@body))
        (declare (dynamic-extent #',attr-table-fn))
-       (call/attr-table ,root #',attr-table-fn))))
+       (call/attr-table ,root #',attr-table-fn ,@args))))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
   (assert (symbolp name))
