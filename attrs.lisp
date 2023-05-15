@@ -42,8 +42,6 @@
    :weakness :key
    :weakness-matters t))
 
-(defvar *use-cache* t)
-
 (defun cache-lookup (key &key (cache *cache*))
   (gethash key cache))
 
@@ -151,15 +149,15 @@ This is for convenience and entirely equivalent to specializing
                        nil))
                    (find-if #'subroot? rpath))))))))
 
-(defun reachable? (root node)
-  (let* ((real-root (fset:convert 'node root))
-         (real-node (fset:convert 'node node)))
-    (or (eql real-root real-node)
-        (eql real-node
+(defun reachable? (root dest)
+  (let* ((root-node (fset:convert 'node root))
+         (dest-node (fset:convert 'node dest)))
+    (or (eql root-node dest-node)
+        (eql dest-node
              (nth-value 1
-               (ft::rpath-to-node real-root real-node :error nil)))
+               (ft::rpath-to-node root-node dest-node :error nil)))
         (when (boundp '*attrs*)
-          (when-let ((proxy (attr-proxy real-node)))
+          (when-let ((proxy (attr-proxy dest-node)))
             (reachable? root proxy))))))
 
 (defclass attrs ()
@@ -294,7 +292,9 @@ attributes can be dynamically nested when one depends on the other.")
 (defun (setf attr-proxy) (value attr)
   (set-attr-proxy attr value))
 
-(defun call/attr-table (root fn &key (use-cache *use-cache*))
+(defun call/attr-table (root fn &key
+                                  cache
+                                  inherit)
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
@@ -306,14 +306,18 @@ replaced."
            (cond
              ((typep root 'attrs) root)
              ((and (boundp '*attrs*)
-                   (eql (attrs-root *attrs*)
-                        root))
+                   (if inherit
+                       (progn
+                         (assert (reachable? (attrs-root *attrs*) root))
+                         t)
+                       (eql (attrs-root *attrs*)
+                            root)))
               *attrs*)
              (t
-              (or (and use-cache
+              (or (and cache
                        (cache-lookup root))
                   (serapeum:lret ((attrs (make-attrs :root root)))
-                    (when use-cache
+                    (when cache
                       (setf (cache-lookup root) attrs))
                     (setf new t)))))))
     (when new
