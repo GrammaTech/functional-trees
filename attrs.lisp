@@ -25,7 +25,8 @@
    :subroot?
    :attrs-root
    :attrs-node
-   :unreachable-node))
+   :unreachable-node
+   :reachable?))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -53,6 +54,15 @@ them we can reuse them.")
   "Stack of subroots whose attributes are being computed.
 While subroots cannot be nested in the node tree, computation of their
 attributes can be dynamically nested when one depends on the other.")
+
+(defvar *cache-default* t
+  "Whether to use the session cache by default.")
+
+(defvar *inherit-default* t
+  "Whether to inherit an attr session by default.
+Inheriting a session means that if there is already a session in
+progress for root A, and you try to start a session for root B, then
+if B is reachable from A the session for A is reused.")
 
 
 ;;; Classes
@@ -302,19 +312,12 @@ If ENSURE is non-nil, create the table."
             (mapcar (compose #'subroot->attr-table #'tg:weak-pointer-value)
                     (subroot->deps subroot))))))
 
-(defun attr-proxy (attr)
+(defplace attr-proxy (attr)
   (gethash attr (attrs.ast->proxy *attrs*)))
 
-(defun set-attr-proxy (attr value)
-  (setf (gethash attr (attrs.ast->proxy *attrs*))
-        value))
-
-(defun (setf attr-proxy) (value attr)
-  (set-attr-proxy attr value))
-
 (defun call/attr-table (root fn &key
-                                  cache
-                                  inherit)
+                                  (cache *cache-default*)
+                                  (inherit *inherit-default*))
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
@@ -325,21 +328,18 @@ replaced."
          (*attrs*
            (cond
              ((typep root 'attrs) root)
+             ((and cache (cache-lookup root)))
              ((and (boundp '*attrs*)
-                   (if inherit
-                       (progn
-                         (assert (reachable? (attrs-root *attrs*) root))
-                         t)
+                   (or (and inherit
+                            (reachable? (attrs-root *attrs*) root))
                        (eql (attrs-root *attrs*)
                             root)))
               *attrs*)
              (t
-              (or (and cache
-                       (cache-lookup root))
-                  (serapeum:lret ((attrs (make-attrs :root root)))
-                    (when cache
-                      (setf (cache-lookup root) attrs))
-                    (setf new t)))))))
+              (lret ((attrs (make-attrs :root root)))
+                (when cache
+                  (setf (cache-lookup root) attrs))
+                (setf new t))))))
     (when new
       (invalidate-subroots *attrs*))
     (funcall fn)))
