@@ -10,7 +10,8 @@
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
   (:import-from :serapeum
                 :standard/context :defplace :assure
-                :filter-map :nlet :lret)
+                :filter-map :nlet :lret
+                :defvar-unbound)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -21,7 +22,6 @@
    :mapc-attrs-children
    :mapc-attrs-slot
    :attr-missing
-   :attrs-table
    :attrs-root
    :attr-proxy
    :has-attributes-p
@@ -34,6 +34,12 @@
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
+
+
+;;; Variables
+
+(defvar-unbound *attrs*
+  "Holds the current attribute session.")
 
 ;;; We want this to be cleared if the system is reloaded.
 (defparameter *session-cache*
@@ -48,6 +54,14 @@ them we can reuse them.")
 (defplace cache-lookup (key)
   (gethash key *session-cache*))
 
+(defvar *subroot-stack* nil
+  "Stack of subroots whose attributes are being computed.
+While subroots cannot be nested in the node tree, computation of their
+attributes can be dynamically nested when one depends on the other.")
+
+
+;;; Classes
+
 (defclass attrs-root ()
   ((subroot-index
     :documentation "Tables from subroots to attributes and from subroots to dependencies."
@@ -55,63 +69,13 @@ them we can reuse them.")
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
 
-;;; A root node has a set of subroot nodes. When the root is copied,
-;;; the new root has the same list. The subroots are where the
-;;; attributes are actually stored; each subroot has an attribute
-;;; table.
-
-;;; Subroots are invalidated as follows: of course, since functional
-;;; trees are functional, when a given node is changed it and its
-;;; parents (including its subroot) are replaced. Subroots that are no
-;;; longer part of the tree are trivially invalid. Then, recursively,
-;;; any subroot that depends on an invalid subroot is invalidated.
-
-;;; Subroot dependencies are recorded when calculating the attributes.
-;;; When an attribute is being calculated on a node, that node's
-;;; dominating subroot is placed on a stack. All subroots already on
-;;; the stack when calculating a node's attributes are marked as
-;;; depending on the current nodes' dominating subroot.
-
 (defmethod copy :around ((root attrs-root) &key)
   "Carry forward (copying) the subroots from the old root."
   (let ((result (call-next-method)))
     (when-let (idx (subroot-index root))
       (setf (subroot-index result)
-            (copy-subroots-table idx)))
+            (copy-subroot-index idx)))
     result))
-
-(defclass subroots-table ()
-  ((subroot-node-attrs
-    :initarg :subroot-node-attrs
-    :type hash-table
-    :reader subroots-table-subroots
-    :documentation "Table from subroots to attributes")
-   (subroot-deps
-    :initarg :subroot-deps
-    :type hash-table
-    :reader subroots-table-subroot-deps
-    :documentation "Table from subroots to dependencies")
-   (proxies
-    :documentation "Table of AST proxies.
-These may be stored as attribute values so they need to be
-copied along with the subroots."
-    :initarg :proxies
-    :type hash-table
-    :reader subroots-table.proxies))
-  (:default-initargs
-   :subroot-node-attrs (make-attr-table)
-   :subroot-deps (make-attr-table)
-   :proxies (make-attr-table)))
-
-(defun make-subroots-table (&rest args &key &allow-other-keys)
-  (apply #'make-instance 'subroots-table args))
-
-(defun copy-subroots-table (table)
-  (with-slots (subroot-node-attrs subroot-deps proxies) table
-    (make-subroots-table
-     :subroot-node-attrs (copy-attr-table subroot-node-attrs)
-     :subroot-deps (copy-attr-table subroot-deps)
-     :proxies proxies)))
 
 (defclass subroot ()
   ()
@@ -125,6 +89,97 @@ This is for convenience and entirely equivalent to specializing
     nil)
   (:method ((x subroot))
     t))
+
+(defclass subroot-index ()
+  ((subroot->attr-table
+    :initarg :subroot->attr-table
+    :type hash-table
+    :reader subroot-index.subroot->attr-table
+    :documentation "Table from subroots to attributes")
+   (subroot->deps
+    :initarg :subroot->deps
+    :type hash-table
+    :reader subroot-index.subroot->deps
+    :documentation "Table from subroots to dependencies")
+   (ast->proxy
+    :documentation "Table of AST proxies.
+These may be stored as attribute values so they need to be
+copied along with the subroots."
+    :initarg :ast->proxy
+    :type hash-table
+    :reader subroot-index.ast->proxy))
+  (:documentation "Data structure associated with a root to track its subroots.")
+  (:default-initargs
+   :subroot->attr-table (make-attr-table)
+   :subroot->deps (make-attr-table)
+   :ast->proxy (make-attr-table)))
+
+(defun make-subroot-index (&rest args &key &allow-other-keys)
+  (apply #'make-instance 'subroot-index args))
+
+(defun copy-subroot-index (table)
+  (with-slots (subroot->attr-table subroot->deps ast->proxy) table
+    (make-subroot-index
+     :subroot->attr-table (copy-attr-table subroot->attr-table)
+     :subroot->deps (copy-attr-table subroot->deps)
+     :ast->proxy ast->proxy)))
+
+(defclass attrs ()
+  ((root :initform (error "No root")
+         :initarg :root
+         :type attrs-root
+         :reader attrs-root)
+   (node->subroot
+    :type hash-table
+    :reader attrs.node->subroot
+    :documentation "Pre-computed table from nodes to their subroots."
+    :initarg :node->subroot))
+  (:documentation "An attributes session.
+This holds at least the root of the attribute computation."))
+
+(defmethod fset:convert ((to (eql 'node)) (attrs attrs) &key)
+  (attrs-root attrs))
+
+(defun make-attrs (&key root)
+  "Make an instance of `attrs'."
+  (make-instance 'attrs
+    :root root
+    :node->subroot
+    (compute-node->subroot root)))
+
+
+;;; Subroot implementation
+
+(defun make-attr-table (&rest args)
+  "Make a weak 'eq hash table."
+  (multiple-value-call #'make-weak-hash-table
+    :weakness :key
+    :test #'eq
+    (values-list args)))
+
+(defun copy-attr-table (table-in &rest args)
+  "Copy a weak 'eq hash table."
+  (let ((table-out (apply #'make-attr-table :size (hash-table-size table-in) args)))
+    (iter (for (k v) in-hashtable table-in)
+          (setf (gethash k table-out) v))
+    table-out))
+
+;;; A root node has a set of subroot nodes. When the root is copied,
+;;; the new root has the same list. The subroots are where the
+;;; attributes are actually stored; each subroot has an attribute
+;;; table. attribute
+
+;;; Subroots are invalidated as follows: of course, since functional
+;;; trees are functional, when a given node is changed it and its
+;;; parents (including its subroot) are replaced. Subroots that are no
+;;; longer part of the tree are trivially invalid. Then, recursively,
+;;; any subroot that depends on an invalid subroot is invalidated.
+
+;;; Subroot dependencies are recorded when calculating the attributes.
+;;; When an attribute is being calculated on a node, that node's
+;;; dominating subroot is placed on a stack. All subroots already on
+;;; the stack when calculating a node's attributes are marked as
+;;; depending on the current nodes' dominating subroot.
 
 (defun dominating-subroot (root node &key (error t))
   "Find the dominating subroot of NODE."
@@ -161,79 +216,35 @@ This is for convenience and entirely equivalent to specializing
           (when-let ((proxy (attr-proxy dest-node)))
             (reachable? root proxy))))))
 
-(defclass attrs ()
-  ((root :initform (error "No root")
-         :initarg :root
-         :type attrs-root
-         :reader attrs-root)
-   (node-subroot-table
-    :type hash-table
-    :reader attrs-node-subroot-table
-    :documentation "Pre-computed table from nodes to their subroots."
-    :initarg :node-subroot-table))
-  (:documentation "The table created by a `with-attr-table' form.
-This holds at least the root of the attribute computation."))
-
-(defmethod fset:convert ((to (eql 'node)) (attrs attrs) &key)
-  (attrs-root attrs))
-
-(defun make-attrs (&key root)
-  "Make an instance of `attrs'."
-  (make-instance 'attrs
-    :root root
-    :node-subroot-table
-    (compute-node-subroot-table root)))
-
-(declaim (special *attrs*))
-
 (defun current-subroot (node)
   "Return the dominating subroot for NODE."
   (let ((attrs-root (attrs-root *attrs*)))
     (or (when (boundp '*attrs*)
-          (let ((table (attrs-node-subroot-table *attrs*)))
+          (let ((table (attrs.node->subroot *attrs*)))
             (or (gethash node table)
                 (when-let (p (attr-proxy node))
                   (gethash p table)))))
         (dominating-subroot attrs-root node)
         attrs-root)))
 
-(defvar *subroot-stack* nil
-  "Stack of subroots whose attributes are being computed.
-While subroots cannot be nested in the node tree, computation of their
-attributes can be dynamically nested when one depends on the other.")
-
-(defun compute-node-subroot-table (ast)
+(defun compute-node->subroot (ast)
   "Recurse over AST, computing a table from ASTs to their dominating subroots."
   (declare (optimize (debug 0)))
   (let ((table (make-hash-table :test 'eq :size 4096)))
-    (labels ((compute-node-subroot-table (ast &optional subroot)
+    (labels ((compute-node->subroot (ast &optional subroot)
                (let ((ast (if (typep ast 'node) ast
                               (fset:convert 'node ast))))
                  (cond ((null subroot)
-                        (compute-node-subroot-table ast ast))
+                        (compute-node->subroot ast ast))
                        ((and (not (eq ast subroot))
                              (subroot? ast))
-                        (compute-node-subroot-table ast ast))
+                        (compute-node->subroot ast ast))
                        (t
                         (setf (gethash ast table) subroot)
                         (dolist (c (children ast))
-                          (compute-node-subroot-table c subroot)))))))
-      (compute-node-subroot-table ast)
+                          (compute-node->subroot c subroot)))))))
+      (compute-node->subroot ast)
       table)))
-
-(defun make-attr-table (&rest args)
-  "Make a weak 'eq hash table."
-  (multiple-value-call #'make-weak-hash-table
-    :weakness :key
-    :test #'eq
-    (values-list args)))
-
-(defun copy-attr-table (table-in &rest args)
-  "Copy a weak 'eq hash table."
-  (let ((table-out (apply #'make-attr-table :size (hash-table-size table-in) args)))
-    (iter (for (k v) in-hashtable table-in)
-          (setf (gethash k table-out) v))
-    table-out))
 
 (defun subroot-index (root &key (ensure t))
   "Get the subroot index for the current root."
@@ -243,64 +254,64 @@ attributes can be dynamically nested when one depends on the other.")
       (slot-value root 'subroot-index)
       (and ensure
            (setf (slot-value root 'subroot-index)
-                 (make-subroots-table)))))
+                 (make-subroot-index)))))
 
-(defun attrs-subroots (attrs &key (ensure t))
+(defun (setf subroot-index) (value root)
+  "Set the subroot "
+  (setf (slot-value root 'subroot-index) value))
+
+(defun attrs.subroot->attr-table (attrs &key (ensure t))
   "Get the subroots table for ATTRS.
 If ENSURE is non-nil, create the table."
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroots-table-subroots index)))
+    (subroot-index.subroot->attr-table index)))
 
-(defun attrs-subroot-deps (attrs &key (ensure t))
+(defun attrs.subroot->deps (attrs &key (ensure t))
   "Get the subroot dependencies table for ATTRS.
 If ENSURE is non-nil, create the table."
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroots-table-subroot-deps index)))
+    (subroot-index.subroot->deps index)))
 
-(defun attrs-proxies (attrs &key (ensure t))
+(defun attrs.ast->proxy (attrs &key (ensure t))
   "Get the attr proxy table for ATTRS.
 If ENSURE is non-nil, create the table."
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroots-table.proxies index)))
+    (subroot-index.ast->proxy index)))
 
 (defun attrs-root* ()
   "Get the root of the current attrs table."
   (attrs-root *attrs*))
 
-(defun node-subroot-table (node)
-  "Get the subroot table for the dominating subroot of NODE."
-  (subroot-table (current-subroot node)))
-
-(defun subroot-table (subroot &key ensure)
+(defun subroot->attr-table (subroot &key ensure)
   "Get the subroot table for SUBROOT in the current attrs."
-  (when-let (subroots (attrs-subroots *attrs* :ensure ensure))
+  (when-let (subroots (attrs.subroot->attr-table *attrs* :ensure ensure))
     (ensure-gethash subroot
                     subroots
                     (make-attr-table))))
 
-(defun subroot-deps (subroot)
-  (gethash subroot (attrs-subroot-deps *attrs*)))
+(defun subroot->deps (subroot)
+  (gethash subroot (attrs.subroot->deps *attrs*)))
 
-(defun (setf subroot-deps) (value subroot)
-  (setf (gethash subroot (attrs-subroot-deps *attrs* :ensure t))
+(defun (setf subroot->deps) (value subroot)
+  (setf (gethash subroot (attrs.subroot->deps *attrs* :ensure t))
         (remove-if (compose #'null #'tg:weak-pointer-value)
                    value)))
 
-(defun subroot-tables (node)
+(defun subroot->attr-tables (node)
   (let ((subroot (current-subroot node)))
     (assure (cons hash-table t)
-      (cons (subroot-table subroot :ensure t)
-            (mapcar (compose #'subroot-table #'tg:weak-pointer-value)
-                    (subroot-deps subroot))))))
+      (cons (subroot->attr-table subroot :ensure t)
+            (mapcar (compose #'subroot->attr-table #'tg:weak-pointer-value)
+                    (subroot->deps subroot))))))
 
 (defun attr-proxy (attr)
-  (gethash attr (attrs-proxies *attrs*)))
+  (gethash attr (attrs.ast->proxy *attrs*)))
 
 (defun set-attr-proxy (attr value)
-  (setf (gethash attr (attrs-proxies *attrs*))
+  (setf (gethash attr (attrs.ast->proxy *attrs*))
         value))
 
 (defun (setf attr-proxy) (value attr)
@@ -339,28 +350,65 @@ replaced."
     (funcall fn)))
 
 (defun invalidate-subroots (attrs)
-  (let ((subroots-table (attrs-subroots attrs))
-        (subroot-deps (attrs-subroot-deps attrs))
+  (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
+        (subroot->deps (attrs.subroot->deps attrs))
         (removed '()))
-    (when (and subroots-table subroot-deps)
+    (when (and subroot->attr-table subroot->deps)
       ;; Remove unreachable subroots from the table.
-      (iter (for (subroot nil) in-hashtable subroots-table)
-            (unless (gethash subroot (attrs-node-subroot-table *attrs*))
-              (remhash subroot subroots-table)
-              (remhash subroot subroot-deps)
+      (iter (for (subroot nil) in-hashtable subroot->attr-table)
+            (unless
+                ;; Cheap reachability check.
+                (gethash subroot (attrs.node->subroot *attrs*))
+              (remhash subroot subroot->attr-table)
+              (remhash subroot subroot->deps)
               (push subroot removed)))
       ;; Uncache any suroot that depends on an unreachable subroot.
       (iter (for newly-removed-count =
-                 (iter (for (subroot deps) in-hashtable subroot-deps)
+                 (iter (for (subroot deps) in-hashtable subroot->deps)
                        (when (iter (for ptr in deps)
                                    (for dep = (tg:weak-pointer-value ptr))
-                                   (thereis (not (gethash dep subroots-table))))
-                         (remhash subroot subroot-deps)
-                         (remhash subroot subroots-table)
+                                   (thereis (not (gethash dep subroot->attr-table))))
+                         (remhash subroot subroot->deps)
+                         (remhash subroot subroot->attr-table)
                          (pushnew subroot removed)
                          (sum 1))))
             (until (zerop newly-removed-count))))
     removed))
+
+(defun record-deps (root current-subroot subroot-stack)
+  (unless (eql root current-subroot)
+    (iter (for depender in subroot-stack)
+          ;; Avoid circular dependencies.
+          (unless (eql current-subroot depender)
+            (unless (member current-subroot
+                            (subroot->deps depender)
+                            :key #'tg:weak-pointer-value)
+              (push (tg:make-weak-pointer current-subroot)
+                    (subroot->deps depender)))))))
+
+(defun call/record-subroot->deps (node fn &aux (root (attrs-root*)))
+  (if (eql node root)
+      ;; If we are computing top-down (after an attr-missing call),
+      ;; mask the subroot stack.
+      (let ((*subroot-stack* '()))
+        (funcall fn))
+      (let* ((current-subroot (current-subroot node))
+             (*subroot-stack*
+               (if (subroot? current-subroot)
+                   (adjoin current-subroot *subroot-stack*)
+                   ;; The "current subroot" is really the root.
+                   *subroot-stack*)))
+        (record-deps root current-subroot (rest *subroot-stack*))
+        (funcall fn))))
+
+(defmacro with-record-subroot->deps ((node) &body body)
+  (with-gensyms (fn)
+    `(flet ((,fn () ,@body))
+       (declare (dynamic-extent #',fn))
+       (call/record-subroot->deps ,node #',fn))))
+
+
+;;; API
 
 (defmacro with-attr-table (root &body body)
   "Create an ATTRS structure with root ROOT
@@ -397,7 +445,7 @@ replaced."
                                                   ,@(cdr optional-args))))
            ,@(when optional-args
                `((declare (ignorable ,@optional-args))))
-           (with-record-subroot-deps (,node)
+           (with-record-subroot->deps (,node)
              ,(if optional-args
                   `(if ,present?
                        ,body
@@ -405,11 +453,11 @@ replaced."
                   body)))
          ,@methods))))
 
-(defun has-attributes-p (node &aux (tables (subroot-tables node)))
+(defun has-attributes-p (node &aux (tables (subroot->attr-tables node)))
   (loop for table in tables
         thereis (nth-value 1 (gethash node table))))
 
-(defun has-attribute-p (node fn-name &aux (tables (subroot-tables node)))
+(defun has-attribute-p (node fn-name &aux (tables (subroot->attr-tables node)))
   (loop for table in tables
         thereis (assoc fn-name (gethash node table))))
 
@@ -442,7 +490,7 @@ function on it if not found at first."
   (declare (type function))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((tables (subroot-tables node)))
+  (let* ((tables (subroot->attr-tables node)))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node fn-name tables)
       (when p (return-from cached-attr-fn (values-list (cdr p))))
@@ -465,7 +513,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((tables (subroot-tables node))
+  (let* ((tables (subroot->attr-tables node))
          (table (car tables))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
@@ -521,38 +569,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (lambda (c s)
      (with-slots (root node) c
        (format s "~a is not reachable from ~a" node root)))))
-
-(defun record-deps (root current-subroot subroot-stack)
-  (unless (eql root current-subroot)
-    (iter (for depender in subroot-stack)
-          ;; Avoid circular dependencies.
-          (unless (eql current-subroot depender)
-            (unless (member current-subroot
-                            (subroot-deps depender)
-                            :key #'tg:weak-pointer-value)
-              (push (tg:make-weak-pointer current-subroot)
-                    (subroot-deps depender)))))))
-
-(defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
-  (if (eql node root)
-      ;; If we are computing top-down (after an attr-missing call),
-      ;; mask the subroot stack.
-      (let ((*subroot-stack* '()))
-        (funcall fn))
-      (let* ((current-subroot (current-subroot node))
-             (*subroot-stack*
-               (if (subroot? current-subroot)
-                   (adjoin current-subroot *subroot-stack*)
-                   ;; The "current subroot" is really the root.
-                   *subroot-stack*)))
-        (record-deps root current-subroot (rest *subroot-stack*))
-        (funcall fn))))
-
-(defmacro with-record-subroot-deps ((node) &body body)
-  (with-gensyms (fn)
-    `(flet ((,fn () ,@body))
-       (declare (dynamic-extent #',fn))
-       (call/record-subroot-deps ,node #',fn))))
 
 (defgeneric attr-missing (fn-name node)
   (:documentation
