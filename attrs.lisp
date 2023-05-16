@@ -40,26 +40,23 @@
   (tg:make-weak-hash-table
    :test 'eq
    :weakness :key
-   :weakness-matters t))
+   :weakness-matters t)
+  "Global (weak) cache of attribute tables.
+Roots are immutable, so if we have previously computed attributes for
+them we can reuse them.")
 
-(defun cache-lookup (key &key (cache *cache*))
+(defplace cache-lookup (key &key (cache *cache*))
   (gethash key cache))
 
-(defun (setf cache-lookup) (value key)
-  (setf (gethash key *cache*) value))
-
-;;; Attributes are stored in a hash table mapping
-;;; nodes to list of values.
-
 (defclass attrs-root ()
-  (;; Would this be better? An extra slot per AST vs. an extra hash
-   ;; table lookup per AST*copies.
-   (subroot-index :initarg :subroot-index))
+  ((subroot-index
+    :documentation "Tables from subroots to attributes and from subroots to dependencies."
+    :initarg :subroot-index))
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
 
-;;; A root node has a "list" of subroot nodes. When the root is
-;;; copied, the new root has the same list. The subroots are where the
+;;; A root node has a set of subroot nodes. When the root is copied,
+;;; the new root has the same list. The subroots are where the
 ;;; attributes are actually stored; each subroot has an attribute
 ;;; table.
 
@@ -76,6 +73,7 @@ This is important; it controls subroot copying behavior."))
 ;;; depending on the current nodes' dominating subroot.
 
 (defmethod copy :around ((root attrs-root) &key)
+  "Carry forward (copying) the subroots from the old root."
   (let ((result (call-next-method)))
     (when-let (idx (subroot-index root))
       (setf (subroot-index result)
@@ -87,11 +85,13 @@ This is important; it controls subroot copying behavior."))
     :initarg :subroots
     :initform (make-attr-table)
     :type hash-table
-    :reader subroots-table-subroots)
+    :reader subroots-table-subroots
+    :documentation "Table from subroots to attributes")
    (subroot-deps
     :initarg :subroot-deps
     :type hash-table
-    :reader subroots-table-subroot-deps)
+    :reader subroots-table-subroot-deps
+    :documentation "Table from subroots to dependencies")
    (proxies
     :documentation "Table of AST proxies.
 These may be stored as attribute values so they need to be
@@ -128,7 +128,7 @@ This is for convenience and entirely equivalent to specializing
     t))
 
 (defun dominating-subroot (root node &key (error t))
-  "Dominating subroot of NODE."
+  "Find the dominating subroot of NODE."
   (declare (optimize (debug 0)))        ;allow tail recursion
   ;; TODO Enforce that subroots cannot be nested?
   (cond ((eql root node) nil)
@@ -143,19 +143,21 @@ This is for convenience and entirely equivalent to specializing
                      (dominating-subroot root proxy)
                      (progn
                        (when error
-                         (cerror "Continue" 'unreachable-node
+                         (cerror "Return nil"
+                                 'unreachable-node
                                  :root root
                                  :node node))
                        nil))
                    (find-if #'subroot? rpath))))))))
 
 (defun reachable? (root dest)
+  "Is DEST reachable from ROOT?"
   (let* ((root-node (fset:convert 'node root))
          (dest-node (fset:convert 'node dest)))
     (or (eql root-node dest-node)
         (eql dest-node
              (nth-value 1
-               (ft::rpath-to-node root-node dest-node :error nil)))
+               (rpath-to-node root-node dest-node :error nil)))
         (when (boundp '*attrs*)
           (when-let ((proxy (attr-proxy dest-node)))
             (reachable? root proxy))))))
@@ -168,12 +170,16 @@ This is for convenience and entirely equivalent to specializing
    (node-subroot-table
     :type hash-table
     :reader attrs-node-subroot-table
-    :initarg :node-subroot-table)))
+    :documentation "Pre-computed table from nodes to their subroots."
+    :initarg :node-subroot-table))
+  (:documentation "The table created by a `with-attr-table' form.
+This holds at least the root of the attribute computation."))
 
 (defmethod fset:convert ((to (eql 'node)) (attrs attrs) &key)
   (attrs-root attrs))
 
 (defun make-attrs (&key root)
+  "Make an instance of `attrs'."
   (make-instance 'attrs
     :root root
     :node-subroot-table
@@ -182,6 +188,7 @@ This is for convenience and entirely equivalent to specializing
 (declaim (special *attrs*))
 
 (defun current-subroot (node)
+  "Return the dominating subroot for NODE."
   (let ((attrs-root (attrs-root *attrs*)))
     (or (when (boundp '*attrs*)
           (let ((table (attrs-node-subroot-table *attrs*)))
@@ -216,18 +223,21 @@ attributes can be dynamically nested when one depends on the other.")
       table)))
 
 (defun make-attr-table (&rest args)
+  "Make a weak 'eq hash table."
   (multiple-value-call #'make-weak-hash-table
     :weakness :key
     :test #'eq
     (values-list args)))
 
 (defun copy-attr-table (table-in &rest args)
+  "Copy a weak 'eq hash table."
   (let ((table-out (apply #'make-attr-table :size (hash-table-size table-in) args)))
     (iter (for (k v) in-hashtable table-in)
           (setf (gethash k table-out) v))
     table-out))
 
 (defun subroot-index (root &key (ensure t))
+  "Get the subroot index for the current root."
   (declare (attrs-root root))
   (assert (slot-exists-p root 'subroot-index))
   (if (slot-boundp root 'subroot-index)
@@ -236,20 +246,23 @@ attributes can be dynamically nested when one depends on the other.")
            (setf (slot-value root 'subroot-index)
                  (make-subroots-table)))))
 
-(defun (setf subroot-index) (value root)
-  (setf (slot-value root 'subroot-index) value))
-
 (defun attrs-subroots (attrs &key (ensure t))
+  "Get the subroots table for ATTRS.
+If ENSURE is non-nil, create the table."
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
     (subroots-table-subroots index)))
 
 (defun attrs-subroot-deps (attrs &key (ensure t))
+  "Get the subroot dependencies table for ATTRS.
+If ENSURE is non-nil, create the table."
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
     (subroots-table-subroot-deps index)))
 
 (defun attrs-proxies (attrs &key (ensure t))
+  "Get the attr proxy table for ATTRS.
+If ENSURE is non-nil, create the table."
   (when-let (index
              (subroot-index (attrs-root attrs) :ensure ensure))
     (subroots-table.proxies index)))
@@ -259,9 +272,11 @@ attributes can be dynamically nested when one depends on the other.")
   (attrs-root *attrs*))
 
 (defun node-subroot-table (node)
+  "Get the subroot table for the dominating subroot of NODE."
   (subroot-table (current-subroot node)))
 
 (defun subroot-table (subroot &key ensure)
+  "Get the subroot table for SUBROOT in the current attrs."
   (when-let (subroots (attrs-subroots *attrs* :ensure ensure))
     (ensure-gethash subroot
                     subroots
