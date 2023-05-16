@@ -81,9 +81,8 @@ This is important; it controls subroot copying behavior."))
     result))
 
 (defclass subroots-table ()
-  ((subroots
-    :initarg :subroots
-    :initform (make-attr-table)
+  ((subroot-node-attrs
+    :initarg :subroot-node-attrs
     :type hash-table
     :reader subroots-table-subroots
     :documentation "Table from subroots to attributes")
@@ -100,7 +99,7 @@ copied along with the subroots."
     :type hash-table
     :reader subroots-table.proxies))
   (:default-initargs
-   :subroots (make-attr-table)
+   :subroot-node-attrs (make-attr-table)
    :subroot-deps (make-attr-table)
    :proxies (make-attr-table)))
 
@@ -108,9 +107,9 @@ copied along with the subroots."
   (apply #'make-instance 'subroots-table args))
 
 (defun copy-subroots-table (table)
-  (with-slots (subroots subroot-deps proxies) table
+  (with-slots (subroot-node-attrs subroot-deps proxies) table
     (make-subroots-table
-     :subroots (copy-attr-table subroots)
+     :subroot-node-attrs (copy-attr-table subroot-node-attrs)
      :subroot-deps (copy-attr-table subroot-deps)
      :proxies proxies)))
 
