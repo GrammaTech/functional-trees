@@ -36,7 +36,7 @@
 (in-readtable :curry-compose-reader-macros)
 
 ;;; We want this to be cleared if the system is reloaded.
-(defparameter *cache*
+(defparameter *session-cache*
   (tg:make-weak-hash-table
    :test 'eq
    :weakness :key
@@ -45,8 +45,8 @@
 Roots are immutable, so if we have previously computed attributes for
 them we can reuse them.")
 
-(defplace cache-lookup (key &key (cache *cache*))
-  (gethash key cache))
+(defplace cache-lookup (key)
+  (gethash key *session-cache*))
 
 (defclass attrs-root ()
   ((subroot-index
