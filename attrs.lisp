@@ -18,14 +18,9 @@
    :with-attr-session
    :*attrs*
    :attrs-root*
-   :mapc-attrs
-   :mapc-attrs-children
-   :mapc-attrs-slot
    :attr-missing
    :attrs-root
    :attr-proxy
-   :has-attributes-p
-   :has-attribute-p
    :subroot
    :subroot?
    :attrs-root
@@ -453,14 +448,6 @@ replaced."
                   body)))
          ,@methods))))
 
-(defun has-attributes-p (node &aux (tables (subroot->attr-tables node)))
-  (loop for table in tables
-        thereis (nth-value 1 (gethash node table))))
-
-(defun has-attribute-p (node fn-name &aux (tables (subroot->attr-tables node)))
-  (loop for table in tables
-        thereis (assoc fn-name (gethash node table))))
-
 (defun retrieve-memoized-attr-fn (node fn-name tables)
   "Look up memoized value for FN-NAME on NODE.
 Return the node's alist, and the pair for FN-NAME if the alist has
@@ -576,12 +563,3 @@ If not there, invoke the thunk THUNK and memoize the values returned."
     The default method signals an error.")
   (:method ((fn-name symbol) (node node))
     (error (make-condition 'uncomputed-attr :node node :fn fn-name))))
-
-(defun mapc-attrs (fn vals nodes)
-  (mapc (lambda (node) (apply fn node vals)) nodes))
-
-(defun mapc-attrs-children (fn vals node)
-  (mapc-attrs fn vals (children node)))
-
-(defun mapc-attrs-slot (fn vals node slot)
-  (mapc-attrs fn vals (slot-value node slot)))
