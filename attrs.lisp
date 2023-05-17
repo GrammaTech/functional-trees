@@ -67,6 +67,7 @@ if B is reachable from A the session for A is reused.")
 (defclass attrs-root ()
   ((subroot-map
     :documentation "Tables from subroots to attributes and from subroots to dependencies."
+    :type subroot-map
     :initarg :subroot-map))
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
@@ -260,8 +261,9 @@ This holds at least the root of the attribute computation."))
                  (make-subroot-map)))))
 
 (defun (setf subroot-map) (value root)
-  "Set the subroot "
-  (setf (slot-value root 'subroot-map) value))
+  "Set the subroot map."
+  (setf (slot-value root 'subroot-map)
+        (assure subroot-map value)))
 
 (defun attrs.subroot->attr-table (attrs &key (ensure t))
   "Get the subroots table for ATTRS.
