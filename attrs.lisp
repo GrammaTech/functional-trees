@@ -351,6 +351,7 @@ replaced."
     removed))
 
 (defun record-deps (root current-subroot subroot-stack)
+  "Record CURRENT-SUBROOT as a dependency of the subroots in SUBROOT-STACK."
   (unless (eql root current-subroot)
     (iter (for depender in subroot-stack)
           ;; Avoid circular dependencies.
