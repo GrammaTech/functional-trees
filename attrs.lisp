@@ -8,10 +8,7 @@
   (:import-from :fset)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
-  (:import-from :serapeum
-                :standard/context :defplace :assure
-                :filter-map :nlet :lret
-                :defvar-unbound)
+  (:import-from :serapeum :defplace :assure :lret :defvar-unbound)
   (:export
    :def-attr-fun
    :with-attr-table
