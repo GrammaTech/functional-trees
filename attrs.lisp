@@ -166,16 +166,17 @@ This holds at least the root of the attribute computation."))
           (setf (gethash k table-out) v))
     table-out))
 
-;;; A root node has a set of subroot nodes. When the root is copied,
-;;; the new root has the same list. The subroots are where the
-;;; attributes are actually stored; each subroot has an attribute
-;;; table. attribute
+;;; A root node has an associated map of subroot nodes. When the root
+;;; is copied, the new root gets its own copy of the map. The subroots
+;;; are where the attributes are actually stored; each subroot has an
+;;; attribute table.
 
 ;;; Subroots are invalidated as follows: of course, since functional
 ;;; trees are functional, when a given node is changed it and its
-;;; parents (including its subroot) are replaced. Subroots that are no
-;;; longer part of the tree are trivially invalid. Then, recursively,
-;;; any subroot that depends on an invalid subroot is invalidated.
+;;; parents (including its subroot) are replaced. Such replaced
+;;; subroots that are no longer part of the tree are trivially
+;;; invalid. Then, recursively, any subroot that depends on an invalid
+;;; subroot is invalidated.
 
 ;;; Subroot dependencies are recorded when calculating the attributes.
 ;;; When an attribute is being calculated on a node, that node's
