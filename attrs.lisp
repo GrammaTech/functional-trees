@@ -250,7 +250,7 @@ This holds at least the root of the attribute computation."))
       table)))
 
 (defun subroot-map (root &key (ensure t))
-  "Get the subroot index for the current root."
+  "Get the subroot map for the current root."
   (declare (attrs-root root))
   (assert (slot-exists-p root 'subroot-map))
   (if (slot-boundp root 'subroot-map)
@@ -289,13 +289,14 @@ If ENSURE is non-nil, create the table."
   (attrs-root *attrs*))
 
 (defun subroot->attr-table (subroot &key ensure)
-  "Get the subroot table for SUBROOT in the current attrs."
+  "Get the attr table for SUBROOT in the current session."
   (when-let (subroots (attrs.subroot->attr-table *attrs* :ensure ensure))
     (ensure-gethash subroot
                     subroots
                     (make-attr-table))))
 
 (defun subroot->deps (subroot)
+  "Get the dependencies of SUBROOT in the current session."
   (gethash subroot (attrs.subroot->deps *attrs*)))
 
 (defun (setf subroot->deps) (value subroot)
