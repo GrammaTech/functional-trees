@@ -110,6 +110,9 @@ This is for convenience and entirely equivalent to specializing
   ;; they need to be copied along with the subroots.
   (ast->proxy :type hash-table))
 
+(defmethod print-object ((self subroot-map) stream)
+  (print-unreadable-object (self stream :type t :identity t)))
+
 (defun copy-subroot-map (map)
   (make-subroot-map
    :subroot->attr-table
