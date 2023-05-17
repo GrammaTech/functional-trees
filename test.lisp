@@ -1781,7 +1781,8 @@ diagnostic information on error or failure."
 
 (defmethod convert ((to-type (eql 'data-root))
                     in &key)
-  (let ((in (change-class (convert 'node-with-data in) 'data-root)))
+  "Convert IN into a data-root with data-subroots for children."
+  (let ((in (change-class (copy (convert 'node-with-data in)) 'data-root)))
     (copy in
           :children
           (mapc (lambda (child)
@@ -1790,7 +1791,7 @@ diagnostic information on error or failure."
 
 (defmethod convert ((to-type (eql 'data-subroot))
                     (in node-with-data) &key)
-  (change-class in 'data-subroot))
+  (change-class (copy in) 'data-subroot))
 
 (defmethod convert ((to-type (eql 'data-subroot))
                     in &key)
