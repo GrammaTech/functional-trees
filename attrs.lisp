@@ -251,7 +251,7 @@ This holds at least the root of the attribute computation."))
       table)))
 
 (defun subroot-map (root &key (ensure t))
-  "Get the subroot map for the current root."
+  "Get the subroot map for ROOT."
   (declare (attrs-root root))
   (assert (slot-exists-p root 'subroot-map))
   (if (slot-boundp root 'subroot-map)
@@ -261,7 +261,7 @@ This holds at least the root of the attribute computation."))
                  (make-subroot-map)))))
 
 (defun (setf subroot-map) (value root)
-  "Set the subroot map."
+  "Set ROOT's subroot map to VALUE."
   (setf (slot-value root 'subroot-map)
         (assure subroot-map value)))
 
@@ -463,8 +463,7 @@ one."
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
 function on it if not found at first."
   (declare (type function))
-  (unless (boundp '*attrs*)
-    (error (make-condition 'unbound-attrs :fn-name fn-name)))
+  (assert-attrs-bound fn-name)
   (let* ((table (node-attr-table node)))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node fn-name table)
@@ -486,8 +485,7 @@ function on it if not found at first."
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
-  (unless (boundp '*attrs*)
-    (error (make-condition 'unbound-attrs :fn-name fn-name)))
+  (assert-attrs-bound fn-name)
   (let* ((table (node-attr-table node))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
@@ -522,6 +520,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
              (format stream "Uncomputed attr function ~a on node ~a"
                      (uncomputed-attr-fn condition)
                      (uncomputed-attr-node condition)))))
+
+(defun assert-attrs-bound (fn-name)
+  (unless (boundp '*attrs*)
+    (error (make-condition 'unbound-attrs :fn-name fn-name))))
 
 (define-condition unbound-attrs (unbound-variable)
   ((fn-name :initarg :fn-name :initform nil
