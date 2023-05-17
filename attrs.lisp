@@ -21,7 +21,6 @@
    :subroot
    :subroot?
    :attrs-root
-   :attrs-node
    :unreachable-node
    :reachable?))
 
