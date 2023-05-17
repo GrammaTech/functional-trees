@@ -8,7 +8,7 @@
   (:import-from :fset)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
-  (:import-from :serapeum :defplace :assure :lret :defvar-unbound)
+  (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -394,10 +394,8 @@ replaced."
         (funcall fn))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
-  (with-gensyms (fn)
-    `(flet ((,fn () ,@body))
-       (declare (dynamic-extent #',fn))
-       (call/record-subroot-deps ,node #',fn))))
+  (with-thunk (body)
+    `(call/record-subroot-deps ,node ,body)))
 
 
 ;;; API
@@ -413,22 +411,20 @@ replaced."
 (defmacro with-attr-session ((root &rest args &key &allow-other-keys)
                              &body body)
   "Like `with-attr-table', but allowing keyword arguments."
-  (with-gensyms (attr-table-fn)
-    `(flet ((,attr-table-fn () ,@body))
-       (declare (dynamic-extent #',attr-table-fn))
-       (call/attr-table ,root #',attr-table-fn ,@args))))
+  (with-thunk (body)
+    `(call/attr-table ,root ,body ,@args)))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
   (assert (symbolp name))
   (assert (every #'symbolp optional-args))
-  (with-gensyms (node fn present?)
+  (with-gensyms (node present?)
     (let ((docstring
             (when (stringp (car methods))
               (pop methods)))
           (body
-            `(flet ((,fn () (call-next-method)))
-               (declare (dynamic-extent #',fn))
-               (memoize-attr-fun ,node ',name #',fn))))
+            (let ((body '((call-next-method))))
+              (with-thunk (body)
+                `(memoize-attr-fun ,node ',name ,body)))))
       `(defgeneric ,name (,node ,@(when optional-args `(&optional ,@optional-args)))
          ,@(when docstring `((:documentation ,docstring)))
          (:method-combination standard/context)
