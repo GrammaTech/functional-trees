@@ -33,7 +33,8 @@
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
 
-;;; We want this to be cleared if the system is reloaded.
+;;; Use defparameter as we want the cache to be cleared if the system
+;;; is reloaded.
 (defparameter *session-cache*
   (tg:make-weak-hash-table
    :test 'eq
@@ -55,7 +56,7 @@ attributes can be dynamically nested when one depends on the other.")
   "Whether to use the session cache by default.")
 
 (defvar *inherit-default* t
-  "Whether to inherit an attr session by default.
+  "Whether to inherit attr sessions by default.
 Inheriting a session means that if there is already a session in
 progress for root A, and you try to start a session for root B, then
 if B is reachable from A the session for A is reused.")
