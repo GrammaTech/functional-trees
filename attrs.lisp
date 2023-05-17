@@ -310,10 +310,10 @@ replaced."
              ((typep root 'attrs) root)
              ((and cache (cache-lookup root)))
              ((and (boundp '*attrs*)
-                   (or (and inherit
-                            (reachable? (attrs-root *attrs*) root))
-                       (eql (attrs-root *attrs*)
-                            root)))
+                   (or (eql (attrs-root *attrs*)
+                            root)
+                       (and inherit
+                            (reachable? (attrs-root *attrs*) root))))
               *attrs*)
              (t
               (lret ((attrs (make-attrs root)))
