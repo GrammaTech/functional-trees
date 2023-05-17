@@ -8,7 +8,8 @@
   (:import-from :fset)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
-  (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk)
+  (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk
+                :defstruct-read-only :defsubst :standard/context)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -93,62 +94,44 @@ This is for convenience and entirely equivalent to specializing
   (:method ((x subroot))
     t))
 
-(defclass subroot-map ()
-  ((subroot->attr-table
-    :initarg :subroot->attr-table
-    :type hash-table
-    :reader subroot-map.subroot->attr-table
-    :documentation "Table from subroots to attributes")
-   (subroot->deps
-    :initarg :subroot->deps
-    :type hash-table
-    :reader subroot-map.subroot->deps
-    :documentation "Table from subroots to dependencies")
-   (ast->proxy
-    :documentation "Table of AST proxies.
-These may be stored as attribute values so they need to be
-copied along with the subroots."
-    :initarg :ast->proxy
-    :type hash-table
-    :reader subroot-map.ast->proxy))
-  (:documentation "Data structure associated with a root to track its subroots.")
-  (:default-initargs
-   :subroot->attr-table (make-attr-table)
-   :subroot->deps (make-attr-table)
-   :ast->proxy (make-attr-table)))
+(defstruct-read-only (subroot-map
+                      (:conc-name subroot-map.)
+                      (:constructor
+                          make-subroot-map
+                          (&key (subroot->attr-table (make-attr-table))
+                             (subroot->deps (make-attr-table))
+                             (ast->proxy (make-attr-table)))))
+  "Data structure associated with a root to track its subroots."
+  ;; Table from subroots to attributes
+  (subroot->attr-table :type hash-table)
+  ;; Table from subroots to dependencies
+  (subroot->deps :type hash-table)
+  ;; Table of AST proxies. These may be stored as attribute values so
+  ;; they need to be copied along with the subroots.
+  (ast->proxy :type hash-table))
 
-(defun make-subroot-map (&rest args &key &allow-other-keys)
-  (apply #'make-instance 'subroot-map args))
+(defun copy-subroot-map (map)
+  (make-subroot-map
+   :subroot->attr-table
+   (copy-attr-table (subroot-map.subroot->attr-table map))
+   :subroot->deps (copy-attr-table (subroot-map.subroot->deps map))
+   :ast->proxy (copy-attr-table (subroot-map.ast->proxy map))))
 
-(defun copy-subroot-map (table)
-  (with-slots (subroot->attr-table subroot->deps ast->proxy) table
-    (make-subroot-map
-     :subroot->attr-table (copy-attr-table subroot->attr-table)
-     :subroot->deps (copy-attr-table subroot->deps)
-     :ast->proxy ast->proxy)))
+(defstruct-read-only (attrs
+                      (:conc-name attrs.)
+                      (:constructor make-attrs
+                          (root &aux (node->subroot (compute-node->subroot root)))))
+  "An attributes session.
+This holds at least the root of the attribute computation."
+  (root :type attrs-root)
+  ;; Pre-computed table from nodes to their subroots.
+  (node->subroot :type hash-table))
 
-(defclass attrs ()
-  ((root :initform (error "No root")
-         :initarg :root
-         :type attrs-root
-         :reader attrs-root)
-   (node->subroot
-    :type hash-table
-    :reader attrs.node->subroot
-    :documentation "Pre-computed table from nodes to their subroots."
-    :initarg :node->subroot))
-  (:documentation "An attributes session.
-This holds at least the root of the attribute computation."))
+(defsubst attrs-root (attrs)
+  (attrs.root attrs))
 
 (defmethod fset:convert ((to (eql 'node)) (attrs attrs) &key)
   (attrs-root attrs))
-
-(defun make-attrs (&key root)
-  "Make an instance of `attrs'."
-  (make-instance 'attrs
-    :root root
-    :node->subroot
-    (compute-node->subroot root)))
 
 
 ;;; Subroot implementation
@@ -286,7 +269,7 @@ If ENSURE is non-nil, create the table."
              (subroot-map (attrs-root attrs) :ensure ensure))
     (subroot-map.ast->proxy index)))
 
-(defun attrs-root* ()
+(defsubst attrs-root* ()
   "Get the root of the current attrs table."
   (attrs-root *attrs*))
 
@@ -333,7 +316,7 @@ replaced."
                             root)))
               *attrs*)
              (t
-              (lret ((attrs (make-attrs :root root)))
+              (lret ((attrs (make-attrs root)))
                 (when cache
                   (setf (cache-lookup root) attrs))
                 (setf new t))))))
