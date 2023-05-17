@@ -1860,7 +1860,7 @@ diagnostic information on error or failure."
 (defvar *attr-run* nil)
 
 (deftest attr.5 ()
-  "Inheritance without dependencies."
+  "Incrementalization without dependencies."
   (def-attr-fun attr.5-fun ()
     "Size function"
     (:method ((node node))
