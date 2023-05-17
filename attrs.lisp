@@ -290,28 +290,24 @@ If ENSURE is non-nil, create the table."
   "Get the root of the current attrs table."
   (attrs-root *attrs*))
 
-(defun subroot->attr-table (subroot &key ensure)
+(defun node-attr-table (node)
+  (subroot-attr-table (current-subroot node)))
+
+(defun subroot-attr-table (subroot &key ensure)
   "Get the attr table for SUBROOT in the current session."
   (when-let (subroots (attrs.subroot->attr-table *attrs* :ensure ensure))
     (ensure-gethash subroot
                     subroots
                     (make-attr-table))))
 
-(defun subroot->deps (subroot)
+(defun subroot-deps (subroot)
   "Get the dependencies of SUBROOT in the current session."
   (gethash subroot (attrs.subroot->deps *attrs*)))
 
-(defun (setf subroot->deps) (value subroot)
+(defun (setf subroot-deps) (value subroot)
   (setf (gethash subroot (attrs.subroot->deps *attrs* :ensure t))
         (remove-if (compose #'null #'tg:weak-pointer-value)
                    value)))
-
-(defun subroot->attr-tables (node)
-  (let ((subroot (current-subroot node)))
-    (assure (cons hash-table t)
-      (cons (subroot->attr-table subroot :ensure t)
-            (mapcar (compose #'subroot->attr-table #'tg:weak-pointer-value)
-                    (subroot->deps subroot))))))
 
 (defplace attr-proxy (attr)
   (gethash attr (attrs.ast->proxy *attrs*)))
@@ -377,12 +373,12 @@ replaced."
           ;; Avoid circular dependencies.
           (unless (eql current-subroot depender)
             (unless (member current-subroot
-                            (subroot->deps depender)
+                            (subroot-deps depender)
                             :key #'tg:weak-pointer-value)
               (push (tg:make-weak-pointer current-subroot)
-                    (subroot->deps depender)))))))
+                    (subroot-deps depender)))))))
 
-(defun call/record-subroot->deps (node fn &aux (root (attrs-root*)))
+(defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
   (if (eql node root)
       ;; If we are computing top-down (after an attr-missing call),
       ;; mask the subroot stack.
@@ -397,11 +393,11 @@ replaced."
         (record-deps root current-subroot (rest *subroot-stack*))
         (funcall fn))))
 
-(defmacro with-record-subroot->deps ((node) &body body)
+(defmacro with-record-subroot-deps ((node) &body body)
   (with-gensyms (fn)
     `(flet ((,fn () ,@body))
        (declare (dynamic-extent #',fn))
-       (call/record-subroot->deps ,node #',fn))))
+       (call/record-subroot-deps ,node #',fn))))
 
 
 ;;; API
@@ -441,7 +437,7 @@ replaced."
                                                   ,@(cdr optional-args))))
            ,@(when optional-args
                `((declare (ignorable ,@optional-args))))
-           (with-record-subroot->deps (,node)
+           (with-record-subroot-deps (,node)
              ,(if optional-args
                   `(if ,present?
                        ,body
@@ -449,28 +445,19 @@ replaced."
                   body)))
          ,@methods))))
 
-(defun retrieve-memoized-attr-fn (node fn-name tables)
+(defun retrieve-memoized-attr-fn (node fn-name table)
   "Look up memoized value for FN-NAME on NODE.
 Return the node's alist, and the pair for FN-NAME if the alist has
 one."
-  (flet ((scan-alist (alist)
-           (iter (for p in alist)
-                 (when (eql (car p) fn-name)
-                   (etypecase (cdr p)
-                     ;; Return the match. This should not be written
-                     ;; to.
-                     (list (return-from retrieve-memoized-attr-fn (values alist p)))
-                     (t
-                      (assert (eql (cdr p) :in-progress))
-                      (error "Circularity detected when computing ~a on ~a" fn-name node)))))))
-    (destructuring-bind (table . aux-tables) (ensure-list tables)
-      (let* ((initial-alist (gethash node table)))
-        (scan-alist initial-alist)
-        (dolist (table aux-tables)
-          (scan-alist (gethash node table)))
-        ;; Return the initial alist, which is all that should be
-        ;; written to.
-        (values initial-alist nil)))))
+  (let* ((alist (gethash node table)))
+    (iter (for p in alist)
+          (when (eql (car p) fn-name)
+            (etypecase (cdr p)
+              (list (return-from retrieve-memoized-attr-fn (values alist p)))
+              (t
+               (assert (eql (cdr p) :in-progress))
+               (error "Circularity detected when computing ~a" fn-name)))))
+    (values alist nil)))
 
 (defun cached-attr-fn (node fn-name)
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
@@ -478,13 +465,13 @@ function on it if not found at first."
   (declare (type function))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((tables (subroot->attr-tables node)))
+  (let* ((table (node-attr-table node)))
     (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn node fn-name tables)
+        (retrieve-memoized-attr-fn node fn-name table)
       (when p (return-from cached-attr-fn (values-list (cdr p))))
       (attr-missing fn-name node)
       (setf (values alist p)
-            (retrieve-memoized-attr-fn node fn-name tables))
+            (retrieve-memoized-attr-fn node fn-name table))
       (if p
           (values-list (cdr p))
           ;; We tried once, it's still missing, so fail
@@ -501,11 +488,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name)))
-  (let* ((tables (subroot->attr-tables node))
-         (table (car tables))
+  (let* ((table (node-attr-table node))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn node fn-name tables)
+        (retrieve-memoized-attr-fn node fn-name table)
       (when p
         (typecase (cdr p)
           (list (return-from memoize-attr-fun (values-list (cdr p))))
