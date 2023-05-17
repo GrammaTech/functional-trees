@@ -65,18 +65,18 @@ if B is reachable from A the session for A is reused.")
 ;;; Classes
 
 (defclass attrs-root ()
-  ((subroot-index
+  ((subroot-map
     :documentation "Tables from subroots to attributes and from subroots to dependencies."
-    :initarg :subroot-index))
+    :initarg :subroot-map))
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
 
 (defmethod copy :around ((root attrs-root) &key)
   "Carry forward (copying) the subroots from the old root."
   (let ((result (call-next-method)))
-    (when-let (idx (subroot-index root))
-      (setf (subroot-index result)
-            (copy-subroot-index idx)))
+    (when-let (idx (subroot-map root))
+      (setf (subroot-map result)
+            (copy-subroot-map idx)))
     result))
 
 (defclass subroot ()
@@ -92,16 +92,16 @@ This is for convenience and entirely equivalent to specializing
   (:method ((x subroot))
     t))
 
-(defclass subroot-index ()
+(defclass subroot-map ()
   ((subroot->attr-table
     :initarg :subroot->attr-table
     :type hash-table
-    :reader subroot-index.subroot->attr-table
+    :reader subroot-map.subroot->attr-table
     :documentation "Table from subroots to attributes")
    (subroot->deps
     :initarg :subroot->deps
     :type hash-table
-    :reader subroot-index.subroot->deps
+    :reader subroot-map.subroot->deps
     :documentation "Table from subroots to dependencies")
    (ast->proxy
     :documentation "Table of AST proxies.
@@ -109,19 +109,19 @@ These may be stored as attribute values so they need to be
 copied along with the subroots."
     :initarg :ast->proxy
     :type hash-table
-    :reader subroot-index.ast->proxy))
+    :reader subroot-map.ast->proxy))
   (:documentation "Data structure associated with a root to track its subroots.")
   (:default-initargs
    :subroot->attr-table (make-attr-table)
    :subroot->deps (make-attr-table)
    :ast->proxy (make-attr-table)))
 
-(defun make-subroot-index (&rest args &key &allow-other-keys)
-  (apply #'make-instance 'subroot-index args))
+(defun make-subroot-map (&rest args &key &allow-other-keys)
+  (apply #'make-instance 'subroot-map args))
 
-(defun copy-subroot-index (table)
+(defun copy-subroot-map (table)
   (with-slots (subroot->attr-table subroot->deps ast->proxy) table
-    (make-subroot-index
+    (make-subroot-map
      :subroot->attr-table (copy-attr-table subroot->attr-table)
      :subroot->deps (copy-attr-table subroot->deps)
      :ast->proxy ast->proxy)))
@@ -248,40 +248,40 @@ This holds at least the root of the attribute computation."))
       (compute-node->subroot ast)
       table)))
 
-(defun subroot-index (root &key (ensure t))
+(defun subroot-map (root &key (ensure t))
   "Get the subroot index for the current root."
   (declare (attrs-root root))
-  (assert (slot-exists-p root 'subroot-index))
-  (if (slot-boundp root 'subroot-index)
-      (slot-value root 'subroot-index)
+  (assert (slot-exists-p root 'subroot-map))
+  (if (slot-boundp root 'subroot-map)
+      (slot-value root 'subroot-map)
       (and ensure
-           (setf (slot-value root 'subroot-index)
-                 (make-subroot-index)))))
+           (setf (slot-value root 'subroot-map)
+                 (make-subroot-map)))))
 
-(defun (setf subroot-index) (value root)
+(defun (setf subroot-map) (value root)
   "Set the subroot "
-  (setf (slot-value root 'subroot-index) value))
+  (setf (slot-value root 'subroot-map) value))
 
 (defun attrs.subroot->attr-table (attrs &key (ensure t))
   "Get the subroots table for ATTRS.
 If ENSURE is non-nil, create the table."
   (when-let (index
-             (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroot-index.subroot->attr-table index)))
+             (subroot-map (attrs-root attrs) :ensure ensure))
+    (subroot-map.subroot->attr-table index)))
 
 (defun attrs.subroot->deps (attrs &key (ensure t))
   "Get the subroot dependencies table for ATTRS.
 If ENSURE is non-nil, create the table."
   (when-let (index
-             (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroot-index.subroot->deps index)))
+             (subroot-map (attrs-root attrs) :ensure ensure))
+    (subroot-map.subroot->deps index)))
 
 (defun attrs.ast->proxy (attrs &key (ensure t))
   "Get the attr proxy table for ATTRS.
 If ENSURE is non-nil, create the table."
   (when-let (index
-             (subroot-index (attrs-root attrs) :ensure ensure))
-    (subroot-index.ast->proxy index)))
+             (subroot-map (attrs-root attrs) :ensure ensure))
+    (subroot-map.ast->proxy index)))
 
 (defun attrs-root* ()
   "Get the root of the current attrs table."
