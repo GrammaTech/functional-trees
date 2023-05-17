@@ -74,6 +74,7 @@
 (in-package :ft/test)
 (in-readtable :curry-compose-reader-macros)
 
+;;;; Additional infrastructure on node for testing.
 (defclass parent (node)
   ((children :reader children
              :type list
@@ -85,7 +86,6 @@ which may be more nodes, or other values.")
    (child-slots :initform '(children) :allocation :class)
    (child-slot-specifiers :allocation :class)))
 
-;;;; Additional infrastructure on node for testing.
 (defclass node-with-data (parent)
   ((data :reader data :initarg :data :initform nil
          :documentation "Arbitrary data")))
