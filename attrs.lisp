@@ -9,7 +9,7 @@
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
   (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk
-                :defstruct-read-only :defsubst :standard/context)
+                :defstruct-read-only :defsubst :standard/context :def)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -61,6 +61,11 @@ attributes can be dynamically nested when one depends on the other.")
 Inheriting a session means that if there is already a session in
 progress for root A, and you try to start a session for root B, then
 if B is reachable from A the session for A is reused.")
+
+(def +node->subroot/initial-size+ 4099
+  "Initial size for the node->subroot table.
+The value is heuristic, with the goal of minimizing the initial
+rehashing for large tables.")
 
 
 ;;; Classes
@@ -219,7 +224,7 @@ This holds at least the root of the attribute computation."
 (defun compute-node->subroot (ast)
   "Recurse over AST, computing a table from ASTs to their dominating subroots."
   (declare (optimize (debug 0)))
-  (let ((table (make-hash-table :test 'eq :size 4096)))
+  (let ((table (make-hash-table :test 'eq :size +node->subroot/initial-size+)))
     (labels ((compute-node->subroot (ast &optional subroot)
                (let ((ast (if (typep ast 'node) ast
                               (fset:convert 'node ast))))
