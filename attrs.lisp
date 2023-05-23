@@ -226,8 +226,7 @@ This holds at least the root of the attribute computation."
   (declare (optimize (debug 0)))
   (let ((table (make-hash-table :test 'eq :size +node->subroot/initial-size+)))
     (labels ((compute-node->subroot (ast &optional subroot)
-               (let ((ast (if (typep ast 'node) ast
-                              (fset:convert 'node ast))))
+               (let ((ast (fset:convert 'node ast)))
                  (cond ((null subroot)
                         (compute-node->subroot ast ast))
                        ((and (not (eq ast subroot))
