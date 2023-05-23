@@ -175,24 +175,23 @@ This holds at least the root of the attribute computation."
   "Find the dominating subroot of NODE."
   (declare (optimize (debug 0)))        ;allow tail recursion
   ;; TODO Enforce that subroots cannot be nested?
-  (cond ((eql root node) nil)
-        ((subroot? node) node)
-        (t
-         (let ((real-root (fset:convert 'node root))
-               (real-node (fset:convert 'node node)))
-           (unless (eql real-root real-node)
-             (let ((rpath (rpath-to-node real-root real-node)))
-               (if (null rpath)
-                   (if-let ((proxy (attr-proxy real-node)))
-                     (dominating-subroot root proxy)
-                     (progn
-                       (when error
-                         (cerror "Return nil"
-                                 'unreachable-node
-                                 :root root
-                                 :node node))
-                       nil))
-                   (find-if #'subroot? rpath))))))))
+  (let ((real-root (fset:convert 'node root))
+        (real-node (fset:convert 'node node)))
+    (cond ((eql real-root real-node) nil)
+          ((subroot? real-node) real-node)
+          (t
+           (let ((rpath (rpath-to-node real-root real-node)))
+             (if (null rpath)
+                 (if-let ((proxy (attr-proxy real-node)))
+                   (dominating-subroot root proxy)
+                   (progn
+                     (when error
+                       (cerror "Return nil"
+                               'unreachable-node
+                               :root root
+                               :node node))
+                     nil))
+                 (find-if #'subroot? rpath)))))))
 
 (defun reachable? (root dest)
   "Is DEST reachable from ROOT?"
