@@ -23,7 +23,8 @@
    :subroot?
    :attrs-root
    :unreachable-node
-   :reachable?))
+   :reachable?
+   :session-shadowing))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -129,7 +130,7 @@ This is for convenience and entirely equivalent to specializing
                       (:conc-name attrs.)
                       (:constructor make-attrs
                           (root &aux (node->subroot (compute-node->subroot root)))))
-  "An attributes session.
+  "An attribute session.
 This holds at least the root of the attribute computation."
   (root :type attrs-root)
   ;; Pre-computed table from nodes to their subroots.
@@ -301,14 +302,28 @@ If ENSURE is non-nil, create the table."
 (defplace attr-proxy (attr)
   (gethash attr (attrs.ast->proxy *attrs*)))
 
-(defun call/attr-table (root fn &key
+(defun call/attr-session (root fn &key
                                   (cache *cache-default*)
-                                  (inherit *inherit-default*))
+                                  (inherit *inherit-default*)
+                                  (shadow t))
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
 If the active attrs instance has ROOT for its root, it is not
-replaced."
+replaced.
+
+If CACHE is non-nil, the attrs session may be retrieved froma global
+attribute cache.
+
+If INHERIT is non-nil, the dynamically enclosing attr session may be
+reused if ROOT is reachable from the outer session's root.
+
+If SHADOW is T, then the new attribute session may shadow an enclosing
+attribute session. The behavior is different depending on INHERIT.
+
+SHADOW T -> No error
+SHADOW nil, INHERIT nil -> Error on shadowing
+SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
   (declare (optimize (debug 0)))
   (let* ((new nil)
          (*attrs*
@@ -321,6 +336,12 @@ replaced."
                        (and inherit
                             (reachable? (attrs-root *attrs*) root))))
               *attrs*)
+             ((and (boundp '*attrs*)
+                   (not shadow))
+              (error 'session-shadowing
+                     :outer (attrs-root *attrs*)
+                     :inner root
+                     :inherit inherit))
              (t
               (lret ((attrs (make-attrs root)))
                 (when cache
@@ -402,7 +423,7 @@ replaced."
                              &body body)
   "Like `with-attr-table', but allowing keyword arguments."
   (with-thunk (body)
-    `(call/attr-table ,root ,body ,@args)))
+    `(call/attr-session ,root ,body ,@args)))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
   (assert (symbolp name))
@@ -531,6 +552,18 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (lambda (c s)
      (with-slots (root node) c
        (format s "~a is not reachable from ~a" node root)))))
+
+(define-condition session-shadowing (error)
+  ((outer :initarg :outer)
+   (inner :initarg :inner)
+   (inherit :initarg :inherit))
+  (:report
+   (lambda (c s)
+     (with-slots (outer inner inherit) c
+       (format s "Attempt to shadow attribute session for ~a by~@[ unrelated~] session for ~a"
+               outer
+               inherit
+               inner)))))
 
 (defgeneric attr-missing (fn-name node)
   (:documentation
