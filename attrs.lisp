@@ -11,7 +11,8 @@
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
   (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk
-                :defstruct-read-only :defsubst :standard/context :def)
+                :defstruct-read-only :defsubst :standard/context :def
+                :slot-value-safe)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -37,6 +38,9 @@
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
 
+(defvar *enable-cross-session-cache* t
+  "If non-nil, cache attributes across sessions.")
+
 ;;; Use defparameter as we want the cache to be cleared if the system
 ;;; is reloaded.
 (defparameter *session-cache*
@@ -44,9 +48,12 @@
    :test 'eq
    :weakness :key
    :weakness-matters t)
-  "Global (weak) cache of attribute tables.
+  "Global (weak) cache of attribute sessions.
 Roots are immutable, so if we have previously computed attributes for
-them we can reuse them.")
+them we can reuse them.
+
+Practically this has the effect that we do not have to to recompute
+the node->subroot table.")
 
 (defplace cache-lookup (key)
   (gethash key *session-cache*))
@@ -55,9 +62,6 @@ them we can reuse them.")
   "Stack of subroots whose attributes are being computed.
 While subroots cannot be nested in the node tree, computation of their
 attributes can be dynamically nested when one depends on the other.")
-
-(defvar *cache-default* t
-  "Whether to use the session cache by default.")
 
 (defvar *inherit-default* t
   "Whether to inherit attr sessions by default.
@@ -88,11 +92,12 @@ This is important; it controls subroot copying behavior."))
 
 (defmethod copy :around ((root attrs-root) &key)
   "Carry forward (copying) the subroots from the old root."
-  (let ((result (call-next-method)))
-    (when-let (idx (subroot-map root))
-      (setf (subroot-map result)
-            (copy-subroot-map idx)))
-    result))
+  (lret ((result (call-next-method)))
+    (if *enable-cross-session-cache*
+        (when-let (idx (slot-value-safe root 'subroot-map))
+          (setf (subroot-map result)
+                (copy-subroot-map idx)))
+        (slot-makunbound result 'subroot-map))))
 
 (defclass subroot ()
   ()
@@ -133,15 +138,30 @@ This is for convenience and entirely equivalent to specializing
    :subroot->deps (copy-attr-table (subroot-map.subroot->deps map))
    :ast->proxy (copy-attr-table (subroot-map.ast->proxy map))))
 
+(def +empty-hash-table+
+  (load-time-value (make-hash-table) t))
+
 (defstruct-read-only (attrs
                       (:conc-name attrs.)
                       (:constructor make-attrs
-                          (root &aux (node->subroot (compute-node->subroot root)))))
+                          (root &aux (node->subroot
+                                      (if *enable-cross-session-cache*
+                                          (compute-node->subroot root)
+                                          +empty-hash-table+)))))
   "An attribute session.
 This holds at least the root of the attribute computation."
   (root :type attrs-root)
+  ;; This is only used if *enable-cross-session-cache* is nil.
+  (table
+   (if *enable-cross-session-cache*
+       +empty-hash-table+
+       (make-attr-table))
+   :type hash-table)
   ;; Pre-computed table from nodes to their subroots.
   (node->subroot :type hash-table))
+
+(defsubst has-attr-table? (attrs)
+  (not (eql +empty-hash-table+ (attrs.table attrs))))
 
 (defsubst attrs-root (attrs)
   (attrs.root attrs))
@@ -288,7 +308,9 @@ If ENSURE is non-nil, create the table."
   (attrs-root *attrs*))
 
 (defun node-attr-table (node)
-  (subroot-attr-table (current-subroot node)))
+  (if *enable-cross-session-cache*
+      (subroot-attr-table (current-subroot node))
+      (attrs.table *attrs*)))
 
 (defun subroot-attr-table (subroot &key ensure)
   "Get the attr table for SUBROOT in the current session."
@@ -310,17 +332,16 @@ If ENSURE is non-nil, create the table."
   (gethash attr (attrs.ast->proxy *attrs*)))
 
 (defun call/attr-session (root fn &key
-                                  (cache *cache-default*)
-                                  (inherit *inherit-default*)
-                                  (shadow t))
+                                    (inherit *inherit-default*)
+                                    (shadow t)
+                                    (cache *enable-cross-session-cache*))
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
 If the active attrs instance has ROOT for its root, it is not
 replaced.
 
-If CACHE is non-nil, the attrs session may be retrieved froma global
-attribute cache.
+If CACHE is non-nil, attributes may be cached across sessions.
 
 If INHERIT is non-nil, the dynamically enclosing attr session may be
 reused if ROOT is reachable from the outer session's root.
@@ -333,15 +354,14 @@ SHADOW nil, INHERIT nil -> Error on shadowing
 SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
   (declare (optimize (debug 0)))
   (let* ((new nil)
+         (*enable-cross-session-cache* cache)
          (*attrs*
            (cond
              ((typep root 'attrs) root)
              ((and cache (cache-lookup root)))
              ((and (boundp '*attrs*)
-                   (or (eql (attrs-root *attrs*)
-                            root)
-                       (and inherit
-                            (reachable? (attrs-root *attrs*) root))))
+                   inherit
+                   (reachable? (attrs-root *attrs*) root))
               *attrs*)
              ((and (boundp '*attrs*)
                    (not shadow))
@@ -354,7 +374,9 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                 (when cache
                   (setf (cache-lookup root) attrs))
                 (setf new t))))))
-    (when new
+    (unless (eql cache (not (has-attr-table? *attrs*)))
+      (error "Cannot inherit with differing values for caching"))
+    (when (and cache new)
       (invalidate-subroots *attrs*))
     (funcall fn)))
 
@@ -397,19 +419,21 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                     (subroot-deps depender)))))))
 
 (defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
-  (if (eql node root)
-      ;; If we are computing top-down (after an attr-missing call),
-      ;; mask the subroot stack.
-      (let ((*subroot-stack* '()))
-        (funcall fn))
-      (let* ((current-subroot (current-subroot node))
-             (*subroot-stack*
-               (if (subroot? current-subroot)
-                   (adjoin current-subroot *subroot-stack*)
-                   ;; The "current subroot" is really the root.
-                   *subroot-stack*)))
-        (record-deps root current-subroot (rest *subroot-stack*))
-        (funcall fn))))
+  (cond ((not *enable-cross-session-cache*) (funcall fn))
+        ((eql node root)
+         ;; If we are computing top-down (after an attr-missing call),
+         ;; mask the subroot stack.
+         (let ((*subroot-stack* '()))
+           (funcall fn)))
+        (t
+         (let* ((current-subroot (current-subroot node))
+                (*subroot-stack*
+                  (if (subroot? current-subroot)
+                      (adjoin current-subroot *subroot-stack*)
+                      ;; The "current subroot" is really the root.
+                      *subroot-stack*)))
+           (record-deps root current-subroot (rest *subroot-stack*))
+           (funcall fn)))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
   (with-thunk (body)
