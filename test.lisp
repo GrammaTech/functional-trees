@@ -23,6 +23,8 @@
         #+gt :testbot)
   (:import-from :uiop/utility :nest)
   (:import-from :uiop/stream :with-temporary-file)
+  (:import-from :cl-store)
+  (:import-from :flexi-streams)
   (:shadowing-import-from
    :functional-trees
    :dump
@@ -2035,3 +2037,14 @@ diagnostic information on error or failure."
       (dolist (file (list cc-file-1 cc-file-2))
         (is (not (eql-for-key (name file) old-alist new-alist))
             "The dependencies must be recalculated.")))))
+
+(deftest serialize-attrs ()
+  (let* ((root (make-instance 'attrs-root :subroot-map (ft/attrs::make-subroot-map)))
+        (serialized
+          (finishes
+            (flexi-streams:with-output-to-sequence (out)
+              (cl-store:store root out))))
+         (deserialized
+           (flexi-streams:with-input-from-sequence (in serialized)
+             (cl-store:restore in))))
+    (is (not (slot-boundp deserialized 'ft/attrs::subroot-map)))))

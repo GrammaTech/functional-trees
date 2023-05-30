@@ -6,6 +6,8 @@
    :curry-compose-reader-macros
    :named-readtables)
   (:import-from :fset)
+  (:import-from :cl-store)
+  (:import-from :closer-mop)
   (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
   (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk
@@ -78,6 +80,11 @@ rehashing for large tables.")
     :initarg :subroot-map))
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
+
+(defmethod cl-store:serializable-slots :around ((self attrs-root))
+  (remove 'subroot-map
+          (call-next-method)
+          :key #'closer-mop:slot-definition-name))
 
 (defmethod copy :around ((root attrs-root) &key)
   "Carry forward (copying) the subroots from the old root."
