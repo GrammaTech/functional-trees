@@ -2087,3 +2087,22 @@ a different caching policy."
            (flexi-streams:with-input-from-sequence (in serialized)
              (cl-store:restore in))))
     (is (not (slot-boundp deserialized 'ft/attrs::subroot-map)))))
+
+(deftest subroot-map/cow ()
+  "Are subroot maps copy-on-write?"
+  (let* ((root1 (make-instance 'data-root :subroot-map (ft/attrs::make-subroot-map)))
+         (root2 (copy root1))
+         (root3 (copy root2))
+         (root4 (copy root2)))
+    (is (typep (slot-value root2 'ft/attrs::subroot-map) 'ft/attrs::subroot-map-pointer))
+    ;; Reuse the pointer.
+    (is (eql (slot-value root2 'ft/attrs::subroot-map)
+             (slot-value root3 'ft/attrs::subroot-map)))
+    (is (not (eql root3 root4)))
+    ;; Access the maps, forcing copies.
+    (ft/attrs::subroot-map root3)
+    (ft/attrs::subroot-map root4)
+    (is (typep (slot-value root3 'ft/attrs::subroot-map) 'ft/attrs::subroot-map))
+    (is (typep (slot-value root4 'ft/attrs::subroot-map) 'ft/attrs::subroot-map))
+    (is (not (eql (ft/attrs::subroot-map root3)
+                  (ft/attrs::subroot-map root4))))))
