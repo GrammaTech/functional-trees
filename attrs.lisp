@@ -517,7 +517,7 @@ one."
               (list (return-from retrieve-memoized-attr-fn (values alist p)))
               (t
                (assert (eql (cdr p) :in-progress))
-               (error "Circularity detected when computing ~a" fn-name)))))
+               (error "Circularity detected when computing ~s on ~a" fn-name node)))))
     (values alist nil)))
 
 (defun cached-attr-fn (node fn-name)
