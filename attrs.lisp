@@ -12,7 +12,8 @@
   (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
   (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk
                 :defstruct-read-only :defsubst :standard/context :def
-                :slot-value-safe)
+                :slot-value-safe :with-boolean :boolean-unless
+                :nlet)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -27,7 +28,8 @@
    :attrs-root
    :unreachable-node
    :reachable?
-   :session-shadowing))
+   :session-shadowing
+   :recompute-subroot-mapping))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -260,32 +262,70 @@ This holds at least the root of the attribute computation."
 
 (defun current-subroot (node)
   "Return the dominating subroot for NODE."
-  (let ((attrs-root (attrs-root *attrs*)))
-    (or (when (boundp '*attrs*)
-          (let ((table (attrs.node->subroot *attrs*)))
-            (or (gethash node table)
-                (when-let (p (attr-proxy node))
-                  (gethash p table)))))
-        (dominating-subroot attrs-root node)
-        attrs-root)))
+  (nlet retry ()
+    (let ((attrs-root (attrs-root *attrs*)))
+      (restart-case
+          (or (when (boundp '*attrs*)
+                (let ((table (attrs.node->subroot *attrs*)))
+                  (or (gethash node table)
+                      (when-let (p (attr-proxy node))
+                        (gethash p table)))))
+              (dominating-subroot attrs-root node)
+              attrs-root)
+        (recompute-subroot-mapping ()
+          :report "Recompute node-subroot mapping in tree"
+          (recompute-subroot-mapping)
+          (retry))))))
 
-(defun compute-node->subroot (ast)
+(defun make-node->subroot-table ()
+  (tg:make-weak-hash-table
+   :test 'eq
+   :weakness :key
+   :size +node->subroot/initial-size+))
+
+(defun compute-node->subroot (ast &key (table (make-node->subroot-table)) force)
   "Recurse over AST, computing a table from ASTs to their dominating subroots."
   (declare (optimize (debug 0)))
-  (let ((table (make-hash-table :test 'eq :size +node->subroot/initial-size+)))
-    (labels ((compute-node->subroot (ast &optional subroot)
-               (let ((ast (fset:convert 'node ast)))
-                 (cond ((null subroot)
-                        (compute-node->subroot ast ast))
-                       ((and (not (eq ast subroot))
-                             (subroot? ast))
-                        (compute-node->subroot ast ast))
-                       (t
-                        (setf (gethash ast table) subroot)
-                        (dolist (c (children ast))
-                          (compute-node->subroot c subroot)))))))
-      (compute-node->subroot ast)
-      table)))
+  (let ((first-time
+          (or force
+              (= 0 (hash-table-count table)))))
+    ;; Using `with-boolean' means we only actually dispatch once on
+    ;; `first-time' outside the loop, so we aren't paying for lookups
+    ;; on the first computation.
+    (with-boolean (first-time)
+      (labels ((compute-node->subroot (ast subroot)
+                 (let ((ast
+                         (if (typep ast 'node) ast
+                             (fset:convert 'node ast))))
+                   (if (null subroot)
+                       (compute-node->subroot ast ast)
+                       (progn
+                         (boolean-unless first-time
+                           ;; If the subroot hasn't changed, the
+                           ;; subroots of the children can't have
+                           ;; changed and we don't need to walk them
+                           ;; again.
+                           (let ((old (gethash ast table)))
+                             (when (eql old subroot)
+                               (return-from compute-node->subroot))))
+                         (cond ((and (not (eq ast subroot))
+                                     (subroot? ast))
+                                (compute-node->subroot ast ast))
+                               (t
+                                (setf (gethash ast table) subroot)
+                                (dolist (c (children ast))
+                                  (compute-node->subroot c subroot)))))))))
+        (compute-node->subroot ast nil)
+        table))))
+
+(defun recompute-subroot-mapping (&optional (attrs *attrs*))
+  "Recompute the node-to-subroot mapping of ATTRS.
+This should be done if the root has been mutated."
+  (declare (attrs attrs))
+  (compute-node->subroot
+   (attrs.root attrs)
+   :table (attrs.node->subroot attrs))
+  attrs)
 
 (defun subroot-map (root &key (ensure t))
   "Get the subroot map for ROOT."
