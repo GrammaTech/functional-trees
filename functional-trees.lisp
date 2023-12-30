@@ -85,17 +85,18 @@
   (defvar *serial-number-index* 0)
   (def +serial-number-block-size+ 10000)
   (defvar *current-serial-number-block* nil)
-  (defstruct serial-number-block start end index)
+  (defstruct serial-number-block end index)
   (def +serial-number-lock+
     (bt:make-lock "functional-trees serial-number"))
 
   (defun allocate-serial-number-block ()
     (bt:with-lock-held (+serial-number-lock+)
       (let* ((serial-block
-               (make-serial-number-block  :start +serial-number-index+
-                                          :end (+ +serial-number-index+
-                                                  +serial-number-block-size+)
-                                          :index +serial-number-index+)))
+               (make-serial-number-block :end (+ +serial-number-index+
+                                                 +serial-number-block-size+)
+                                         ;; NB The index belongs to
+                                         ;; the last block allocated.
+                                         :index (1+ +serial-number-index+))))
         (incf +serial-number-index+ +serial-number-block-size+)
         serial-block)))
 
