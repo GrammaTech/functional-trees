@@ -110,7 +110,9 @@
     (1- (incf (serial-number-block-index *current-serial-number-block*))))
 
   ;; ensure that each thread gets its own binding of serial number block
-  (push (cons '*current-serial-number-block* 'nil) bt:*default-special-bindings*)
+  (pushnew '(*current-serial-number-block* . nil)
+           bt:*default-special-bindings*
+           :test #'equal)
 
   (defclass descendant-map-mixin ()
     ((descendant-map :initarg :descendant-map
