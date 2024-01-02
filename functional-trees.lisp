@@ -82,6 +82,15 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
+  ;; Allocate blocks of serial numbers on a per-thread basis. This
+  ;; solves the problem where parsing in parallel would lead to
+  ;; extremely deep trees that were extremely slow to traverse due to
+  ;; widely-separated serial numbers.
+
+  ;; Note this is a standard technique in other contexts where serial
+  ;; numbers are used (databases, for example, allocate blocks of
+  ;; serial numbers to workers in this way).
+
   (defvar *serial-number-index* 0)
   (def +serial-number-block-size+ 10000)
   (defvar *current-serial-number-block* nil)
