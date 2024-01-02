@@ -25,6 +25,7 @@
   (:import-from :uiop/stream :with-temporary-file)
   (:import-from :cl-store)
   (:import-from :flexi-streams)
+  (:import-from :bordeaux-threads)
   (:shadowing-import-from
    :functional-trees
    :dump
@@ -2140,3 +2141,26 @@ a different caching policy."
       (ft/attrs:recompute-subroot-mapping)
       (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
       (is (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))))
+
+(deftest test-thread-blocks ()
+  "Test that serial numbers in spawned blocks are disjoint."
+  (let* ((base-thread-serial-number-1 (ft::next-serial-number))
+         spawned-thread-serial-number-1
+         spawned-thread-serial-number-2
+         base-thread-serial-number-2
+         (thread
+           (bt:make-thread
+            (lambda ()
+              (setq spawned-thread-serial-number-1 (ft::next-serial-number)
+                    spawned-thread-serial-number-2 (ft::next-serial-number))))))
+    (bt:join-thread thread)
+    (setq base-thread-serial-number-2
+          (ft::next-serial-number))
+    (is (< base-thread-serial-number-1
+           spawned-thread-serial-number-1
+           spawned-thread-serial-number-2))
+    ;; There is a small possibility that base-thread-serial-number-1
+    ;; could be the last number in the block, so it might be bigger
+    ;; than the spawned thread serial numbers.
+    (is (< base-thread-serial-number-1
+           base-thread-serial-number-2))))
