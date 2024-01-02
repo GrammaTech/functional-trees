@@ -2106,3 +2106,37 @@ a different caching policy."
     (is (typep (slot-value root4 'ft/attrs::subroot-map) 'ft/attrs::subroot-map))
     (is (not (eql (ft/attrs::subroot-map root3)
                   (ft/attrs::subroot-map root4))))))
+
+(defclass project-box (attrs-root)
+  ((project
+    :initarg :project
+    :accessor project))
+  (:documentation "Mutable container for a project"))
+
+(defmethod convert ((to-type (eql 'node)) (x project-box) &key)
+  (project x))
+
+(deftest test-recompute-subroot-mapping ()
+  (let* ((cc-file-1
+           (make-instance 'impl-file
+             :name "my_class.cc"
+             :deps (list "my_class.h")
+             :exports (list "my_class::do_something()")))
+         (header-file-1
+           (make-instance 'header-file
+             :name "my_class.h"
+             :exports (list "my_class")))
+         (project
+           (make-instance 'project :children (list cc-file-1)))
+         (project-box
+           (make-instance 'project-box :project project)))
+    (with-attr-table project-box
+      (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
+      (is (not (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))
+      (setf (project (ft/attrs:attrs-root*))
+            (copy project :children (cons header-file-1 (children project))))
+      (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
+      (is (not (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))
+      (ft/attrs:recompute-subroot-mapping)
+      (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
+      (is (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))))
