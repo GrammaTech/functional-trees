@@ -85,19 +85,24 @@
   (defvar *serial-number-index* 0)
   (def +serial-number-block-size+ 10000)
   (defvar *current-serial-number-block* nil)
-  (defstruct serial-number-block end index)
+  (defstruct serial-number-block
+    (end (required-argument :end) :read-only t)
+    (index (required-argument :index))
+    (thread (bt:current-thread)))
+
   (def +serial-number-lock+
     (bt:make-lock "functional-trees serial-number"))
 
   (defun allocate-serial-number-block ()
     (bt:with-lock-held (+serial-number-lock+)
-      (let* ((serial-block
-               (make-serial-number-block :end (+ +serial-number-index+
-                                                 +serial-number-block-size+)
-                                         ;; NB The index belongs to
-                                         ;; the last block allocated.
-                                         :index (1+ +serial-number-index+))))
-        (incf +serial-number-index+ +serial-number-block-size+)
+      (let ((serial-block
+              (make-serial-number-block :end (+ *serial-number-index*
+                                                +serial-number-block-size+)
+                                        ;; NB The initial index
+                                        ;; belongs to the last block
+                                        ;; allocated.
+                                        :index (1+ *serial-number-index*))))
+        (incf *serial-number-index* +serial-number-block-size+)
         serial-block)))
 
   (defun next-serial-number ()
@@ -107,6 +112,8 @@
             (= (serial-number-block-index *current-serial-number-block*)
                (serial-number-block-end *current-serial-number-block*)))
         (setf *current-serial-number-block* (allocate-serial-number-block)))
+    (assert (eql (bt:current-thread)
+                 (serial-number-block-thread *current-serial-number-block*)))
     (1- (incf (serial-number-block-index *current-serial-number-block*))))
 
   ;; ensure that each thread gets its own binding of serial number block
