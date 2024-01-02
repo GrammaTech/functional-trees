@@ -23,7 +23,7 @@ object of which represents a node in a tree. Here are its slots:
 (describe (make-instance 'ft:node))
 ```
 ```
-#<FUNCTIONAL-TREES:NODE 0 NIL>
+#<FUNCTIONAL-TREES:NODE 1 NIL>
   [standard-object]
 
 Slots with :CLASS allocation:
@@ -31,7 +31,7 @@ Slots with :CLASS allocation:
   CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
   DESCENDANT-MAP                 = #<unbound slot>
-  SERIAL-NUMBER                  = 0
+  SERIAL-NUMBER                  = 1
   SIZE                           = #<unbound slot>
 ```
 
@@ -119,7 +119,7 @@ The reason we don't have referential transparency is that each newly created
 (ft::serial-number (make-instance 'ft:node))
 ```
 ```
-2
+3
 ```
 
 These serial numbers increase monotonically, and are used internally in the
@@ -156,7 +156,7 @@ This method may be used to easily create a functional tree from a list.
        (describe my-node))
 ```
 ```
-#<IF-THEN-ELSE-NODE 6 (#<IF-THEN-ELSE-NODE 4 (#1=#<NODE 3 NIL>)> #1#..
+#<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#1=#<NODE 4 NIL>)> #1#..
   [standard-object]
 
 Slots with :CLASS allocation:
@@ -164,10 +164,10 @@ Slots with :CLASS allocation:
   CHILD-SLOT-SPECIFIERS          = #<unbound slot>
 Slots with :INSTANCE allocation:
   DESCENDANT-MAP                 = #<unbound slot>
-  SERIAL-NUMBER                  = 6
+  SERIAL-NUMBER                  = 7
   SIZE                           = #<unbound slot>
-  THEN                           = #<IF-THEN-ELSE-NODE 4 (#<NODE 3 NIL>)>
-  ELSE                           = (#<FUNCTIONAL-TREES:NODE 5 NIL>)
+  THEN                           = #<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)>
+  ELSE                           = (#<FUNCTIONAL-TREES:NODE 6 NIL>)
 ```
 
 Now we can round-trip from a `list` to an `if-then-else-node` and
@@ -179,10 +179,10 @@ convert from nodes to lists, essentially a recursive version of
 (ft::convert 'list my-node)
 ```
 ```
-(#<IF-THEN-ELSE-NODE 6 (#<IF-THEN-ELSE-NODE 4 (#<NODE 3 NIL>)> #<NODE 3 NIL>
-                        #<NODE 5 NIL>)>
- #<IF-THEN-ELSE-NODE 4 (#<NODE 3 NIL>)> #<FUNCTIONAL-TREES:NODE 3 NIL>
- #<FUNCTIONAL-TREES:NODE 5 NIL>)
+(#<IF-THEN-ELSE-NODE 7 (#<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)> #<NODE 4 NIL>
+                        #<NODE 6 NIL>)>
+ #<IF-THEN-ELSE-NODE 5 (#<NODE 4 NIL>)> #<FUNCTIONAL-TREES:NODE 4 NIL>
+ #<FUNCTIONAL-TREES:NODE 6 NIL>)
  ```
 
 The convert functions to and from lists may be specialized for a
@@ -242,18 +242,18 @@ for `ft:node`:
     (describe expanded))
   ```
   ```
-  #<IF-THEN-ELSE-NODE 8 (#<IF-THEN-ELSE-NODE 10 (#1=#<NODE 3 NIL>..
+  #<IF-THEN-ELSE-NODE 9 (#<IF-THEN-ELSE-NODE 11 (#1=#<NODE 4 NIL>..
     [standard-object]
 
   Slots with :CLASS allocation:
     CHILD-SLOTS                    = ((THEN . 1) ELSE)
     CHILD-SLOT-SPECIFIERS          = (#<FUNCTIONAL-TREES::SLOT-SPECIFIER THEN 1>..
   Slots with :INSTANCE allocation:
-    DESCENDANT-MAP                 = #<3=>THEN,5=>ELSE,7=>ELSE,8=>NIL,[9,10]=>THEN>
-    SERIAL-NUMBER                  = 8
+    DESCENDANT-MAP                 = #<4=>THEN,6=>ELSE,8=>ELSE,9=>NIL,[10,11]=>THEN>
+    SERIAL-NUMBER                  = 9
     SIZE                           = #<unbound slot>
-    THEN                           = #<IF-THEN-ELSE-NODE 10 (#<NODE 3 NIL> #<NODE 9 NIL>)>
-    ELSE                           = (#<FUNCTIONAL-TREES:NODE 7 NIL> #<FUNCTIONAL-TREES:NODE 5 NIL>)
+    THEN                           = #<IF-THEN-ELSE-NODE 11 (#<NODE 4 NIL> #<NODE 10 NIL>)>
+    ELSE                           = (#<FUNCTIONAL-TREES:NODE 8 NIL> #<FUNCTIONAL-TREES:NODE 6 NIL>)
   ```
 
 ## Tasks
