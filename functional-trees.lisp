@@ -130,6 +130,13 @@
            bt:*default-special-bindings*
            :test #'equal)
 
+  ;; Clear the serial number block when saving an image.
+
+  (defun clear-serial-number-block ()
+    (setf *current-serial-number-block* nil))
+
+  (uiop:register-image-dump-hook 'clear-serial-number-block)
+
   (defclass descendant-map-mixin ()
     ((descendant-map :initarg :descendant-map
                      :documentation "Map from serial numbers to child slots"))
