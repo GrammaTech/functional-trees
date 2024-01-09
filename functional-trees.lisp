@@ -682,11 +682,15 @@ Duplicates are allowed in both lists."
                 (t ;; was (and (not (listp old)) (not (listp new)))
                  (qpreconc (intervals-of-node old) intervals-to-remove)
                  (qpreconc (add-slot-to-intervals (intervals-of-node new) slot) intervals-to-add)))))
-      (setf (slot-value new-node 'descendant-map)
-            (ft/it:itree-add-intervals
-             (ft/it:itree-remove-intervals old-dm
-                                           (qlist intervals-to-remove))
-             (qlist intervals-to-add))))
+      (handler-bind ((ft/it:interval-collision-error
+                       (lambda (e)
+                         ;; Record the node in the collision error.
+                         (setf (ft/it:node e) new-node))))
+        (setf (slot-value new-node 'descendant-map)
+              (ft/it:itree-add-intervals
+               (ft/it:itree-remove-intervals old-dm
+                                             (qlist intervals-to-remove))
+               (qlist intervals-to-add)))))
     new-node))
 
 ;;; TODO -- specialize this in define-node-class

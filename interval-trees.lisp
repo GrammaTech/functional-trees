@@ -88,13 +88,18 @@ for integer intervals."))
           (format s " ~a ~a" (node-left node) (node-right node))))))
 
 (define-condition interval-collision-error (error)
-  ((lo1 :accessor lo1 :initarg :lo1)
-   (hi1 :accessor hi1 :initarg :hi1)
-   (lo2 :accessor lo2 :initarg :lo2)
-   (hi2 :accessor hi2 :initarg :hi2))
+  ((lo1 :reader lo1 :initarg :lo1)
+   (hi1 :reader hi1 :initarg :hi1)
+   (lo2 :reader lo2 :initarg :lo2)
+   (hi2 :reader hi2 :initarg :hi2)
+   (data :reader data :initarg :data)
+   (node :accessor node :initform nil))
+  (:default-initargs :data nil)
   (:documentation "Error thrown when an inserted interval overlaps an existing interval")
   (:report (lambda (cnd s)
-             (format s "Interval collision: [~a,~a] intersects [~a,~a]"
+             (format s "Interval collision~@[ inserting into ~a~]~@[ of ~a~]: [~a,~a] intersects [~a,~a]"
+                     (data cnd)
+                     (node cnd)
                      (lo1 cnd) (hi1 cnd) (lo2 cnd) (hi2 cnd)))))
 
 ;;; TODO -- in the itree-find... functions, move the found node
@@ -334,8 +339,8 @@ some node.  Return NIL if there is no next node."
 (declaim (ftype (function (t t t t) nil) collision))
 
 (defun collision (node lo hi data)
-  (declare (ignore data))
   (error (make-condition 'interval-collision-error
+                         :data data
                          :lo1 lo :hi1 hi
                          :lo2 (node-lo node) :hi2 (node-hi node))))
 
