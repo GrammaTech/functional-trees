@@ -40,7 +40,8 @@
   (:shadowing-import-from :functional-trees/interval-trees)
   (:import-from :uiop/utility :nest)
   (:import-from :serapeum :queue :qconc :qpreconc :qlist
-                :set-hash-table :length<)
+                :set-hash-table :length< :box :unbox
+                :with-thunk)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -70,7 +71,9 @@
            :define-node-class :define-methods-for-node-class
            :child-position-if
            :child-position
-           :subst :subst-if :subst-if-not)
+           :subst :subst-if :subst-if-not
+           :with-serial-number-block)
+
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
 (in-package :functional-trees)
@@ -99,6 +102,11 @@
     (index (required-argument :index))
     (thread (bt:current-thread)))
 
+  (defvar *fallback-block-mapping*
+    (multiple-value-call #'tg:make-weak-hash-table
+      :weakness :key
+      #+sbcl (values :synchronized t)))
+
   (def +serial-number-lock+
     (bt:make-lock "functional-trees serial-number"))
 
@@ -114,16 +122,44 @@
         (incf *serial-number-index* +serial-number-block-size+)
         serial-block)))
 
+  (defun current-serial-number-block ()
+    ;; if first call on thread, initialize block
+    (when (null *current-serial-number-block*)
+      (setf *current-serial-number-block* (box (allocate-serial-number-block))))
+    (let ((current-block
+           (if (eql (bt:current-thread)
+                    (serial-number-block-thread
+                     (unbox *current-serial-number-block*)))
+               ;; This is our block.
+               *current-serial-number-block*
+               ;; Box the current thread's block, allowing advancing
+               ;; it without having to lock the thread->block hash
+               ;; table again.
+               (ensure-gethash (bt:current-thread)
+                               *fallback-block-mapping*
+                               (box (allocate-serial-number-block))))))
+      ;; Advance to a new block if needed.
+      (when (= (serial-number-block-index (unbox current-block))
+               (serial-number-block-end (unbox current-block)))
+        (setf (unbox current-block) (allocate-serial-number-block)))
+      current-block))
+
   (defun next-serial-number ()
     "Return the next serial number in the current thread's block"
-    ;; if first call on thread, initialize block
-    (if (or (null *current-serial-number-block*)
-            (= (serial-number-block-index *current-serial-number-block*)
-               (serial-number-block-end *current-serial-number-block*)))
-        (setf *current-serial-number-block* (allocate-serial-number-block)))
-    (assert (eql (bt:current-thread)
-                 (serial-number-block-thread *current-serial-number-block*)))
-    (1- (incf (serial-number-block-index *current-serial-number-block*))))
+    (let ((current-block (current-serial-number-block)))
+      (1- (incf (serial-number-block-index (unbox current-block))))))
+
+  (defun call/serial-number-block (fn)
+    (let ((*current-serial-number-block* (current-serial-number-block)))
+      (funcall fn)))
+
+  (defmacro with-serial-number-block ((&key) &body body)
+    "Run BODY with `*current-serial-number-block*' bound to the current
+thread's serial number block, even without a thread-local binding.
+
+Avoids BODY needing to lookup the block in a global table."
+    (with-thunk (body)
+      `(call/serial-number-block ,body)))
 
   ;; ensure that each thread gets its own binding of serial number block
   (pushnew '(*current-serial-number-block* . nil)
@@ -144,8 +180,8 @@
 
   (defclass node-identity-ordering-mixin (identity-ordering-mixin) ())
 
-  ;;; NOTE: We might want to propose a patch to FSet to allow setting
-  ;;; serial-number with an initialization argument.
+;;; NOTE: We might want to propose a patch to FSet to allow setting
+;;; serial-number with an initialization argument.
   (defmethod initialize-instance :after
       ((node node-identity-ordering-mixin)
        &key (serial-number nil) &allow-other-keys)
