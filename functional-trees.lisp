@@ -41,7 +41,7 @@
   (:import-from :uiop/utility :nest)
   (:import-from :serapeum :queue :qconc :qpreconc :qlist
                 :set-hash-table :length< :box :unbox
-                :with-thunk)
+                :with-thunk :-> :lret)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -49,6 +49,7 @@
                 :slot-definition-initargs
                 :class-slots
                 :ensure-finalized)
+  (:import-from :atomics)
   (:export :copy :tree-copy
            :copy-with-children-alist
            :node :child-slots
@@ -94,56 +95,78 @@
   ;; numbers are used (databases, for example, allocate blocks of
   ;; serial numbers to workers in this way).
 
-  (defvar *serial-number-index* 0)
+  (declaim (type box *serial-number-index*))
+  (defvar *serial-number-index* (box 0))
+
   (def +serial-number-block-size+ 10000)
+
+  (declaim (type (or null box) *current-serial-number-block*))
   (defvar *current-serial-number-block* nil)
+
   (defstruct serial-number-block
     (end (required-argument :end) :read-only t)
     (index (required-argument :index))
     (thread (bt:current-thread)))
+
+  (-> allocate-serial-number-block () (values serial-number-block &optional))
+  (defun allocate-serial-number-block ()
+    (let ((end nil))
+      (atomics:atomic-update
+       (unbox *serial-number-index*)
+       (lambda (idx) (setf end (+ idx +serial-number-block-size+))))
+      (make-serial-number-block :end end
+                                ;; NB The initial index
+                                ;; belongs to the last block
+                                ;; allocated.
+                                :index (1+ (- end +serial-number-block-size+)))))
 
   (defvar *fallback-block-mapping*
     (multiple-value-call #'tg:make-weak-hash-table
       :weakness :key
       #+sbcl (values :synchronized t)))
 
-  (def +serial-number-lock+
-    (bt:make-lock "functional-trees serial-number"))
+  (-> allocate-fallback-block () (values box &optional))
+  (defun allocate-fallback-block ()
+    "Allocate a serial number block using `*fallback-block-mapping*'."
+    ;; Box the current thread's block, allowing advancing
+    ;; it without having to lock the thread->block hash
+    ;; table again.
+    (flet ((ensure-box ()
+             (ensure-gethash (bt:current-thread)
+                             *fallback-block-mapping*
+                             (box nil))))
+      (declare (inline ensure-box))
+      (lret ((box
+              #+sbcl
+              (sb-ext:with-locked-hash-table (*fallback-block-mapping*)
+                (ensure-box))
+              #+ccl (ensure-box)
+              #-(or sbcl ccl)
+              (serapeum:synchronized ()
+                (ensure-box))))
+        (setf (unbox box) (allocate-serial-number-block)))))
 
-  (defun allocate-serial-number-block ()
-    (bt:with-lock-held (+serial-number-lock+)
-      (let ((serial-block
-              (make-serial-number-block :end (+ *serial-number-index*
-                                                +serial-number-block-size+)
-                                        ;; NB The initial index
-                                        ;; belongs to the last block
-                                        ;; allocated.
-                                        :index (1+ *serial-number-index*))))
-        (incf *serial-number-index* +serial-number-block-size+)
-        serial-block)))
-
+  (-> current-serial-number-block () (values box &optional))
   (defun current-serial-number-block ()
+    "Get the (boxed) serial number block for the current thread, creating
+or advancing it as necessary."
     ;; if first call on thread, initialize block
     (when (null *current-serial-number-block*)
       (setf *current-serial-number-block* (box (allocate-serial-number-block))))
     (let ((current-block
-           (if (eql (bt:current-thread)
-                    (serial-number-block-thread
-                     (unbox *current-serial-number-block*)))
-               ;; This is our block.
-               *current-serial-number-block*
-               ;; Box the current thread's block, allowing advancing
-               ;; it without having to lock the thread->block hash
-               ;; table again.
-               (ensure-gethash (bt:current-thread)
-                               *fallback-block-mapping*
-                               (box (allocate-serial-number-block))))))
+            (if (eql (bt:current-thread)
+                     (serial-number-block-thread
+                      (unbox *current-serial-number-block*)))
+                ;; This is our block.
+                *current-serial-number-block*
+                (allocate-fallback-block))))
       ;; Advance to a new block if needed.
       (when (= (serial-number-block-index (unbox current-block))
                (serial-number-block-end (unbox current-block)))
         (setf (unbox current-block) (allocate-serial-number-block)))
       current-block))
 
+  (-> next-serial-number () (values (integer 0) &optional))
   (defun next-serial-number ()
     "Return the next serial number in the current thread's block"
     (let ((current-block (current-serial-number-block)))
@@ -157,7 +180,8 @@
     "Run BODY with `*current-serial-number-block*' bound to the current
 thread's serial number block, even without a thread-local binding.
 
-Avoids BODY needing to lookup the block in a global table."
+Avoids BODY needing to lookup the block in a global table every time
+it requests a new serial number."
     (with-thunk (body)
       `(call/serial-number-block ,body)))
 
