@@ -29,7 +29,10 @@
    :unreachable-node
    :reachable?
    :session-shadowing
-   :recompute-subroot-mapping))
+   :recompute-subroot-mapping
+   :attribute-error
+   :circular-attribute
+   :uncomputed-attr))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -557,7 +560,7 @@ one."
               (list (return-from retrieve-memoized-attr-fn (values alist p)))
               (t
                (assert (eql (cdr p) :in-progress))
-               (error "Circularity detected when computing ~s on ~a" fn-name node)))))
+               (error 'circular-attribute :fn fn-name :node node)))))
     (values alist nil)))
 
 (defun cached-attr-fn (node fn-name)
@@ -596,7 +599,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           (list (return-from memoize-attr-fun (values-list (cdr p))))
           (t
            (assert (eql (cdr p) in-progress))
-           (error "Circularity detected in ~a on ~a" fn-name node))))
+           (error 'circular-attribute :node node :fn fn-name))))
       (let ((p (cons fn-name in-progress)))
         ;; additional pushes onto the alist may occur in the call to THUNK,
         ;; so get the push of p onto the list out of the way now.  If we
@@ -613,10 +616,21 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           ;; be able to compute the function here
           (when (eql (cdr p) in-progress)
             (removef (gethash node table) p)))))))
-  
-(define-condition uncomputed-attr (error)
-  ((node :initarg :node :reader uncomputed-attr-node)
-   (fn :initarg :fn :reader uncomputed-attr-fn))
+
+(define-condition attribute-error (error)
+  ((node :initarg :node :reader attribute-error-node)
+   (fn :initarg :fn :reader attribute-error-function)))
+
+(define-condition circular-attribute (attribute-error)
+  ((node :reader circular-attribute-node)
+   (fn :reader circular-attribute-function))
+  (:report (lambda (c s)
+             (with-slots (node fn) c
+               (format s "Circularity detected in ~a on ~a" fn node)))))
+
+(define-condition uncomputed-attr (attribute-error)
+  ((node :reader uncomputed-attr-node)
+   (fn :reader uncomputed-attr-fn))
   (:report (lambda (condition stream)
              (format stream "Uncomputed attr function ~a on node ~a"
                      (uncomputed-attr-fn condition)
