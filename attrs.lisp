@@ -630,10 +630,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 
 (define-condition uncomputed-attr (attribute-error)
   ((node :reader uncomputed-attr-node)
-   (fn :reader uncomputed-attr-fn))
+   (fn :reader uncomputed-attr-function))
   (:report (lambda (condition stream)
              (format stream "Uncomputed attr function ~a on node ~a"
-                     (uncomputed-attr-fn condition)
+                     (uncomputed-attr-function condition)
                      (uncomputed-attr-node condition)))))
 
 (defun assert-attrs-bound (fn-name)
