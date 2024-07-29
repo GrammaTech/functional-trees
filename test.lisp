@@ -54,7 +54,8 @@
    :attr-missing
    :attrs-root
    :subroot
-   :subroot?)
+   :subroot?
+   :has-attribute-p)
    
   (:shadowing-import-from
    :fset
@@ -1823,15 +1824,27 @@ diagnostic information on error or failure."
       (is (eql (attr.1-fn (first (children t1))) t1))
       (is (eql (attr.1-fn (second (children t1))) t1)))))
 
+(def-attr-fun attr.size-function ()
+  "Size function"
+  (:method ((node node))
+    (reduce #'+ (children node) :key #'attr.size-function :initial-value 1)))
+
 (deftest attr.2 ()
-  (def-attr-fun attr.2-fun ()
-    "Size function"
-    (:method ((node node))
-      (reduce #'+ (children node) :key #'attr.2-fun :initial-value 1)))
   (let ((t1 (convert 'data-root '(a (b c) (d e)))))
     (with-attr-table t1
-      (is (eql (attr.2-fun t1) 5))
-      (is (eql (attr.2-fun t1) 5)))))
+      (is (eql (attr.size-function t1) 5))
+      (is (eql (attr.size-function t1) 5)))))
+
+(deftest test-has-attribute-p ()
+  (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (with-attr-table t1
+      (is (not (has-attribute-p t1)))
+      (is (not (has-attribute-p t1 'attr.size-function)))
+      (is (not (has-attribute-p t1 'attr.other)))
+      (attr.size-function t1)
+      (is (has-attribute-p t1))
+      (is (has-attribute-p t1 'attr.size-function))
+      (is (not (has-attribute-p t1 'attr.other))))))
 
 (deftest attr-circular ()
   (def-attr-fun attr.3-fn ()

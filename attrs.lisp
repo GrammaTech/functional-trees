@@ -13,7 +13,7 @@
   (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk
                 :defstruct-read-only :defsubst :standard/context :def
                 :slot-value-safe :with-boolean :boolean-unless
-                :nlet)
+                :nlet :and-let*)
   (:export
    :def-attr-fun
    :with-attr-table
@@ -32,7 +32,8 @@
    :recompute-subroot-mapping
    :attribute-error
    :circular-attribute
-   :uncomputed-attr))
+   :uncomputed-attr
+   :has-attribute-p))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -679,3 +680,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
     The default method signals an error.")
   (:method ((fn-name symbol) (node node))
     (error (make-condition 'uncomputed-attr :node node :fn fn-name))))
+
+(defun has-attribute-p (node &optional (attr-name nil attr-name-supplied-p))
+  "Does NODE have attribute ATTR-NAME computed?
+If ATTR-NAME is not supplied, return T if NODE has any attributes."
+  (declare (symbol attr-name))
+  (and-let* ((table (node-attr-table node))
+             (alist (gethash node table)))
+    (if attr-name-supplied-p
+        (assoc attr-name alist)
+        alist)))
