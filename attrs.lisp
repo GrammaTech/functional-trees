@@ -499,7 +499,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                       (adjoin current-subroot *subroot-stack*)
                       ;; The "current subroot" is really the root.
                       *subroot-stack*)))
-           (record-deps root current-subroot (rest *subroot-stack*))
+           (record-deps root current-subroot *subroot-stack*)
            (funcall fn)))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
