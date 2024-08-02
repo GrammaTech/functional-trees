@@ -1920,14 +1920,17 @@ diagnostic information on error or failure."
 
 (defclass file (node)
   ((name :initarg :name :type string :reader name)
-   (exports :initarg :exports :type list :reader exports)))
+   (exports :initarg :exports :type list :reader exports)
+   (deps :initarg :deps :type list :reader deps))
+  (:default-initargs
+   :deps nil))
 
 (defmethod print-object ((self file) stream)
   (print-unreadable-object (self stream :type t :identity t)
     (format stream "~a" (name self))))
 
 (defclass impl-file (file subroot)
-  ((deps :initarg :deps :type list :reader deps)))
+  ())
 
 (defclass header-file (file subroot)
   ())
@@ -1937,8 +1940,6 @@ diagnostic information on error or failure."
       (error "No such dependency: ~a" name)))
 
 (def-attr-fun trivial-symbol-table (in)
-  (:method ((h header-file) &optional in)
-    (copy-list (append in (exports h))))
   (:method ((p project) &optional in)
     (copy-list
      (reduce (lambda (in2 child)
@@ -1948,7 +1949,7 @@ diagnostic information on error or failure."
                 (remove-if-not (of-type 'impl-file) children)
                 (remove-if-not (of-type 'header-file) children)))
              :initial-value in)))
-  (:method ((f impl-file) &optional in)
+  (:method ((f file) &optional in)
     (copy-list
      (append
       (reduce (lambda (in2 dep)
@@ -1963,7 +1964,6 @@ diagnostic information on error or failure."
   (trivial-symbol-table (ft/attrs:attrs-root*) nil))
 
 (defun symbol-table-alist (project)
-  ;; TODO Should work without.
   (trivial-symbol-table project)
   (iter (for file in (children project))
         (collect (cons (name file)
@@ -1973,30 +1973,40 @@ diagnostic information on error or failure."
   (eql (cdr (is (assoc key alist1 :test #'equal)))
        (cdr (is (assoc key alist2 :test #'equal)))))
 
+(defun depends-on? (depender dependee)
+  (member dependee (ft/attrs::subroot-deps depender)
+          :key
+          #'tg:weak-pointer-value ))
+
 (deftest attr-project ()
   (let* ((cc-file-1
            (make-instance 'impl-file
              :name "my_class.cc"
-             :deps (list "my_class.h")
-             :exports (list "my_class::do_something()")))
+             :deps '("my_class.h")
+             :exports '("my_class::do_something()")))
          (cc-file-2
            (make-instance 'impl-file
              :name "my_program.cc"
-             :deps (list "my_class.h" "other_class.h")
-             :exports (list "main")))
+             :deps '("my_class.h" "other_class.h")
+             :exports '("main")))
          (cc-file-3
            (make-instance 'impl-file
              :name "other_class.cc"
-             :deps (list "other_class.h")
-             :exports (list "other_class::do_something()")))
+             :deps '("other_class.h")
+             :exports '("other_class::do_something()")))
          (header-file-1
            (make-instance 'header-file
              :name "my_class.h"
-             :exports (list "my_class")))
+             :exports '("my_class")))
          (header-file-2
            (make-instance 'header-file
              :name "other_class.h"
-             :exports (list "other_class")))
+             :deps '("stdio.h")
+             :exports '("other_class")))
+         (header-file-3
+           (make-instance 'header-file
+             :name "stdio.h"
+             :exports '("printf")))
          (project
            (make-instance 'project
              :children (list
@@ -2004,13 +2014,24 @@ diagnostic information on error or failure."
                         cc-file-2
                         cc-file-3
                         header-file-1
-                        header-file-2))))
+                        header-file-2
+                        header-file-3))))
     ;; Test with and without cross-session caching.
     (dolist (cache '(t nil))
       ;; Test that changing one .cc file doesn't change them all.
       (let* ((old-alist
                (ft/attrs:with-attr-session (project :cache cache)
-                 (symbol-table-alist project)))
+                 (prog1 (symbol-table-alist project)
+                   ;; Check the project has a symbol table.
+                   (is (trivial-symbol-table project))
+                   ;; Check dependencies were correctly calculated.
+                   (is (depends-on? cc-file-1 header-file-1))
+                   (is (not (depends-on? cc-file-1 header-file-2)))
+                   (is (depends-on? cc-file-2 header-file-1))
+                   (is (depends-on? cc-file-2 header-file-2))
+                   (is (not (depends-on? cc-file-3 header-file-1)))
+                   (is (depends-on? cc-file-3 header-file-2))
+                   (is (depends-on? header-file-2 header-file-3)))))
              (new-cc-file (tree-copy cc-file-1))
              (new-project
                (with project
