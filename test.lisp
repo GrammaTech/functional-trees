@@ -1923,7 +1923,7 @@ diagnostic information on error or failure."
    (exports :initarg :exports :type list :reader exports)
    (deps :initarg :deps :type list :reader deps))
   (:default-initargs
-   :deps nil))
+   :deps '()))
 
 (defmethod print-object ((self file) stream)
   (print-unreadable-object (self stream :type t :identity t)
@@ -2087,6 +2087,94 @@ diagnostic information on error or failure."
         (dolist (file (list cc-file-1 cc-file-2))
           (is (not (eql-for-key (name file) old-alist new-alist))
               "The dependencies must be recalculated."))))))
+
+(defclass root-wrapper (node attrs-root)
+  ((root :reader root-wrapper-root :initarg :root))
+  (:documentation
+   "A wrapper for the root node, not itself part of the tree."))
+
+(defmethod children ((node root-wrapper))
+  (list (root-wrapper-root node)))
+
+(defclass color-node (parent)
+  ()
+  (:documentation "A node whose color can be computed"))
+
+(defclass red-subroot (color-node subroot)
+  ()
+  (:documentation "A node whose color is always red.
+Children of this node are also always red."))
+
+(defclass blue-subroot (color-node subroot)
+  ()
+  (:documentation "A node whose color is always blue.
+Children of this node are also always blue."))
+
+(defgeneric node-color (node)
+  (:documentation "Get NODE's color")
+  (:method ((node color-node)) nil)
+  (:method ((node red-subroot)) :red)
+  (:method ((node blue-subroot)) :blue))
+
+(def-attr-fun node-color-attr (in)
+  (:documentation
+   "Compute node color based on parent node color")
+  (:method ((node root-wrapper) &optional in)
+    (node-color-attr (root-wrapper-root node) in)
+    in)
+  (:method ((node color-node) &optional in)
+    (let ((color (or (node-color node) in)))
+      (mapcar (lambda (node)
+                (node-color-attr node color))
+              (children node))
+      color)))
+
+(defvar *node-color-attr-child* t
+  "Whether to compute `node-color-attr' from the root or its child.")
+
+(defmethod ft/attrs:attr-missing ((attr (eql 'node-color-attr))
+                                  node)
+  (if *node-color-attr-child*
+      ;; This used to be invalid because it wasn't starting from the
+      ;; actual root.
+      (node-color-attr (root-wrapper-root (ft/attrs:attrs-root*))
+                       nil)
+      (node-color-attr (ft/attrs:attrs-root*)
+                       nil)))
+
+(deftest test-no-spurious-dependencies-on-recursion ()
+  "Computing a top-down attribute from `attr-missing' should still work
+even if it doesn't start from the actual attribute root, without
+introducing spurious dependencies."
+  (dolist (*node-color-attr-child* '(t nil))
+    (let* ((red-child (make-instance 'color-node))
+           (blue-child (make-instance 'color-node))
+           (blue-subroot (make-instance 'blue-subroot
+                           :children (list blue-child)))
+           (red-subroot (make-instance 'red-subroot
+                          :children (list red-child)))
+           (tree
+             (make-instance 'root-wrapper
+               :root (make-instance 'color-node
+                       :children
+                       (list red-subroot blue-subroot)))))
+      ;; What we want to avoid is the blue root still being on the
+      ;; subroot stack when we recurse and compute the red subroot, or
+      ;; vice versa.
+      (ft/attrs:with-attr-session (tree :cache nil)
+        (is (eql :red
+                 (node-color-attr red-child)))
+        (is (eql :blue
+                 (node-color-attr blue-child)))
+        (is (not (depends-on? blue-subroot red-subroot)))
+        (is (not (depends-on? red-subroot blue-subroot))))
+      (ft/attrs:with-attr-session (tree :cache nil)
+        (is (eql :blue
+                 (node-color-attr blue-child)))
+        (is (eql :red
+                 (node-color-attr red-child)))
+        (is (not (depends-on? blue-subroot red-subroot)))
+        (is (not (depends-on? red-subroot blue-subroot)))))))
 
 (deftest inherit-with-inhibit ()
   "Test that we signal errors when trying to inherit from a session with

@@ -486,7 +486,8 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                     (subroot-deps depender)))))))
 
 (defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
-  (cond ((not *enable-cross-session-cache*) (funcall fn))
+  (cond ((not *enable-cross-session-cache*)
+         (funcall fn))
         ((eql node root)
          ;; If we are computing top-down (after an attr-missing call),
          ;; mask the subroot stack.
@@ -497,8 +498,10 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                 (*subroot-stack*
                   (if (subroot? current-subroot)
                       (adjoin current-subroot *subroot-stack*)
-                      ;; The "current subroot" is really the root.
-                      *subroot-stack*)))
+                      ;; If there is no subroot but there is a subroot
+                      ;; stack, that also means we're computing
+                      ;; top-down and should mask the subroot stack.
+                      '())))
            (record-deps root current-subroot *subroot-stack*)
            (funcall fn)))))
 
