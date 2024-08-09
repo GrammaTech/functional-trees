@@ -688,8 +688,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   "Does NODE have attribute ATTR-NAME computed?
 If ATTR-NAME is not supplied, return T if NODE has any attributes."
   (declare (symbol attr-name))
-  (and-let* ((table (node-attr-table node))
-             (alist (gethash node table)))
-    (if attr-name-supplied-p
-        (assoc attr-name alist)
-        alist)))
+  (when (boundp '*attrs*)
+    (and-let* ((table (node-attr-table node))
+               (alist (gethash node table)))
+      (if attr-name-supplied-p
+          (assoc attr-name alist)
+          alist))))

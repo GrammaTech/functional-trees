@@ -1837,6 +1837,7 @@ diagnostic information on error or failure."
 
 (deftest test-has-attribute-p ()
   (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (is (not (has-attribute-p t1)))
     (with-attr-table t1
       (is (not (has-attribute-p t1)))
       (is (not (has-attribute-p t1 'attr.size-function)))
