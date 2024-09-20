@@ -1170,10 +1170,12 @@ tree has its predecessor set to TREE."
 (defmethod lookup ((node t) (location node))
   (lookup node (path-of-node node location)))
 (defmethod lookup ((node node) (path cons))
-  (etypecase path
-    (proper-list
+  (etypecase (cdr path)
+    ;; A proper list.
+    (list
      (lookup (lookup node (car path)) (cdr path)))
-    (cons
+    ;; A pair.
+    (atom
      (destructuring-bind (slot . i) path
        (lookup (slot-value node (get-actual-slot slot)) i)))))
 (defmethod lookup ((node node) (slot null))
