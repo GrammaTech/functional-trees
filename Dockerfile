@@ -1,30 +1,44 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get -y update && \
-    apt-get -y install autoconf build-essential git lsof wget python3-pip sbcl curl
+    apt-get -y install autoconf build-essential git lsof wget \
+    python3-pip sbcl curl
+
+# # Install Clozure
+RUN mkdir /usr/share/ccl
+RUN git clone --depth=1 --branch=v1.12.1 https://github.com/Clozure/ccl.git /usr/share/ccl
+RUN curl -L https://github.com/Clozure/ccl/releases/download/v1.12.1/linuxx86.tar.gz \
+    | tar xzvf - -C /usr/share/ccl
+RUN cd /usr/share/ccl && echo "(ccl:rebuild-ccl :full t)" \
+    | ./lx86cl64 --no-init --quiet --batch
+RUN echo '#!/bin/sh\n\
+    export CCL_DEFAULT_DIRECTORY=/usr/share/ccl\n\
+    exec ${CCL_DEFAULT_DIRECTORY}/lx86cl64 "$@"\n\
+    ' > /usr/bin/ccl
+RUN chmod a+x /usr/bin/ccl
+
+# Build SCBL
+RUN rm -rf /root/sbcl && \
+    git clone --depth=1 --branch sbcl-2.4.6 https://git.code.sf.net/p/sbcl/sbcl \
+    /root/sbcl
+RUN cd /root/sbcl && \
+    bash make.sh --xc-host='ccl --batch --no-init'\
+    --prefix=/usr \
+    --with-sb-linkable-runtime --with-sb-dynamic-core \
+    --dynamic-space-size=8Gb
+RUN apt-get -y remove sbcl
+RUN cd /root/sbcl && bash install.sh && sbcl --version
+
+# Install up-to-date ASDF (must be >=3.3.4.8 for package-local nickname support.)
+RUN mkdir /root/common-lisp
+RUN curl https://gitlab.common-lisp.net/asdf/asdf/-/archive/3.3.7/asdf-3.3.7.tar.gz| tar xzC /root/common-lisp
 
 # Install quicklisp
 RUN cd /tmp/ && \
     wget https://beta.quicklisp.org/quicklisp.lisp && \
     sbcl --load quicklisp.lisp \
-         --eval '(quicklisp-quickstart:install)'
-
-# Install CCL
-RUN echo '#!/bin/sh\n\
-export CCL_DEFAULT_DIRECTORY=/usr/lib/ccl\n\
-exec ${CCL_DEFAULT_DIRECTORY}/lx86cl64 "$@"\n\
-' > /usr/bin/ccl && \
-    chmod a+x /usr/bin/ccl && \
-    mkdir -p /usr/lib/ccl && \
-    cd /tmp && \
-    git clone https://github.com/Clozure/ccl.git && \
-    cd ccl && \
-    git checkout v1.12 && \
-    wget https://github.com/Clozure/ccl/releases/download/v1.12/linuxx86.tar.gz && \
-    tar xzvf linuxx86.tar.gz -C . && \
-    echo "(ccl:rebuild-ccl :full t)" | ./lx86cl64 --no-init --quiet --batch; \
-    cp -pr /tmp/ccl/* /usr/lib/ccl && \
-    rm -rf /tmp/ccl
+    --eval '(quicklisp-quickstart:install)'
 
 # Install Python dependencies for readme.py
 COPY .cl-make/requirements.txt cl-make-requirements.txt
