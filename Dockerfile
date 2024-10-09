@@ -43,5 +43,7 @@ RUN cd /tmp/ && \
 # Install Python dependencies for readme.py
 COPY .cl-make/requirements.txt cl-make-requirements.txt
 RUN pip3 install -r cl-make-requirements.txt
+# TODO It would be better to do this in cl-make.
+RUN pip3 install pytest==7.1.2
 
 WORKDIR /root/quicklisp/local-projects
