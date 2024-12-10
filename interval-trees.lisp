@@ -132,19 +132,6 @@ Also return the depth of the node (or the NIL leaf) in the tree."
              (return-from itree-find-node (values node depth)))))
     (values nil depth)))
 
-(defun itree-find-node-splay (tree key)
-  "Find the node in TREE that has the interval containing KEY,
-or NIL if none.  At the same time, splay that node to the root
-of TREE.  The structure TREE is modified, but the tree is updated
-functionally."
-  (declare (optimize speed))
-  (multiple-value-bind (node rpath depth)
-      (itree-find-node-path tree key)
-    (declare (ignore depth))
-    (when node
-      (setf (itree-root tree) (insert-node node rpath))
-      (itree-root tree))))
-
 (defun itree-find-node-path (tree key)
   "Return the NODE whose interval contains KEY, or NIL if none,
 and the reversed path to that node (or NIL leaf).  Also return
@@ -173,6 +160,19 @@ the depth of the node, which is the length of the path."
              (return-from itree-find-node-path
                (values node path depth)))))
     (values nil path depth)))
+
+(defun itree-find-node-splay (tree key)
+  "Find the node in TREE that has the interval containing KEY,
+or NIL if none.  At the same time, splay that node to the root
+of TREE.  The structure TREE is modified, but the tree is updated
+functionally."
+  (declare (optimize speed))
+  (multiple-value-bind (node rpath depth)
+      (itree-find-node-path tree key)
+    (declare (ignore depth))
+    (when node
+      (setf (itree-root tree) (insert-node node rpath))
+      (itree-root tree))))
 
 (defun itree-find (tree key)
   "Find the interval in TREE containins KEY.  Returns three values:
@@ -260,7 +260,6 @@ in decreasing order of depth) if it exists."
 (defun itree-replace-node (itree new-node path &optional (size-delta 0))
   "Replaces the node that was reached by PATH in ITREE with new-node.
 SIZE-DELTA is the change in size of the itree"
-  (declare (ignore old-node))
   (make-itree :root (insert-node new-node path)
               :size (+ (itree-size itree) size-delta)))
 
