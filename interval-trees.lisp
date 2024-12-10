@@ -146,10 +146,12 @@ the depth of the node, which is the length of the path."
   ;; their reversed paths as well (these will be suffixes of the
   ;; reversed path to the NIL leaf itself.)
   (declare (type key-type key)
-           (type itree tree))
+           (type itree tree)
+           (optimize speed))
   (let ((node (itree-root tree))
         (path nil)
         (depth 0))
+    (declare ((and unsigned-byte fixnum) depth))
     (iter (while node)
           (cond
             ((< key (node-lo node))
@@ -161,7 +163,8 @@ the depth of the node, which is the length of the path."
              (push node path)
              (setf node (node-right node)))
             (t
-             (return-from itree-find-node-path (values node path depth)))))
+             (return-from itree-find-node-path
+               (values node path depth)))))
     (values nil path depth)))
 
 (defun itree-find (tree key)
