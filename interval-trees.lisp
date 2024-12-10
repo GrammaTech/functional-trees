@@ -132,6 +132,7 @@ Also return the depth of the node (or the NIL leaf) in the tree."
 or NIL if none.  At the same time, splay that node to the root
 of TREE.  The structure TREE is modified, but the tree is updated
 functionally."
+  (declare (optimize speed))
   (multiple-value-bind (node rpath depth)
       (itree-find-node-path tree key)
     (declare (ignore depth))
