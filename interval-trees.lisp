@@ -33,6 +33,11 @@ for integer intervals."))
   "The type of keys in the interval tree, which should subsume BOUND"
   '(integer -1 #.(1- (ash 1 61))))
 
+(declaim
+ (inline make-node
+         itree-find-node-splay
+         itree-find-node-path))
+
 (declaim (inline make-node))
 (defstruct node
   (left nil :type (or null node))
