@@ -44,6 +44,8 @@
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
 
+(defvar *attribute-trail* nil)
+
 (defvar *enable-cross-session-cache* t
   "If non-nil, cache attributes across sessions.")
 
@@ -571,7 +573,9 @@ one."
               (list (return-from retrieve-memoized-attr-fn (values alist p)))
               (t
                (assert (eql (cdr p) :in-progress))
-               (error 'circular-attribute :fn fn-name :node node)))))
+               (error 'circular-attribute
+                      :fn fn-name
+                      :node node)))))
     (values alist nil)))
 
 (defun cached-attr-fn (node fn-name)
@@ -614,7 +618,11 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           (t
            (assert (eql (cdr p) in-progress))
            (error 'circular-attribute :node node :fn fn-name))))
-      (let ((p (cons fn-name in-progress)))
+      (let* ((p (cons fn-name in-progress))
+             (trail-pair (cons fn-name node))
+             (*attribute-trail*
+               (cons trail-pair *attribute-trail*)))
+        (declare (dynamic-extent trail-pair *attribute-trail*))
         ;; additional pushes onto the alist may occur in the call to THUNK,
         ;; so get the push of p onto the list out of the way now.  If we
         ;; tried to assign after the call we might lose information.
@@ -636,11 +644,18 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (fn :initarg :fn :reader attribute-error-function)))
 
 (define-condition circular-attribute (attribute-error)
-  ((node :reader circular-attribute-node)
-   (fn :reader circular-attribute-function))
-  (:report (lambda (c s)
-             (with-slots (node fn) c
-               (format s "Circularity detected in ~a on ~a" fn node)))))
+  ((node :initarg :node :reader circular-attribute-node)
+   (fn :initarg :fn :reader circular-attribute-function)
+   (trail :initarg :trail :reader circular-attribute-trail))
+  (:default-initargs
+   ;; NB *attribute-trail* is stack-allocated.
+   :trail (copy-tree *attribute-trail*))
+  (:report
+   (lambda (c s)
+     (with-slots (node fn trail) c
+       (let ((*print-circle* nil))
+         (format s "Circularity detected in attribute ~a on ~a~%Trail (deepest first):~%~{~a~%~}"
+                 fn node trail))))))
 
 (define-condition uncomputed-attr (attribute-error)
   ((node :reader uncomputed-attr-node)
