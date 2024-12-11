@@ -260,6 +260,7 @@ in decreasing order of depth) if it exists."
 (defun itree-replace-node (itree new-node path &optional (size-delta 0))
   "Replaces the node that was reached by PATH in ITREE with new-node.
 SIZE-DELTA is the change in size of the itree"
+  (declare (type bound size-delta))
   (make-itree :root (insert-node new-node path)
               :size (+ (itree-size itree) size-delta)))
 
@@ -356,6 +357,7 @@ some node.  Return NIL if there is no next node."
 (defun merge-intervals (interval-list)
   "Combine intervals with the same datum.  Assumes INTERVAL-LIST
 is fresh and can be modified."
+  (declare (list interval-list))
   (setf interval-list (sort interval-list #'< :key #'caar))
   (when interval-list 
     (destructuring-bind ((lo . hi) datum) (car interval-list)
@@ -390,7 +392,7 @@ have data satisfying the TEST comparison function.")
                 (root-hi (node-hi root))
                 (root-left (node-left root))
                 (root-right (node-right root)))
-            (declare (type bound root-lo root-hi))
+            (declare (type bound root-lo root-hi size))
             (block nil
               (labels ((%max-left (n &optional moves)
                          (declare (optimize (debug 0))) ;tail recursion
