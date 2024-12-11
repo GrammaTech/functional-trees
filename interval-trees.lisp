@@ -175,7 +175,7 @@ functionally."
       (itree-root tree))))
 
 (defun itree-find (tree key)
-  "Find the interval in TREE containins KEY.  Returns three values:
+  "Find the interval in TREE containing KEY.  Returns three values:
 the lo key, the hi key (giving the interval [lo,hi]) and the datum.
 If no such interval is found, return NIL."
   (when-let ((node (itree-find-node tree key)))
