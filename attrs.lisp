@@ -1,39 +1,61 @@
 (defpackage :functional-trees/attrs
   (:nicknames :ft/attrs)
   (:use
-   :common-lisp :alexandria :iterate
-   :functional-trees/functional-trees
+   :common-lisp
+   :alexandria
    :curry-compose-reader-macros
+   :functional-trees/functional-trees
+   :iterate
    :named-readtables)
-  (:import-from :fset)
   (:import-from :cl-store)
   (:import-from :closer-mop)
-  (:shadowing-import-from :trivial-garbage :make-weak-hash-table)
-  (:shadowing-import-from :fset :subst :subst-if :subst-if-not :mapcar :mapc)
-  (:import-from :serapeum :defplace :assure :lret :defvar-unbound :with-thunk
-                :defstruct-read-only :defsubst :standard/context :def
-                :slot-value-safe :with-boolean :boolean-unless
-                :nlet :and-let*)
+  (:import-from :fset)
+  (:shadowing-import-from
+    :trivial-garbage
+    :make-weak-hash-table)
+  (:shadowing-import-from
+    :fset
+    :mapc
+    :mapcar
+    :subst
+    :subst-if
+    :subst-if-not)
+  (:import-from
+    :serapeum
+    :and-let*
+    :assure
+    :boolean-unless
+    :def
+    :defplace
+    :defstruct-read-only
+    :defsubst
+    :defvar-unbound
+    :lret
+    :nlet
+    :slot-value-safe
+    :standard/context
+    :with-boolean
+    :with-thunk)
   (:export
-   :def-attr-fun
-   :with-attr-table
-   :with-attr-session
    :*attrs*
-   :attrs-root*
    :attr-missing
-   :attrs-root
    :attr-proxy
+   :attribute-error
+   :attrs-root
+   :attrs-root
+   :attrs-root*
+   :circular-attribute
+   :def-attr-fun
+   :has-attribute-p
+   :reachable?
+   :recompute-subroot-mapping
+   :session-shadowing
    :subroot
    :subroot?
-   :attrs-root
-   :unreachable-node
-   :reachable?
-   :session-shadowing
-   :recompute-subroot-mapping
-   :attribute-error
-   :circular-attribute
    :uncomputed-attr
-   :has-attribute-p))
+   :unreachable-node
+   :with-attr-session
+   :with-attr-table))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
