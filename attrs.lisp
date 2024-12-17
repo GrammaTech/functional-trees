@@ -683,10 +683,14 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   ((node :reader uncomputed-attr-node)
    (fn :reader uncomputed-attr-function))
   (:report (lambda (condition stream)
-             (format stream "Uncomputed attr function ~a on node ~a (~s did not work)"
+             (format stream "Uncomputed attr function ~a on node ~a (~s did not work)~%Present in tree: ~:[NO~;YES~]"
                      (uncomputed-attr-function condition)
                      (uncomputed-attr-node condition)
-                     'attr-missing))))
+                     'attr-missing
+                     (let* ((root (fset:convert 'node (attrs-root*)))
+                            (node (uncomputed-attr-node condition))
+                            (path (path-of-node root node)))
+                       (and path (eql (fset:lookup root path) node)))))))
 
 (defun assert-attrs-bound (fn-name)
   (unless (boundp '*attrs*)
