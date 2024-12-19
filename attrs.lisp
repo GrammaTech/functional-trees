@@ -38,6 +38,7 @@
     :with-thunk)
   (:export
    :*attrs*
+   :*enable-cross-session-cache*
    :attr-missing
    :attr-proxy
    :attribute-error
