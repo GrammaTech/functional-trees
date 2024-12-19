@@ -356,39 +356,36 @@ This should be done if the root has been mutated."
    :table (attrs.node->subroot attrs))
   attrs)
 
-(defun subroot-map (root &key (ensure t))
-  "Get the subroot map for ROOT."
-  (declare (attrs-root root))
-  (assert (slot-exists-p root 'subroot-map))
-  (if (slot-boundp root 'subroot-map)
-      (let ((value (slot-value root 'subroot-map)))
-        (if (typep value 'subroot-map) value
-            (setf (slot-value root 'subroot-map)
-                  (fset:convert 'subroot-map value))))
-      (and ensure
-           (setf (slot-value root 'subroot-map)
-                 (make-subroot-map)))))
+(defun subroot-map (attrs &key (ensure t))
+  "Get the subroot map for ATTRS."
+  (let ((root (attrs-root attrs)))
+    (assert (slot-exists-p root 'subroot-map))
+    (if (slot-boundp root 'subroot-map)
+        (let ((value (slot-value root 'subroot-map)))
+          (if (typep value 'subroot-map) value
+              (setf (slot-value root 'subroot-map)
+                    (fset:convert 'subroot-map value))))
+        (and ensure
+             (setf (slot-value root 'subroot-map)
+                   (make-subroot-map))))))
 
 (defun attrs.subroot->attr-table (attrs &key (ensure t))
   "Get the subroots table for ATTRS.
 If ENSURE is non-nil, create the table."
-  (when-let (index
-             (subroot-map (attrs-root attrs) :ensure ensure))
-    (subroot-map.subroot->attr-table index)))
+  (when-let (subroot-map (subroot-map attrs :ensure ensure))
+    (subroot-map.subroot->attr-table subroot-map)))
 
 (defun attrs.subroot->deps (attrs &key (ensure t))
   "Get the subroot dependencies table for ATTRS.
 If ENSURE is non-nil, create the table."
-  (when-let (index
-             (subroot-map (attrs-root attrs) :ensure ensure))
-    (subroot-map.subroot->deps index)))
+  (when-let (subroot-map (subroot-map attrs :ensure ensure))
+    (subroot-map.subroot->deps subroot-map)))
 
 (defun attrs.ast->proxy (attrs &key (ensure t))
   "Get the attr proxy table for ATTRS.
 If ENSURE is non-nil, create the table."
-  (when-let (index
-             (subroot-map (attrs-root attrs) :ensure ensure))
-    (subroot-map.ast->proxy index)))
+  (when-let (subroot-map (subroot-map attrs :ensure ensure))
+    (subroot-map.ast->proxy subroot-map)))
 
 (defsubst attrs-root* ()
   "Get the root of the current attrs table."
