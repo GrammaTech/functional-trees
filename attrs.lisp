@@ -481,22 +481,26 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
 (defun invalidate-subroots (attrs)
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
+        (node->subroot (attrs.node->subroot attrs))
         (removed '()))
     (when (and subroot->attr-table subroot->deps)
       ;; Remove unreachable subroots from the table.
       (iter (for (subroot nil) in-hashtable subroot->attr-table)
-            (unless
-                ;; Cheap reachability check.
-                (gethash subroot (attrs.node->subroot *attrs*))
+            ;; Cheap reachability check.
+            (for reachable? = (gethash subroot node->subroot))
+            (unless reachable?
               (remhash subroot subroot->attr-table)
               (remhash subroot subroot->deps)
               (push subroot removed)))
-      ;; Uncache any suroot that depends on an unreachable subroot.
+      ;; Recursively uncache any subroot that depends on an
+      ;; unreachable subroot.
       (iter (for newly-removed-count =
                  (iter (for (subroot deps) in-hashtable subroot->deps)
                        (when (iter (for ptr in deps)
                                    (for dep = (tg:weak-pointer-value ptr))
-                                   (thereis (not (gethash dep subroot->attr-table))))
+                                   (thereis
+                                    (or (null dep) ;Already GC'd.
+                                        (not (gethash dep subroot->attr-table)))))
                          (remhash subroot subroot->deps)
                          (remhash subroot subroot->attr-table)
                          (pushnew subroot removed)
