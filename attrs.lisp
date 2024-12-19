@@ -369,11 +369,6 @@ This should be done if the root has been mutated."
            (setf (slot-value root 'subroot-map)
                  (make-subroot-map)))))
 
-(defun (setf subroot-map) (value root)
-  "Set ROOT's subroot map to VALUE."
-  (setf (slot-value root 'subroot-map)
-        (assure subroot-map value)))
-
 (defun attrs.subroot->attr-table (attrs &key (ensure t))
   "Get the subroots table for ATTRS.
 If ENSURE is non-nil, create the table."
