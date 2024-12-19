@@ -2255,7 +2255,7 @@ a different caching policy."
          (root3 (copy root2))
          (root4 (copy root2)))
     (is (typep (slot-value root2 'ft/attrs::subroot-map)
-               'ft/attrs::subroot-map-pointer))
+               'serapeum:box))
     ;; Reuse the pointer.
     (is (eql (slot-value root2 'ft/attrs::subroot-map)
              (slot-value root3 'ft/attrs::subroot-map)))

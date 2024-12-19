@@ -25,6 +25,8 @@
     :and-let*
     :assure
     :boolean-unless
+    :box
+    :boxp
     :def
     :defplace
     :defstruct-read-only
@@ -33,6 +35,7 @@
     :lret
     :nlet
     :slot-value-safe
+    :unbox
     :standard/context
     :with-boolean
     :with-thunk)
@@ -111,7 +114,7 @@ rehashing for large tables.")
 (defclass attrs-root ()
   ((subroot-map
     :documentation "Tables from subroots to attributes and from subroots to dependencies."
-    :type (or subroot-map subroot-map-pointer)
+    :type (or subroot-map box)
     :initarg :subroot-map))
   (:documentation "Mixin that marks a class as a root.
 This is important; it controls subroot copying behavior."))
@@ -127,7 +130,7 @@ This is important; it controls subroot copying behavior."))
     (if *enable-cross-session-cache*
         (when-let (old-map (slot-value-safe root 'subroot-map))
           (setf (slot-value result 'subroot-map)
-                (fset:convert 'subroot-map-pointer old-map)))
+                (if (boxp old-map) old-map (box old-map))))
         (slot-makunbound result 'subroot-map))))
 
 (defclass subroot ()
@@ -158,26 +161,6 @@ This is for convenience and entirely equivalent to specializing
   ;; Table of AST proxies. These may be stored as attribute values so
   ;; they need to be copied along with the subroots.
   (ast->proxy :type hash-table))
-
-(defstruct-read-only (subroot-map-pointer
-                      (:conc-name subroot-map-pointer.)
-                      (:constructor make-subroot-map-pointer (map)))
-  "A pointer to a subroot map.
-This allows the subroot-map to be copy-on-access, so a chain of updates
-that don't access the subroot-map don't copy a lot of hash tables."
-  (map :type subroot-map))
-
-(defmethod fset:convert ((to (eql 'subroot-map)) (x subroot-map) &key)
-  x)
-
-(defmethod fset:convert ((to (eql 'subroot-map)) (x subroot-map-pointer) &key)
-  (copy-subroot-map (subroot-map-pointer.map x)))
-
-(defmethod fset:convert ((to (eql 'subroot-map-pointer)) (x subroot-map) &key)
-  (make-subroot-map-pointer x))
-
-(defmethod fset:convert ((to (eql 'subroot-map-pointer)) (x subroot-map-pointer) &key)
-  x)
 
 (defmethod print-object ((self subroot-map) stream)
   (print-unreadable-object (self stream :type t :identity t)))
@@ -364,7 +347,7 @@ This should be done if the root has been mutated."
         (let ((value (slot-value root 'subroot-map)))
           (if (typep value 'subroot-map) value
               (setf (slot-value root 'subroot-map)
-                    (fset:convert 'subroot-map value))))
+                    (copy-subroot-map (unbox value)))))
         (and ensure
              (setf (slot-value root 'subroot-map)
                    (make-subroot-map))))))
