@@ -1847,6 +1847,41 @@ diagnostic information on error or failure."
       (is (has-attribute-p t1 'attr.size-function))
       (is (not (has-attribute-p t1 'attr.other))))))
 
+(deftest test-proxy-has-attribute-p-setting-original ()
+  "Can we call has-attribute-p on a proxied node?"
+  (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (with-attr-table t1
+      (let ((t2 (make-instance 'node)))
+        (is (not (has-attribute-p t1)))
+        ;; No proxy yet, so the node is unreachable.
+        (signals ft/attrs:unreachable-node
+          (is (not (has-attribute-p t2))))
+        (setf (ft/attrs:attr-proxy t2) t1)
+        (is (not (has-attribute-p t2)))
+        (attr.size-function t1)
+        ;; The original still has attributes.
+        (is (has-attribute-p t1))
+        (is (has-attribute-p t1 'attr.size-function))
+        ;; The proxy also "has" attributes.
+        (is (has-attribute-p t2))
+        (is (has-attribute-p t2 'attr.size-function))))))
+
+(deftest test-proxy-has-attribute-p-setting-proxy ()
+  "Can we set attributes on a proxied node and have them appear as
+attributes both of the proxy and the original node?"
+  ;; Try on the original.
+  (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (with-attr-table t1
+      (let ((t2 (make-instance 'node)))
+        (setf (ft/attrs:attr-proxy t2) t1)
+        (attr.size-function t2)
+        ;; The original still has attributes.
+        (is (has-attribute-p t1))
+        (is (has-attribute-p t1 'attr.size-function))
+        ;; The proxy also "has" attributes.
+        (is (has-attribute-p t2))
+        (is (has-attribute-p t2 'attr.size-function))))))
+
 (deftest attr-circular ()
   (def-attr-fun attr.3-fn ()
     (:method ((node node)) (attr.3-fn node)))

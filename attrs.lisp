@@ -395,8 +395,15 @@ If ENSURE is non-nil, create the table."
         (remove-if (compose #'null #'tg:weak-pointer-value)
                    value)))
 
-(defplace attr-proxy (attr)
-  (gethash attr (attrs.ast->proxy *attrs*)))
+(defplace attr-proxy (ast)
+  "Get/set the attr proxy for AST.
+An AST that is not in the tree can have an AST in the tree as its
+\"attribute proxy\".
+
+This is useful for when, say, we need to answer a query with an AST,
+but the actual AST in the tree is somehow unsuitable. We can return an
+AST proxied into the tree instead."
+  (gethash ast (attrs.ast->proxy *attrs*)))
 
 (defun call/attr-session (root fn &key
                                     (inherit *inherit-default*)
@@ -575,7 +582,9 @@ function on it if not found at first."
   (let* ((table (node-attr-table node)))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node fn-name table)
-      (when p (return-from cached-attr-fn (values-list (cdr p))))
+      (when p
+        (return-from cached-attr-fn
+          (values-list (cdr p))))
       (attr-missing fn-name node)
       (setf (values alist p)
             (retrieve-memoized-attr-fn node fn-name table))
@@ -594,7 +603,8 @@ function on it if not found at first."
 If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
   (assert-attrs-bound fn-name)
-  (let* ((table (node-attr-table node))
+  (let* ((node (or (attr-proxy node) node))
+         (table (node-attr-table node))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node fn-name table)
@@ -636,9 +646,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   ((node :reader uncomputed-attr-node)
    (fn :reader uncomputed-attr-function))
   (:report (lambda (condition stream)
-             (format stream "Uncomputed attr function ~a on node ~a"
+             (format stream "Uncomputed attr function ~a on node ~a (~s did not work)"
                      (uncomputed-attr-function condition)
-                     (uncomputed-attr-node condition)))))
+                     (uncomputed-attr-node condition)
+                     'attr-missing))))
 
 (defun assert-attrs-bound (fn-name)
   (unless (boundp '*attrs*)
@@ -689,7 +700,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 If ATTR-NAME is not supplied, return T if NODE has any attributes."
   (declare (symbol attr-name))
   (when (boundp '*attrs*)
-    (and-let* ((table (node-attr-table node))
+    (and-let* ((node (or (attr-proxy node) node))
+               (table (node-attr-table node))
                (alist (gethash node table)))
       (if attr-name-supplied-p
           (assoc attr-name alist)
