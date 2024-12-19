@@ -70,7 +70,10 @@
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
 
-(defvar *attribute-trail* nil)
+(defvar *attribute-trail* nil
+  "Holds a stack-allocated list of (fn-name . node) pairs currently
+being calculated, useful when diagnosing circular dependencies between
+attributes.")
 
 (defvar *enable-cross-session-cache* t
   "If non-nil, cache attributes across sessions.")
