@@ -563,15 +563,18 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
              ,(if optional-args
                   `(if ,present?
                        ,body
-                       (cached-attr-fn ,node ',name))
+                       (cached-attr-fn ,node nil ',name))
                   body)))
          ,@methods))))
 
-(defun retrieve-memoized-attr-fn (node fn-name table)
+(defun retrieve-memoized-attr-fn (node orig-node fn-name table)
   "Look up memoized value for FN-NAME on NODE.
 Return the node's alist, and the pair for FN-NAME if the alist has
-one."
-  (let* ((alist (gethash node table)))
+one.
+
+If NODE is a proxy, ORIG-NODE should be the original node."
+  (declare ((or null node) orig-node))
+  (let ((alist (gethash node table)))
     (iter (for p in alist)
           (when (eql (car p) fn-name)
             (etypecase (cdr p)
@@ -580,30 +583,31 @@ one."
                (assert (eql (cdr p) :in-progress))
                (error 'circular-attribute
                       :fn fn-name
-                      :node node)))))
+                      :node (or orig-node node)
+                      :proxy (and orig-node node))))))
     (values alist nil)))
 
-(defun cached-attr-fn (node fn-name)
+(defun cached-attr-fn (node orig-node fn-name)
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
 function on it if not found at first."
   (declare (type function))
   (assert-attrs-bound fn-name)
   (let* ((table (node-attr-table node)))
     (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn node fn-name table)
+        (retrieve-memoized-attr-fn node orig-node fn-name table)
       (when p
         (return-from cached-attr-fn
           (values-list (cdr p))))
       (attr-missing fn-name node)
       (setf (values alist p)
-            (retrieve-memoized-attr-fn node fn-name table))
+            (retrieve-memoized-attr-fn node orig-node fn-name table))
       (if p
           (values-list (cdr p))
           ;; We tried once, it's still missing, so fail
           (block nil
             (when-let (proxy (attr-proxy node))
               (ignore-some-conditions (uncomputed-attr)
-                (return (cached-attr-fn proxy fn-name))))
+                (return (cached-attr-fn proxy node fn-name))))
             ;; The proxy also failed.
             (error (make-condition 'uncomputed-attr :node node :fn fn-name)))))))
 
@@ -612,17 +616,21 @@ function on it if not found at first."
 If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
   (assert-attrs-bound fn-name)
-  (let* ((node (or (attr-proxy node) node))
+  (let* ((orig-node node)
+         (proxy (attr-proxy node))
+         (node (or proxy node))
          (table (node-attr-table node))
          (in-progress :in-progress))
     (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn node fn-name table)
+        (retrieve-memoized-attr-fn node (and proxy orig-node) fn-name table)
       (when p
         (typecase (cdr p)
           (list (return-from memoize-attr-fun (values-list (cdr p))))
           (t
            (assert (eql (cdr p) in-progress))
-           (error 'circular-attribute :node node :fn fn-name))))
+           (error 'circular-attribute :node orig-node
+                                      :proxy proxy
+                                      :fn fn-name))))
       (let* ((p (cons fn-name in-progress))
              (trail-pair (cons fn-name node))
              (*attribute-trail*
@@ -650,17 +658,20 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 
 (define-condition circular-attribute (attribute-error)
   ((node :initarg :node :reader circular-attribute-node)
+   (proxy :initarg :proxy :reader circular-attribute-proxy)
    (fn :initarg :fn :reader circular-attribute-function)
    (trail :initarg :trail :reader circular-attribute-trail))
   (:default-initargs
+   :proxy nil
    ;; NB *attribute-trail* is stack-allocated.
    :trail (copy-tree *attribute-trail*))
   (:report
    (lambda (c s)
-     (with-slots (node fn trail) c
+     (with-slots (node proxy fn trail) c
        (let ((*print-circle* nil))
-         (format s "Circularity detected in attribute ~a on ~a~%Trail (deepest first):~%~{~a~%~}"
-                 fn node trail))))))
+         (format s
+                 "Circularity detected in attribute ~a on ~a~@[ (proxy ~a)~]~%Trail (deepest first):~%~{~a~%~}"
+                 fn node proxy trail))))))
 
 (define-condition uncomputed-attr (attribute-error)
   ((node :reader uncomputed-attr-node)
