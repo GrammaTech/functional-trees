@@ -1882,6 +1882,26 @@ attributes both of the proxy and the original node?"
         (is (has-attribute-p t2))
         (is (has-attribute-p t2 'attr.size-function))))))
 
+(deftest test-proxy-checks ()
+  "Do we catch attempts to create invalid proxies?"
+  ;; Try on the original.
+  (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (with-attr-table t1
+      (let ((t2 (make-instance 'node))
+            (t3 (make-instance 'node))
+            (t4 (make-instance 'parent :children (list t1))))
+        ;; Can't proxy to itself.
+        (signals error
+          (setf (ft/attrs:attr-proxy t2) t2))
+        ;; Can't proxy to an AST not in the tree.
+        (signals error
+          (setf (ft/attrs:attr-proxy t2) t3))
+        ;; Can't proxy an AST already in the tree.
+        (signals error
+          (setf (ft/attrs:attr-proxy t1) t2))
+        (signals error
+          (setf (ft/attrs:attr-proxy t4) t1))))))
+
 (deftest attr-circular ()
   (def-attr-fun attr.3-fn ()
     (:method ((node node)) (attr.3-fn node)))

@@ -155,15 +155,15 @@ This is for convenience and entirely equivalent to specializing
                           make-subroot-map
                           (&key (subroot->attr-table (make-attr-table))
                              (subroot->deps (make-attr-table))
-                             (ast->proxy (make-attr-table)))))
+                             (node->proxy (make-attr-table)))))
   "Data structure associated with a root to track its subroots."
   ;; Table from subroots to attributes
   (subroot->attr-table :type hash-table)
   ;; Table from subroots to dependencies
   (subroot->deps :type hash-table)
-  ;; Table of AST proxies. These may be stored as attribute values so
+  ;; Table of node proxies. These may be stored as attribute values so
   ;; they need to be copied along with the subroots.
-  (ast->proxy :type hash-table))
+  (node->proxy :type hash-table))
 
 (defmethod print-object ((self subroot-map) stream)
   (print-unreadable-object (self stream :type t :identity t)))
@@ -173,7 +173,7 @@ This is for convenience and entirely equivalent to specializing
    :subroot->attr-table
    (copy-attr-table (subroot-map.subroot->attr-table map))
    :subroot->deps (copy-attr-table (subroot-map.subroot->deps map))
-   :ast->proxy (copy-attr-table (subroot-map.ast->proxy map))))
+   :node->proxy (copy-attr-table (subroot-map.node->proxy map))))
 
 (def +empty-hash-table+
   (load-time-value (make-hash-table) t))
@@ -298,8 +298,8 @@ This holds at least the root of the attribute computation."
    :weakness :key
    :size +node->subroot/initial-size+))
 
-(defun compute-node->subroot (ast &key (table (make-node->subroot-table)) force)
-  "Recurse over AST, computing a table from ASTs to their dominating subroots."
+(defun compute-node->subroot (node &key (table (make-node->subroot-table)) force)
+  "Recurse over NODE, computing a table from NODEs to their dominating subroots."
   (declare (optimize (debug 0)))
   (let ((first-time
           (or force
@@ -308,29 +308,29 @@ This holds at least the root of the attribute computation."
     ;; `first-time' outside the loop, so we aren't paying for lookups
     ;; on the first computation.
     (with-boolean (first-time)
-      (labels ((compute-node->subroot (ast subroot)
-                 (let ((ast
-                         (if (typep ast 'node) ast
-                             (fset:convert 'node ast))))
+      (labels ((compute-node->subroot (node subroot)
+                 (let ((node
+                         (if (typep node 'node) node
+                             (fset:convert 'node node))))
                    (if (null subroot)
-                       (compute-node->subroot ast ast)
+                       (compute-node->subroot node node)
                        (progn
                          (boolean-unless first-time
                            ;; If the subroot hasn't changed, the
                            ;; subroots of the children can't have
                            ;; changed and we don't need to walk them
                            ;; again.
-                           (let ((old (gethash ast table)))
+                           (let ((old (gethash node table)))
                              (when (eql old subroot)
                                (return-from compute-node->subroot))))
-                         (cond ((and (not (eq ast subroot))
-                                     (subroot? ast))
-                                (compute-node->subroot ast ast))
+                         (cond ((and (not (eq node subroot))
+                                     (subroot? node))
+                                (compute-node->subroot node node))
                                (t
-                                (setf (gethash ast table) subroot)
-                                (dolist (c (children ast))
+                                (setf (gethash node table) subroot)
+                                (dolist (c (children node))
                                   (compute-node->subroot c subroot)))))))))
-        (compute-node->subroot ast nil)
+        (compute-node->subroot node nil)
         table))))
 
 (defun recompute-subroot-mapping (&optional (attrs *attrs*))
@@ -367,11 +367,11 @@ If ENSURE is non-nil, create the table."
   (when-let (subroot-map (subroot-map attrs :ensure ensure))
     (subroot-map.subroot->deps subroot-map)))
 
-(defun attrs.ast->proxy (attrs &key (ensure t))
+(defun attrs.node->proxy (attrs &key (ensure t))
   "Get the attr proxy table for ATTRS.
 If ENSURE is non-nil, create the table."
   (when-let (subroot-map (subroot-map attrs :ensure ensure))
-    (subroot-map.ast->proxy subroot-map)))
+    (subroot-map.node->proxy subroot-map)))
 
 (defsubst attrs-root* ()
   "Get the root of the current attrs table."
@@ -398,15 +398,26 @@ If ENSURE is non-nil, create the table."
         (remove-if (compose #'null #'tg:weak-pointer-value)
                    value)))
 
-(defplace attr-proxy (ast)
-  "Get/set the attr proxy for AST.
-An AST that is not in the tree can have an AST in the tree as its
+(defun attr-proxy (node)
+  "Get the attr proxy for NODE.
+A node that is not in the tree can have a node in the tree as its
 \"attribute proxy\".
 
-This is useful for when, say, we need to answer a query with an AST,
-but the actual AST in the tree is somehow unsuitable. We can return an
-AST proxied into the tree instead."
-  (gethash ast (attrs.ast->proxy *attrs*)))
+This is useful for when, say, we need to answer a query with a node,
+but the actual node in the tree is somehow unsuitable. We can return a
+node proxied into the tree instead."
+  (gethash node (attrs.node->proxy *attrs*)))
+
+(defun (setf attr-proxy) (proxy node)
+  (when (eq proxy node)
+    (error "Node ~a and proxy ~a are the same" node proxy))
+  (when (reachable? (attrs-root*) node)
+    (error "Cannot proxy ~a: already in tree" node))
+  (when (not (reachable? (attrs-root*) proxy))
+    (error "Proxy ~a not in tree" proxy))
+  (when (rpath-to-node node proxy)
+    (error "Node ~a contains its proxy: ~a" node proxy))
+  (setf (gethash node (attrs.node->proxy *attrs*)) proxy))
 
 (defun call/attr-session (root fn &key
                                     (inherit *inherit-default*)
@@ -671,7 +682,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
        (let ((*print-circle* nil))
          (format s
                  "Circularity detected in attribute ~a on ~a~@[ (proxy ~a)~]~%Trail (deepest first):~%~{~a~%~}"
-                 fn node proxy trail))))))
+                 fn node proxy
+                 (cons (cons fn node)
+                       trail)))))))
 
 (define-condition uncomputed-attr (attribute-error)
   ((node :reader uncomputed-attr-node)
