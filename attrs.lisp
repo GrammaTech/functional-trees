@@ -409,15 +409,27 @@ node proxied into the tree instead."
   (gethash node (attrs.node->proxy *attrs*)))
 
 (defun (setf attr-proxy) (proxy node)
-  (when (eq proxy node)
-    (error "Node ~a and proxy ~a are the same" node proxy))
-  (when (reachable? (attrs-root*) node)
-    (error "Cannot proxy ~a: already in tree" node))
-  (when (not (reachable? (attrs-root*) proxy))
-    (error "Proxy ~a not in tree" proxy))
-  (when (rpath-to-node node proxy)
-    (error "Node ~a contains its proxy: ~a" node proxy))
-  (setf (gethash node (attrs.node->proxy *attrs*)) proxy))
+  (let* ((attrs *attrs*)
+         (root (attrs-root attrs))
+         (proxy-table (attrs.node->proxy *attrs*)))
+    (when (eq proxy node)
+      (error "Node ~a and proxy ~a are the same" node proxy))
+    (when (reachable? root node)
+      (error "Cannot proxy ~a: already in tree" node))
+    (when (not (reachable? root proxy))
+      (error "Proxy ~a not in tree" proxy))
+    (when (rpath-to-node node proxy)
+      (error "Node ~a contains its proxy: ~a" node proxy))
+    ;; It would be surprising to pull out parts of NODE and find later
+    ;; they have no connection to PROXY. So all descendants of NODE
+    ;; implicitly inherit PROXY (unless they have one already). We
+    ;; (probably?) don't need to repeat the validity checks for every
+    ;; descendant, though.
+    (labels ((set-proxy (node)
+               (ensure-gethash node proxy-table proxy)
+               (mapc #'set-proxy (children node))))
+      (set-proxy node)))
+  proxy)
 
 (defun call/attr-session (root fn &key
                                     (inherit *inherit-default*)

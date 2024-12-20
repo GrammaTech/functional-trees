@@ -1902,6 +1902,24 @@ attributes both of the proxy and the original node?"
         (signals error
           (setf (ft/attrs:attr-proxy t4) t1))))))
 
+(deftest test-proxy-recursion ()
+  "Test that after proxying a node, all its children also proxy, unless
+they had proxies already."
+  ;; Try on the original.
+  (let ((t1 (convert 'data-root '(a (b c) (d e))))
+        (t2 (make-instance 'parent
+              :children
+              (list (make-instance 'node)
+                    (make-instance 'node)))))
+    (with-attr-table t1
+      (setf (ft/attrs:attr-proxy (first (children t2)))
+            (first (children t1)))
+      (setf (ft/attrs:attr-proxy t2) t1)
+      (is (eql (ft/attrs:attr-proxy t2) t1))
+      (is (eql (ft/attrs:attr-proxy (first (children t2)))
+               (first (children t1))))
+      (is (eql (ft/attrs:attr-proxy (second (children t2))) t1)))))
+
 (deftest attr-circular ()
   (def-attr-fun attr.3-fn ()
     (:method ((node node)) (attr.3-fn node)))
