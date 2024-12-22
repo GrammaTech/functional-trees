@@ -497,8 +497,20 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
       (invalidate-subroots *attrs*))
     (funcall fn)))
 
+(defun delete-dead-proxies (attrs)
+  (update-subroot-mapping)
+  (let ((node->proxy (attrs.node->proxy attrs))
+        (node->subroot (attrs.node->subroot attrs)))
+    (iter (for (node proxy) in-hashtable node->proxy)
+          ;; Delete proxies that no longer point into the tree.
+          (unless (@ node->subroot proxy)
+            (remhash node node->proxy))
+          ;; Delete proxies that have been inserted into the tree.
+          (when (@ node->subroot node)
+            (remhash node node->proxy)))))
+
 (defun invalidate-subroots (attrs)
-  (recompute-subroot-mapping)
+  (delete-dead-proxies attrs)
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
         (node->subroot (attrs.node->subroot attrs))

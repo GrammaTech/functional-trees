@@ -1901,6 +1901,19 @@ attributes both of the proxy and the original node?"
         (signals error
           (setf (ft/attrs:attr-proxy t4) t1))))))
 
+(deftest test-inserted-proxied ()
+  "Do we catch if a proxied AST has been added to the tree?"
+  ;; Try on the original.
+  (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (with-attr-table t1
+      (let ((t2 (make-instance 'node)))
+        (setf (ft/attrs:attr-proxy t2)
+              (first (children t1)))
+        (is (= (attr.size-function (first (children t1)))
+               (attr.size-function t2)))
+        (with-attr-table (copy t1 :children (cons t2 (children t1)))
+          (is (= (attr.size-function t2) 1)))))))
+
 (deftest test-proxy-recursion ()
   "Test that after proxying a node, all its children also proxy, unless
 they had proxies already."
