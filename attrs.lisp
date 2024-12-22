@@ -684,11 +684,17 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           (when (eql (cdr p) in-progress)
             (removef (gethash node table) p)))))))
 
-(define-condition attribute-error (error)
+(define-condition attribute-condition (condition)
+  ())
+
+(define-condition attribute-error (error attribute-condition)
+  ())
+
+(define-condition node-attribute-error (attribute-error)
   ((node :initarg :node :reader attribute-error-node)
    (fn :initarg :fn :reader attribute-error-function)))
 
-(define-condition circular-attribute (attribute-error)
+(define-condition circular-attribute (node-attribute-error)
   ((node :initarg :node :reader circular-attribute-node)
    (proxy :initarg :proxy :reader circular-attribute-proxy)
    (fn :initarg :fn :reader circular-attribute-function)
@@ -707,7 +713,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                  (cons (cons fn node)
                        trail)))))))
 
-(define-condition uncomputed-attr (attribute-error)
+(define-condition uncomputed-attr (node-attribute-error)
   ((node :reader uncomputed-attr-node)
    (fn :reader uncomputed-attr-function))
   (:report (lambda (condition stream)
@@ -724,7 +730,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name))))
 
-(define-condition unbound-attrs (unbound-variable)
+(define-condition unbound-attrs (unbound-variable attribute-error)
   ((fn-name :initarg :fn-name :initform nil
             :reader unbound-attrs-fn-name))
   (:documentation "Error to be used when *attrs* is unbound while calling an
@@ -737,7 +743,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 ~s should be used to set ~s before trying to populate any attributes."
                '*attrs* fn-name 'with-attr-table '*attrs*)))))
 
-(define-condition unreachable-node (error)
+(define-condition unreachable-node (attribute-error)
   ((root :initarg :root)
    (node :initarg :node))
   (:report
@@ -745,7 +751,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
      (with-slots (root node) c
        (format s "~a is not reachable from ~a" node root)))))
 
-(define-condition session-shadowing (error)
+(define-condition session-shadowing (attribute-error)
   ((outer :initarg :outer)
    (inner :initarg :inner)
    (inherit :initarg :inherit))
