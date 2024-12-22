@@ -476,6 +476,9 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                 (setf new t))))))
     (unless (eql cache (not (has-attr-table? *attrs*)))
       (error "Cannot inherit with differing values for caching"))
+    ;; The session is "new" if the root was unknown. But it could
+    ;; still have a subroot map attached. If so, make sure it's up to
+    ;; date.
     (when (and cache new)
       (invalidate-subroots *attrs*))
     (funcall fn)))
