@@ -259,7 +259,6 @@ to subtrees."))
 (defmethod convert ((to-type (eql 'list)) (node node-with-fields)
                     &key &allow-other-keys)
   "Convert NODE of type node to a list."
-  (declare (optimize (speed 3)))
   (labels ((to-plist (node) (when-let ((it (data node))) (list :data it)))
            (convert- (node)
              (if (typep node 'node)
