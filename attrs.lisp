@@ -176,7 +176,7 @@ This is for convenience and entirely equivalent to specializing
    :node->proxy (copy-attr-table (subroot-map.node->proxy map))))
 
 (def +empty-hash-table+
-  (load-time-value (make-hash-table) t))
+  #.(make-hash-table :size 0))
 
 (defstruct-read-only (attrs
                       (:conc-name attrs.)
