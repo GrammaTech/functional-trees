@@ -1975,7 +1975,7 @@ they had proxies already."
                    (is (eql (first (children t1))
                             (first (children t2))))
                    (attr.5-fun (first (children t2)))
-                   ;; Test if the attribute was recomputed for the
+                   ;; Test if the attribute was updated for the
                    ;; unchanged subroot.
                    (is (eql should-run? *attr-run*))
                    (attr.5-fun (second (children t2)))
@@ -2321,7 +2321,7 @@ a different caching policy."
 (defmethod convert ((to-type (eql 'node)) (x project-box) &key)
   (project x))
 
-(deftest test-recompute-subroot-mapping ()
+(deftest test-update-subroot-mapping ()
   (let* ((cc-file-1
            (make-instance 'impl-file
              :name "my_class.cc"
@@ -2342,7 +2342,7 @@ a different caching policy."
             (copy project :children (cons header-file-1 (children project))))
       (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
       (is (not (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))
-      (ft/attrs:recompute-subroot-mapping)
+      (ft/attrs:update-subroot-mapping)
       (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
       (is (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))))
 

@@ -52,7 +52,7 @@
    :def-attr-fun
    :has-attribute-p
    :reachable?
-   :recompute-subroot-mapping
+   :update-subroot-mapping
    :session-shadowing
    :subroot
    :subroot?
@@ -89,7 +89,7 @@ attributes.")
 Roots are immutable, so if we have previously computed attributes for
 them we can reuse them.
 
-Practically this has the effect that we do not have to to recompute
+Practically this has the effect that we do not have to to update
 the node->subroot table.")
 
 (defplace cache-lookup (key)
@@ -287,9 +287,9 @@ This holds at least the root of the attribute computation."
                         (gethash p table)))))
               (dominating-subroot attrs-root node)
               attrs-root)
-        (recompute-subroot-mapping ()
-          :report "Recompute node-subroot mapping in tree"
-          (recompute-subroot-mapping)
+        (update-subroot-mapping ()
+          :report "Update node-subroot mapping in tree"
+          (update-subroot-mapping)
           (retry))))))
 
 (defun make-node->subroot-table ()
@@ -333,8 +333,8 @@ This holds at least the root of the attribute computation."
         (compute-node->subroot node nil)
         table))))
 
-(defun recompute-subroot-mapping (&optional (attrs *attrs*))
-  "Recompute the node-to-subroot mapping of ATTRS.
+(defun update-subroot-mapping (&optional (attrs *attrs*))
+  "Update the node-to-subroot mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
   (compute-node->subroot
