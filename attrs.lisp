@@ -498,6 +498,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
     (funcall fn)))
 
 (defun invalidate-subroots (attrs)
+  (recompute-subroot-mapping)
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
         (node->subroot (attrs.node->subroot attrs))
