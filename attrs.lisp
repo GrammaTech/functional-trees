@@ -22,6 +22,7 @@
     :subst-if-not)
   (:import-from
     :serapeum
+    :@
     :and-let*
     :assure
     :boolean-unless
@@ -300,38 +301,51 @@ This holds at least the root of the attribute computation."
 
 (defun compute-node->subroot (node &key (table (make-node->subroot-table)) force)
   "Recurse over NODE, computing a table from NODEs to their dominating subroots."
-  (declare (optimize (debug 0)))
-  (let ((first-time
-          (or force
-              (= 0 (hash-table-count table)))))
+  (when force
+    (clrhash table))
+  (let ((first-time (= 0 (hash-table-count table))))
     ;; Using `with-boolean' means we only actually dispatch once on
-    ;; `first-time' outside the loop, so we aren't paying for lookups
-    ;; on the first computation.
+    ;; `first-time' outside the loop, so we aren't paying for needless
+    ;; lookups on the first computation.
     (with-boolean (first-time)
-      (labels ((compute-node->subroot (node subroot)
-                 (let ((node
-                         (if (typep node 'node) node
-                             (fset:convert 'node node))))
-                   (if (null subroot)
-                       (compute-node->subroot node node)
-                       (progn
-                         (boolean-unless first-time
-                           ;; If the subroot hasn't changed, the
-                           ;; subroots of the children can't have
-                           ;; changed and we don't need to walk them
-                           ;; again.
-                           (let ((old (gethash node table)))
-                             (when (eql old subroot)
-                               (return-from compute-node->subroot))))
-                         (cond ((and (not (eq node subroot))
-                                     (subroot? node))
-                                (compute-node->subroot node node))
-                               (t
-                                (setf (gethash node table) subroot)
-                                (dolist (c (children node))
-                                  (compute-node->subroot c subroot)))))))))
-        (compute-node->subroot node nil)
-        table))))
+      (let ((live-subroots
+              (:if first-time
+                   +empty-hash-table+
+                   (make-hash-table :test 'eq))))
+        (labels ((delete-dead-subroots ()
+                   (boolean-unless first-time
+                     (iter (for (node subroot) in-hashtable table)
+                           (unless (@ live-subroots subroot)
+                             (remhash node table)))))
+                 (compute-node->subroot (node subroot)
+                   (declare (optimize (debug 0))) ;tail recursion
+                   (let ((node
+                           (if (typep node 'node) node
+                               (fset:convert 'node node))))
+                     (if (null subroot)
+                         (compute-node->subroot node node)
+                         (progn
+                           (:unless first-time
+                             ;; If the subroot hasn't changed, the
+                             ;; subroots of the children can't have
+                             ;; changed and we don't need to walk them
+                             ;; again.
+                             (when (subroot? subroot)
+                               (let ((old-subroot (@ table node)))
+                                 (when (eq old-subroot subroot)
+                                   (setf (@ live-subroots subroot) t)
+                                   (return-from compute-node->subroot)))))
+                           (cond ((and (not (eq node subroot))
+                                       (subroot? node))
+                                  (compute-node->subroot node node))
+                                 (t
+                                  (setf (@ table node) subroot
+                                        (@ live-subroots subroot) t)
+                                  (dolist (c (children node))
+                                    (compute-node->subroot c subroot)))))))))
+          (compute-node->subroot node nil)
+          (delete-dead-subroots)
+          table)))))
 
 (defun update-subroot-mapping (&optional (attrs *attrs*))
   "Update the node-to-subroot mapping of ATTRS.
