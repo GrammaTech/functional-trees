@@ -264,7 +264,7 @@ This holds at least the root of the attribute computation."
                      nil))
                  (find-if #'subroot? rpath)))))))
 
-(defun reachable? (root dest)
+(defun reachable? (root dest &key (proxy t))
   "Is DEST reachable from ROOT?"
   (let* ((root-node (fset:convert 'node root))
          (dest-node (fset:convert 'node dest)))
@@ -272,7 +272,7 @@ This holds at least the root of the attribute computation."
         (eql dest-node
              (nth-value 1
                (rpath-to-node root-node dest-node :error nil)))
-        (when (boundp '*attrs*)
+        (when (and proxy (boundp '*attrs*))
           (when-let ((proxy (attr-proxy dest-node)))
             (reachable? root proxy))))))
 
@@ -420,17 +420,26 @@ A node that is not in the tree can have a node in the tree as its
 This is useful for when, say, we need to answer a query with a node,
 but the actual node in the tree is somehow unsuitable. We can return a
 node proxied into the tree instead."
-  (gethash node (attrs.node->proxy *attrs*)))
+  (lret ((proxy (gethash node (attrs.node->proxy *attrs*))))
+    (when (and proxy *enable-cross-session-cache*)
+      (unless (reachable? (attrs-root*) proxy :proxy nil)
+        (error "Proxy ~a of node ~a is unreachable"
+               proxy node)))))
 
 (defun (setf attr-proxy) (proxy node)
   (let* ((attrs *attrs*)
          (root (attrs-root attrs))
-         (proxy-table (attrs.node->proxy *attrs*)))
+         (node->proxy (attrs.node->proxy *attrs*))
+         (node->subroot (attrs.node->subroot *attrs*))
+         (proxy-subroot (@ node->subroot proxy)))
+    (update-subroot-mapping attrs)
     (when (eq proxy node)
       (error "Node ~a and proxy ~a are the same" node proxy))
-    (when (reachable? root node)
+    (when (@ node->proxy proxy)
+      (error "Proxy ~a has a proxy!" proxy))
+    (when (@ node->subroot node)
       (error "Cannot proxy ~a: already in tree" node))
-    (when (not (reachable? root proxy))
+    (unless proxy-subroot
       (error "Proxy ~a not in tree" proxy))
     (when (rpath-to-node node proxy)
       (error "Node ~a contains its proxy: ~a" node proxy))
@@ -440,7 +449,7 @@ node proxied into the tree instead."
     ;; (probably?) don't need to repeat the validity checks for every
     ;; descendant, though.
     (labels ((set-proxy (node)
-               (ensure-gethash node proxy-table proxy)
+               (ensure-gethash node node->proxy proxy)
                (mapc #'set-proxy (children node))))
       (set-proxy node)))
   proxy)
