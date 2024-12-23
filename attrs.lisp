@@ -549,7 +549,10 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
             (until (zerop newly-removed-count))))
     removed))
 
-(defun record-deps (root current-subroot subroot-stack)
+(defun record-deps (node &key
+                           (current-subroot (current-subroot node))
+                           (root (attrs-root*))
+                           (subroot-stack *subroot-stack*))
   "Record CURRENT-SUBROOT as a dependency of the subroots in SUBROOT-STACK."
   (unless (eql root current-subroot)
     (iter (for depender in subroot-stack)
@@ -584,7 +587,9 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                (break)
                ;; (print current-subroot)
                ))
-           (record-deps root current-subroot *subroot-stack*)
+           (record-deps node
+                        :current-subroot current-subroot
+                        :root root)
            (funcall fn)))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
@@ -709,6 +714,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         ;; tried to assign after the call we might lose information.
         (unwind-protect
              (progn
+               (when proxy
+                 (record-deps proxy))
                (setf (gethash node table) (cons p alist))
                (let ((vals (multiple-value-list
                             (funcall thunk))))
