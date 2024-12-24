@@ -286,7 +286,8 @@ This holds at least the root of the attribute computation."
             (@ node->subroot proxy))))))
 
 (defun reachable-from-root? (root dest &key (proxy t))
-  "Is DEST reachable from ROOT?"
+  "Is DEST reachable from ROOT? This is careful to check not just if
+DEST has a path, but if DEST is the node at that path."
   (let* ((root-node (fset:convert 'node root))
          (dest-node (fset:convert 'node dest)))
     (or (eql root-node dest-node)
