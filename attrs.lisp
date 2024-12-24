@@ -464,6 +464,10 @@ node proxied into the tree instead."
       (error "Proxy ~a not in tree" proxy))
     (when (rpath-to-node node proxy)
       (error "Node ~a contains its proxy: ~a" node proxy))
+    ;; If we are proxying to another subroot, the proxied node might
+    ;; be recorded somewhere, making the proxy subroot an implicit
+    ;; dependency of whatever attribute we're calculating.
+    (record-deps proxy :current-subroot proxy-subroot :root root)
     ;; It would be surprising to pull out parts of NODE and find later
     ;; they have no connection to PROXY. So all descendants of NODE
     ;; implicitly inherit PROXY (unless they have one already). We
