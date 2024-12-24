@@ -26,6 +26,7 @@
     :and-let*
     :assure
     :boolean-unless
+    :bound-value
     :box
     :boxp
     :def
@@ -264,7 +265,15 @@ This holds at least the root of the attribute computation."
                      nil))
                  (find-if #'subroot? rpath)))))))
 
-(defun reachable? (root dest &key (proxy t))
+(defun reachable-in-cache? (node &key (proxy t))
+  (when-let (attrs (bound-value '*attrs*))
+    (let ((node->subroot (attrs.node->subroot attrs))
+          (node (fset:convert 'node node)))
+      (or (@ node->subroot node)
+          (when-let (proxy (and proxy (attr-proxy node)))
+            (@ node->subroot proxy))))))
+
+(defun reachable-from-root? (root dest &key (proxy t))
   "Is DEST reachable from ROOT?"
   (let* ((root-node (fset:convert 'node root))
          (dest-node (fset:convert 'node dest)))
@@ -274,7 +283,16 @@ This holds at least the root of the attribute computation."
                (rpath-to-node root-node dest-node :error nil)))
         (when (and proxy (boundp '*attrs*))
           (when-let ((proxy (attr-proxy dest-node)))
-            (reachable? root proxy))))))
+            (reachable-from-root? root proxy))))))
+
+(defun reachable? (dest &key
+                          (proxy t)
+                          use-cache
+                          (from (attrs-root*)))
+  (if use-cache
+      (or (reachable-in-cache? dest :proxy proxy)
+          (reachable-from-root? from dest :proxy proxy))
+      (reachable-from-root? from dest :proxy proxy)))
 
 (defun current-subroot (node)
   "Return the dominating subroot for NODE."
@@ -420,9 +438,9 @@ A node that is not in the tree can have a node in the tree as its
 This is useful for when, say, we need to answer a query with a node,
 but the actual node in the tree is somehow unsuitable. We can return a
 node proxied into the tree instead."
-  (lret ((proxy (gethash node (attrs.node->proxy *attrs*))))
+  (lret ((proxy (@ (attrs.node->proxy *attrs*) node)))
     (when (and proxy *enable-cross-session-cache*)
-      (unless (reachable? (attrs-root*) proxy :proxy nil)
+      (unless (reachable? proxy :use-cache t)
         (error "Proxy ~a of node ~a is unreachable"
                proxy node)))))
 
@@ -437,7 +455,7 @@ node proxied into the tree instead."
       (error "Node ~a and proxy ~a are the same" node proxy))
     (when (@ node->proxy proxy)
       (error "Proxy ~a has a proxy!" proxy))
-    (when (@ node->subroot node)
+    (when (reachable? node :proxy nil :from root)
       (error "Cannot proxy ~a: already in tree" node))
     (unless proxy-subroot
       (error "Proxy ~a not in tree" proxy))
@@ -484,7 +502,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
              ((and cache (cache-lookup root)))
              ((and (boundp '*attrs*)
                    inherit
-                   (reachable? (attrs-root *attrs*) root))
+                   (reachable? root :from (attrs-root *attrs*)))
               *attrs*)
              ((and (boundp '*attrs*)
                    (not shadow))
