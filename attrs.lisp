@@ -355,6 +355,9 @@ This holds at least the root of the attribute computation."
                                    (return-from compute-node->subroot)))))
                            (cond ((and (not (eq node subroot))
                                        (subroot? node))
+                                  (when (and subroot (subroot? subroot))
+                                    (error "Nested subroots: ~a encloses ~a"
+                                           subroot node))
                                   (compute-node->subroot node node))
                                  (t
                                   (setf (@ table node) subroot

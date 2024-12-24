@@ -1946,6 +1946,20 @@ they had proxies already."
                (first (children t1))))
       (is (eql (ft/attrs:attr-proxy (second (children t2))) t1)))))
 
+(deftest test-subroot-nesting-detected ()
+  "Test that we signal an error when subroots are nested."
+  (let* ((t1 (convert 'data-root '(a b)))
+         (t2 (convert 'data-subroot '(c d)))
+         (t1 (with t1 (first (children t1))
+                   (copy (first (children t1))
+                         :children (cons t2 (children
+                                             (first
+                                              (children t1))))))))
+    (is (equal (mapcar #'type-of (cons t2 (rpath-to-node t1 t2)))
+               '(data-subroot data-subroot data-root)))
+    (signals error
+      (with-attr-table t1))))
+
 (deftest attr-circular ()
   (def-attr-fun attr.3-fn ()
     (:method ((node node)) (attr.3-fn node)))
