@@ -1993,6 +1993,33 @@ they had proxies already."
       (is (eql (attr.parent/top-down n1) r))
       (is (eql (attr.parent/top-down r) nil)))))
 
+(deftest test-copies-have-independent-attributes ()
+  "Test that copies of a root have independent subroots.
+
+This regression only took place if (1) there are multiple
+attributes, (2) one some attributes are computed on the original root,
+and (3) other attributes are computed on the copies. One attribute
+being computed on the original root created subroot->attr mappings for
+every subroot. Then copies of the original root would inherit those
+subroot->attr mappings and mutate them, visibly to other subroots."
+  (let* ((r (convert 'data-root '(a (b c) (d e))))
+         (n1 (first (children r)))
+         (n2 (second (children r))))
+    (with-attr-table r
+      ;; First, ensure there is a subroot->attr map for every subroot.
+      (attr.size-function r)
+      (is (= (attr.size-function n1) 2))
+      (is (= (attr.size-function n2) 2)))
+    (let ((r1 (copy r)))
+      (with-attr-table r1
+        ;; This updates the subroot->attr tables.
+        (is (eql (attr.parent/top-down n1) r1)))
+      (let ((r2 (with r n2 (copy n2))))
+        ;; If the subroot->attr tables are shared, r1 being the parent
+        ;; of n1 will persist.
+        (with-attr-table r2
+          (is (eql (attr.parent/top-down n1) r2)))))))
+
 (defvar *attr-run* nil)
 
 (deftest attr.5 ()

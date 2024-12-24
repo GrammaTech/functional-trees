@@ -170,10 +170,22 @@ This is for convenience and entirely equivalent to specializing
 (defmethod print-object ((self subroot-map) stream)
   (print-unreadable-object (self stream :type t :identity t)))
 
+(defun copy-subroot->attr-table (table)
+  "Copy the subroot->attr table, ensuring each attr table is a fresh
+table with fresh alists for its values."
+  ;; TODO Use a different data structure.
+  (lret ((table (copy-attr-table table)))
+    (iter (for (subroot attr-table) in-hashtable table)
+          (let ((attr-table (copy-attr-table attr-table)))
+            (setf (@ table subroot) attr-table)
+            (iter (for (node attrs) in-hashtable attr-table)
+                  (setf (@ attr-table node)
+                        (mapcar #'copy-list attrs)))))))
+
 (defun copy-subroot-map (map)
   (make-subroot-map
    :subroot->attr-table
-   (copy-attr-table (subroot-map.subroot->attr-table map))
+   (copy-subroot->attr-table (subroot-map.subroot->attr-table map))
    :subroot->deps (copy-attr-table (subroot-map.subroot->deps map))
    :node->proxy (copy-attr-table (subroot-map.node->proxy map))))
 
