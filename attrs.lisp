@@ -802,10 +802,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                      (uncomputed-attr-function condition)
                      (uncomputed-attr-node condition)
                      'attr-missing
-                     (let* ((root (fset:convert 'node (attrs-root*)))
-                            (node (uncomputed-attr-node condition))
-                            (path (path-of-node root node)))
-                       (and path (eql (fset:lookup root path) node)))))))
+                     (reachable? (uncomputed-attr-node condition))))))
 
 (defun assert-attrs-bound (fn-name)
   (unless (boundp '*attrs*)
