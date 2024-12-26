@@ -173,12 +173,16 @@ This is for convenience and entirely equivalent to specializing
 (defun copy-subroot->attr-table (table)
   "Copy the subroot->attr table, ensuring each attr table is a fresh
 table with fresh alists for its values."
-  ;; TODO Use a different data structure.
+  ;; TODO Merge with invalidating subroots.
   (lret ((table (copy-attr-table table)))
+    ;; TODO Use different data structures. FSet maps from weak pointers?
     (iter (for (subroot attr-table) in-hashtable table)
           (let ((attr-table (copy-attr-table attr-table)))
             (setf (@ table subroot) attr-table)
             (iter (for (node attrs) in-hashtable attr-table)
+                  ;; TODO Necessary? They should never be
+                  ;; written to once set. Only if in-progress?
+                  ;; Is that possible?
                   (setf (@ attr-table node)
                         (mapcar #'copy-list attrs)))))))
 
