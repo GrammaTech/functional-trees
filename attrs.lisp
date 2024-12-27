@@ -276,7 +276,8 @@ This holds at least the root of the attribute computation."
     (cond ((eql real-root real-node) nil)
           ((subroot? real-node) real-node)
           (t
-           (let ((rpath (rpath-to-node real-root real-node)))
+           (multiple-value-bind (rpath node-found)
+               (rpath-to-node real-root real-node)
              (if (null rpath)
                  (if-let ((proxy (attr-proxy real-node)))
                    (dominating-subroot root proxy)
@@ -287,7 +288,10 @@ This holds at least the root of the attribute computation."
                                :root root
                                :node node))
                      nil))
-                 (find-if #'subroot? rpath)))))))
+                 ;; There's something at that path, but not this
+                 ;; identical node.
+                 (when (eql node node-found)
+                   (find-if #'subroot? rpath))))))))
 
 (defun reachable-in-cache? (node &key (proxy t))
   (when-let (attrs (bound-value '*attrs*))
