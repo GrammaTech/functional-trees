@@ -69,6 +69,8 @@
 
 ;;; Variables
 
+(defconstant +in-progress+ :in-progress)
+
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
 
@@ -695,7 +697,7 @@ If NODE is a proxy, ORIG-NODE should be the original node."
             (etypecase (cdr p)
               (list (return-from retrieve-memoized-attr-fn (values alist p)))
               (t
-               (assert (eql (cdr p) :in-progress))
+               (assert (eql (cdr p) +in-progress+))
                (error 'circular-attribute
                       :fn fn-name
                       :node (or orig-node node)
@@ -734,19 +736,18 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (let* ((orig-node node)
          (proxy (attr-proxy node))
          (node (or proxy node))
-         (table (node-attr-table node))
-         (in-progress :in-progress))
+         (table (node-attr-table node)))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node (and proxy orig-node) fn-name table)
       (when p
         (typecase (cdr p)
           (list (return-from memoize-attr-fun (values-list (cdr p))))
           (t
-           (assert (eql (cdr p) in-progress))
+           (assert (eql (cdr p) +in-progress+))
            (error 'circular-attribute :node orig-node
                                       :proxy proxy
                                       :fn fn-name))))
-      (let* ((p (cons fn-name in-progress))
+      (let* ((p (cons fn-name +in-progress+))
              (trail-pair (cons fn-name node))
              (*attribute-trail*
                (cons trail-pair *attribute-trail*)))
@@ -766,7 +767,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           ;; If a non-local return occured from THUNK, we need
           ;; to remove p from the alist, otherwise we will never
           ;; be able to compute the function here
-          (when (eql (cdr p) in-progress)
+          (when (eql (cdr p) +in-progress+)
             (removef (gethash node table) p)))))))
 
 (define-condition attribute-condition (condition)
