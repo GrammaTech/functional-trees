@@ -71,6 +71,12 @@
 
 (defconstant +in-progress+ :in-progress)
 
+(deftype in-progress ()
+  '(eql #.+in-progress+))
+
+(deftype cell ()
+  '(cons node (or in-progress in-progress list)))
+
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
 
