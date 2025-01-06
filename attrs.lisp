@@ -389,8 +389,9 @@ DEST has a path, but if DEST is the node at that path."
                            (cond ((and (not (eq node subroot))
                                        (subroot? node))
                                   (when (and subroot (subroot? subroot))
-                                    (error "Nested subroots: ~a encloses ~a"
-                                           subroot node))
+                                    (error 'nested-subroots
+                                           :outer subroot
+                                           :inner node))
                                   (compute-node->subroot node node))
                                  (t
                                   (setf (@ table node) subroot
@@ -471,8 +472,9 @@ node proxied into the tree instead."
   (lret ((proxy (@ (attrs.node->proxy *attrs*) node)))
     (when (and proxy *enable-cross-session-cache*)
       (unless (reachable? proxy :use-attrs t)
-        (error "Proxy ~a of node ~a is unreachable"
-               proxy node)))))
+        (error 'unreachable-proxy
+               :proxy proxy
+               :node node)))))
 
 (defun (setf attr-proxy) (proxy node)
   (let* ((attrs *attrs*)
@@ -482,15 +484,25 @@ node proxied into the tree instead."
          (proxy-subroot (@ node->subroot proxy)))
     (update-subroot-mapping attrs)
     (when (eq proxy node)
-      (error "Node ~a and proxy ~a are the same" node proxy))
+      (error 'self-proxy
+             :proxy proxy
+             :node node))
     (when (@ node->proxy proxy)
-      (error "Proxy ~a has a proxy!" proxy))
+      (error 'proxy-has-proxy
+             :node node
+             :proxy proxy))
     (when (reachable? node :proxy nil :from root)
-      (error "Cannot proxy ~a: already in tree" node))
+      (error 'useless-proxy
+             :node node
+             :proxy proxy))
     (unless proxy-subroot
-      (error "Proxy ~a not in tree" proxy))
+      (error 'unreachable-proxy
+             :node node
+             :proxy proxy))
     (when (rpath-to-node node proxy)
-      (error "Node ~a contains its proxy: ~a" node proxy))
+      (error 'node-contains-proxy
+             :node node
+             :proxy proxy))
     ;; If we are proxying to another subroot, the proxied node might
     ;; be recorded somewhere, making the proxy subroot an implicit
     ;; dependency of whatever attribute we're calculating.
@@ -549,8 +561,8 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                 (when cache
                   (setf (cache-lookup root) attrs))
                 (setf new t))))))
-    (unless (eql cache (not (has-attr-table? *attrs*)))
-      (error "Cannot inherit with differing values for caching"))
+    (unless (eql cache (not (attrs.cachep *attrs*)))
+      (error 'incompatible-cache-option))
     ;; The session is "new" if the root was unknown. But it could
     ;; still have a subroot map attached. If so, make sure it's up to
     ;; date.
@@ -780,9 +792,57 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 (define-condition attribute-error (error attribute-condition)
   ())
 
+(define-condition nested-subroots (attribute-error)
+  ((outer :initarg :outer :reader nested-subroots-outer)
+   (inner :initarg :inner :reader nested-subroots-inner))
+  (:report
+   (lambda (c s)
+     (with-slots (outer inner) c
+       (format s "Nested subroots: ~a contains ~a"
+               outer inner)))))
+
 (define-condition node-attribute-error (attribute-error)
   ((node :initarg :node :reader attribute-error-node)
    (fn :initarg :fn :reader attribute-error-function)))
+
+(define-condition attr-proxy-error (node-attribute-error)
+  ((node :initarg :node
+         :reader attribute-error-node
+         :reader attr-proxy-error-node)
+   (proxy :initarg :proxy
+          :reader attr-proxy-error-proxy)))
+
+(define-condition useless-proxy (attr-proxy-error)
+  ()
+  (:report
+   (lambda (c s)
+     (with-slots (node) c
+       (format s "Node ~a is already in the tree!"
+               node)))))
+
+(define-condition self-proxy (attr-proxy-error)
+  ()
+  (:report
+   (lambda (c s)
+     (with-slots (node proxy) c
+       (format s "Proxy ~a and node ~a are the same"
+               proxy node)))))
+
+(define-condition proxy-has-proxy (attr-proxy-error)
+  ()
+  (:report
+   (lambda (c s)
+     (with-slots (proxy) c
+       (format s "Proxy ~a has a proxy!"
+               proxy)))))
+
+(define-condition node-contains-proxy (attr-proxy-error)
+  ()
+  (:report
+   (lambda (c s)
+     (with-slots (node proxy) c
+       (format s "Node ~a contains its proxy ~a"
+               node proxy)))))
 
 (define-condition circular-attribute (node-attribute-error)
   ((node :initarg :node :reader circular-attribute-node)
@@ -849,6 +909,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                outer
                inherit
                inner)))))
+
+(define-condition incompatible-cache-option (attribute-error)
+  ()
+  (:report
+   (lambda (c s)
+     (declare (ignore c))
+     (format s "Cannot inherit with differing values for caching"))))
 
 (defgeneric attr-missing (fn-name node)
   (:documentation
