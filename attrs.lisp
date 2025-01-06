@@ -25,6 +25,7 @@
     :@
     :and-let*
     :assure
+    :boolean-if
     :boolean-unless
     :bound-value
     :box
@@ -359,9 +360,9 @@ DEST has a path, but if DEST is the node at that path."
     ;; lookups on the first computation.
     (with-boolean (first-time)
       (let ((live-subroots
-              (:if first-time
-                   +empty-hash-table+
-                   (make-hash-table :test 'eq))))
+              (boolean-if first-time
+                          +empty-hash-table+
+                          (make-hash-table :test 'eq))))
         (labels ((delete-dead-subroots ()
                    (boolean-unless first-time
                      (iter (for (node subroot) in-hashtable table)
@@ -375,7 +376,7 @@ DEST has a path, but if DEST is the node at that path."
                      (if (null subroot)
                          (compute-node->subroot node node)
                          (progn
-                           (:unless first-time
+                           (boolean-unless first-time
                              ;; If the subroot hasn't changed, the
                              ;; subroots of the children can't have
                              ;; changed and we don't need to walk them
