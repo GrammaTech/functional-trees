@@ -34,6 +34,7 @@
     :defstruct-read-only
     :defsubst
     :defvar-unbound
+    :etypecase-of
     :lret
     :nlet
     :slot-value-safe
@@ -74,8 +75,8 @@
 (deftype in-progress ()
   '(eql #.+in-progress+))
 
-(deftype cell ()
-  '(cons node (or in-progress in-progress list)))
+(deftype memoized-value ()
+  '(or in-progress list))
 
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
@@ -704,10 +705,9 @@ If NODE is a proxy, ORIG-NODE should be the original node."
   (let ((alist (gethash node table)))
     (iter (for p in alist)
           (when (eql (car p) fn-name)
-            (etypecase (cdr p)
+            (etypecase-of memoized-value (cdr p)
               (list (return-from retrieve-memoized-attr-fn (values alist p)))
-              (t
-               (assert (eql (cdr p) +in-progress+))
+              (in-progress
                (error 'circular-attribute
                       :fn fn-name
                       :node (or orig-node node)
@@ -750,10 +750,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node (and proxy orig-node) fn-name table)
       (when p
-        (typecase (cdr p)
+        (etypecase-of memoized-value (cdr p)
           (list (return-from memoize-attr-fun (values-list (cdr p))))
-          (t
-           (assert (eql (cdr p) +in-progress+))
+          (in-progress
            (error 'circular-attribute :node orig-node
                                       :proxy proxy
                                       :fn fn-name))))
@@ -777,8 +776,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           ;; If a non-local return occured from THUNK, we need
           ;; to remove p from the alist, otherwise we will never
           ;; be able to compute the function here
-          (when (eql (cdr p) +in-progress+)
-            (removef (gethash node table) p)))))))
+          (etypecase-of memoized-value (cdr p)
+            (list)
+            (in-progress
+             (removef (gethash node table) p))))))))
 
 (define-condition attribute-condition (condition)
   ())
