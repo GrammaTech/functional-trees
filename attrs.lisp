@@ -635,12 +635,6 @@ tree."
                       ;; stack, that also means we're computing
                       ;; top-down and should mask the subroot stack.
                       (list root))))
-           (when current-subroot
-             (unless (or (subroot? current-subroot)
-                         (typep current-subroot 'attrs-root))
-               (break)
-               ;; (print current-subroot)
-               ))
            (record-deps node
                         :current-subroot current-subroot
                         :root root)
