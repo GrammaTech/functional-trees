@@ -412,7 +412,8 @@ This should be done if the root has been mutated."
 
 (defun ensure-subroot-map (attrs)
   "Ensure a subroot map for ATTRS.
-This implements the subroot map copy-on-write behavior."
+This implements the subroot map copy-on-write behavior: after this
+function is called, the root of ATTRs will have its own subroot map."
   (let ((root (attrs-root attrs)))
     (assert (slot-exists-p root 'subroot-map))
     (if (slot-boundp root 'subroot-map)
@@ -558,6 +559,8 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
     (funcall fn)))
 
 (defun delete-dead-proxies (attrs)
+  "Delete any node->proxy mappings that point to proxies no longer in the
+tree."
   (update-subroot-mapping)
   (let ((node->proxy (attrs.node->proxy attrs))
         (node->subroot (attrs.node->subroot attrs)))
