@@ -410,8 +410,9 @@ This should be done if the root has been mutated."
    :table (attrs.node->subroot attrs))
   attrs)
 
-(defun subroot-map (attrs &key (ensure t))
-  "Get the subroot map for ATTRS."
+(defun ensure-subroot-map (attrs)
+  "Ensure a subroot map for ATTRS.
+This implements the subroot map copy-on-write behavior."
   (let ((root (attrs-root attrs)))
     (assert (slot-exists-p root 'subroot-map))
     (if (slot-boundp root 'subroot-map)
@@ -419,27 +420,20 @@ This should be done if the root has been mutated."
           (if (typep value 'subroot-map) value
               (setf (slot-value root 'subroot-map)
                     (copy-subroot-map (unbox value)))))
-        (and ensure
-             (setf (slot-value root 'subroot-map)
-                   (make-subroot-map))))))
+        (setf (slot-value root 'subroot-map)
+              (make-subroot-map)))))
 
-(defun attrs.subroot->attr-table (attrs &key (ensure t))
-  "Get the subroots table for ATTRS.
-If ENSURE is non-nil, create the table."
-  (when-let (subroot-map (subroot-map attrs :ensure ensure))
-    (subroot-map.subroot->attr-table subroot-map)))
+(defsubst attrs.subroot->attr-table (attrs)
+  "Ensure the subroots table for ATTRS."
+  (subroot-map.subroot->attr-table (ensure-subroot-map attrs)))
 
-(defun attrs.subroot->deps (attrs &key (ensure t))
-  "Get the subroot dependencies table for ATTRS.
-If ENSURE is non-nil, create the table."
-  (when-let (subroot-map (subroot-map attrs :ensure ensure))
-    (subroot-map.subroot->deps subroot-map)))
+(defsubst attrs.subroot->deps (attrs)
+  "Ensure the subroot dependencies table for ATTRS."
+  (subroot-map.subroot->deps (ensure-subroot-map attrs)))
 
-(defun attrs.node->proxy (attrs &key (ensure t))
-  "Get the attr proxy table for ATTRS.
-If ENSURE is non-nil, create the table."
-  (when-let (subroot-map (subroot-map attrs :ensure ensure))
-    (subroot-map.node->proxy subroot-map)))
+(defsubst attrs.node->proxy (attrs)
+  "Ensure the attr proxy table for ATTRS."
+  (subroot-map.node->proxy (ensure-subroot-map attrs)))
 
 (defsubst attrs-root* ()
   "Get the root of the current attrs table."
@@ -450,19 +444,18 @@ If ENSURE is non-nil, create the table."
       (subroot-attr-table (current-subroot node))
       (attrs.table *attrs*)))
 
-(defun subroot-attr-table (subroot &key ensure)
+(defun subroot-attr-table (subroot)
   "Get the attr table for SUBROOT in the current session."
-  (when-let (subroots (attrs.subroot->attr-table *attrs* :ensure ensure))
-    (ensure-gethash subroot
-                    subroots
-                    (make-attr-table))))
+  (ensure-gethash subroot
+                  (attrs.subroot->attr-table *attrs*)
+                  (make-attr-table)))
 
 (defun subroot-deps (subroot)
   "Get the dependencies of SUBROOT in the current session."
   (gethash subroot (attrs.subroot->deps *attrs*)))
 
 (defun (setf subroot-deps) (value subroot)
-  (setf (gethash subroot (attrs.subroot->deps *attrs* :ensure t))
+  (setf (gethash subroot (attrs.subroot->deps *attrs*))
         (remove-if (compose #'null #'tg:weak-pointer-value)
                    value)))
 
