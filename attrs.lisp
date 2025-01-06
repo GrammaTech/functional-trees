@@ -294,7 +294,9 @@ This holds at least the root of the attribute computation."
                  (when (eql node node-found)
                    (find-if #'subroot? rpath))))))))
 
-(defun reachable-in-cache? (node &key (proxy t))
+(defun reachable-in-attrs? (node &key (proxy t))
+  "Does NODE have a subroot (or a proxy) recorded in the current
+attribute tables?"
   (when-let (attrs (bound-value '*attrs*))
     (let ((node->subroot (attrs.node->subroot attrs))
           (node (fset:convert 'node node)))
@@ -317,10 +319,10 @@ DEST has a path, but if DEST is the node at that path."
 
 (defun reachable? (dest &key
                           (proxy t)
-                          use-cache
+                          use-attrs
                           (from (attrs-root*)))
-  (if use-cache
-      (or (reachable-in-cache? dest :proxy proxy)
+  (if use-attrs
+      (or (reachable-in-attrs? dest :proxy proxy)
           (reachable-from-root? from dest :proxy proxy))
       (reachable-from-root? from dest :proxy proxy)))
 
@@ -473,7 +475,7 @@ but the actual node in the tree is somehow unsuitable. We can return a
 node proxied into the tree instead."
   (lret ((proxy (@ (attrs.node->proxy *attrs*) node)))
     (when (and proxy *enable-cross-session-cache*)
-      (unless (reachable? proxy :use-cache t)
+      (unless (reachable? proxy :use-attrs t)
         (error "Proxy ~a of node ~a is unreachable"
                proxy node)))))
 
