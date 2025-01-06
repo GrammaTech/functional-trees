@@ -1968,14 +1968,17 @@ they had proxies already."
       (is (handler-case (progn (attr.3-fn t1) nil)
             (error () t))))))
 
-(deftest attr.4 ()
-  (def-attr-fun attr.4-fn (parent)
-    (:method ((node node) &optional parent)
-      (mapc {attr.4-fn _ node} (children node))
-      parent))
-  (defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.4-fn)) (node node))
-    (let ((root (attrs-root *attrs*)))
-      (attr.4-fn root nil)))
+(def-attr-fun attr.parent/top-down (parent)
+  (:method ((node node) &optional parent)
+    (mapc {attr.parent/top-down _ node} (children node))
+    parent))
+
+(defmethod ft/attrs:attr-missing ((fn-name (eql 'attr.parent/top-down)) (node node))
+  (let ((root (attrs-root *attrs*)))
+    (attr.parent/top-down root nil)))
+
+(deftest test-attr-missing ()
+  "Test top-down computation with attr-missing."
   (let* ((r (convert 'data-root '(a b (c d))))
          (n1 (first (children r)))
          (n2 (second (children r)))
@@ -1985,10 +1988,10 @@ they had proxies already."
       (is n1)
       (is n2)
       (is n3)
-      (is (eql (attr.4-fn n3) n2))
-      (is (eql (attr.4-fn n2) r))
-      (is (eql (attr.4-fn n1) r))
-      (is (eql (attr.4-fn r) nil)))))
+      (is (eql (attr.parent/top-down n3) n2))
+      (is (eql (attr.parent/top-down n2) r))
+      (is (eql (attr.parent/top-down n1) r))
+      (is (eql (attr.parent/top-down r) nil)))))
 
 (defvar *attr-run* nil)
 
