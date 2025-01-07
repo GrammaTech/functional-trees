@@ -22,6 +22,7 @@
     :subst-if-not)
   (:import-from
     :serapeum
+    :->
     :@
     :and-let*
     :assure
@@ -186,9 +187,8 @@ This is for convenience and entirely equivalent to specializing
   (print-unreadable-object (self stream :type t :identity t)))
 
 (defun copy-subroot->attr-table (table)
-  "Copy the subroot->attr table, ensuring each attr table is a fresh
-table with fresh alists for its values."
-  ;; TODO Merge with invalidating subroots.
+  "Copy the table from subroots to attr tables, ensuring each attr
+table is a fresh table."
   (lret ((table (copy-attr-table table)))
     (iter (for (subroot attr-table) in-hashtable table)
           (let ((attr-table (copy-attr-table attr-table)))
@@ -196,7 +196,10 @@ table with fresh alists for its values."
             ;; (except by in-progress computations).
             (setf (@ table subroot) attr-table)))))
 
+(-> copy-subroot-map (subroot-map) subroot-map)
 (defun copy-subroot-map (map)
+  "Copy MAP and its constituent tables.
+The new subroot map should be fully independent of MAP."
   (make-subroot-map
    :subroot->attr-table
    (copy-subroot->attr-table (subroot-map.subroot->attr-table map))
@@ -483,22 +486,28 @@ node proxied into the tree instead."
          (node->subroot (attrs.node->subroot *attrs*))
          (proxy-subroot (@ node->subroot proxy)))
     (update-subroot-mapping attrs)
+    ;; A node can't proxy itself.
     (when (eq proxy node)
       (error 'self-proxy
              :proxy proxy
              :node node))
+    ;; Can't proxy a node with a proxy.
     (when (@ node->proxy proxy)
       (error 'proxy-has-proxy
              :node node
              :proxy proxy))
+    ;; Proxying a node already in the tree would be useless.
     (when (reachable? node :proxy nil :from root)
       (error 'useless-proxy
              :node node
              :proxy proxy))
+    ;; A node that's not in the tree can't be a proxy.
     (unless proxy-subroot
       (error 'unreachable-proxy
              :node node
              :proxy proxy))
+    ;; The node must not contain its proxy. (See below on proxying the
+    ;; descendants of a node.)
     (when (rpath-to-node node proxy)
       (error 'node-contains-proxy
              :node node
@@ -509,9 +518,7 @@ node proxied into the tree instead."
     (record-deps proxy :current-subroot proxy-subroot :root root)
     ;; It would be surprising to pull out parts of NODE and find later
     ;; they have no connection to PROXY. So all descendants of NODE
-    ;; implicitly inherit PROXY (unless they have one already). We
-    ;; (probably?) don't need to repeat the validity checks for every
-    ;; descendant, though.
+    ;; implicitly inherit PROXY (unless they have one already).
     (labels ((set-proxy (node)
                (ensure-gethash node node->proxy proxy)
                (mapc #'set-proxy (children node))))
@@ -587,6 +594,9 @@ tree, or when the node itself has been inserted into the tree."
             (remhash node node->proxy)))))
 
 (defun invalidate-subroots (attrs)
+  "Recursively invalidate subroots in ATTRS.
+Invalid subroots are either unreachable subroots, or
+depend on invalid subroots."
   (delete-invalid-proxies attrs)
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
