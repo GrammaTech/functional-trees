@@ -206,30 +206,21 @@ The new subroot map should be fully independent of MAP."
    :subroot->deps (copy-attr-table (subroot-map.subroot->deps map))
    :node->proxy (copy-attr-table (subroot-map.node->proxy map))))
 
-(def +empty-hash-table+
-  #.(make-hash-table :size 0))
-
 (defstruct-read-only (attrs
                       (:conc-name attrs.)
                       (:constructor make-attrs
                           (root &aux (node->subroot
                                       (if *enable-cross-session-cache*
                                           (compute-node->subroot root)
-                                          +empty-hash-table+)))))
+                                          (make-node->subroot-table))))))
   "An attribute session.
 This holds at least the root of the attribute computation."
   (root :type attrs-root)
   ;; This is only used if *enable-cross-session-cache* is nil.
-  (table
-   (if *enable-cross-session-cache*
-       +empty-hash-table+
-       (make-attr-table))
-   :type hash-table)
+  (table (make-attr-table) :type hash-table)
+  (cachep *enable-cross-session-cache* :type boolean)
   ;; Pre-computed table from nodes to their subroots.
   (node->subroot :type hash-table))
-
-(defsubst has-attr-table? (attrs)
-  (not (eql +empty-hash-table+ (attrs.table attrs))))
 
 (defsubst attrs-root (attrs)
   (attrs.root attrs))
@@ -357,53 +348,50 @@ DEST has a path, but if DEST is the node at that path."
   "Recurse over NODE, computing a table from NODEs to their dominating subroots."
   (when force
     (clrhash table))
-  (let ((first-time (= 0 (hash-table-count table))))
+  (let ((first-time (= 0 (hash-table-count table)))
+        (live-subroots (make-hash-table :test 'eq)))
     ;; Using `with-boolean' means we only actually dispatch once on
     ;; `first-time' outside the loop, so we aren't paying for needless
     ;; lookups on the first computation.
     (with-boolean (first-time)
-      (let ((live-subroots
-              (boolean-if first-time
-                          +empty-hash-table+
-                          (make-hash-table :test 'eq))))
-        (labels ((delete-dead-subroots ()
-                   (boolean-unless first-time
-                     (iter (for (node subroot) in-hashtable table)
-                           (unless (@ live-subroots subroot)
-                             (remhash node table)))))
-                 (compute-node->subroot (node subroot)
-                   (declare (optimize (debug 0))) ;tail recursion
-                   (let ((node
-                           (if (typep node 'node) node
-                               (fset:convert 'node node))))
-                     (if (null subroot)
-                         (compute-node->subroot node node)
-                         (progn
-                           (boolean-unless first-time
-                             ;; If the subroot hasn't changed, the
-                             ;; subroots of the children can't have
-                             ;; changed and we don't need to walk them
-                             ;; again.
-                             (when (subroot? subroot)
-                               (let ((old-subroot (@ table node)))
-                                 (when (eq old-subroot subroot)
-                                   (setf (@ live-subroots subroot) t)
-                                   (return-from compute-node->subroot)))))
-                           (cond ((and (not (eq node subroot))
-                                       (subroot? node))
-                                  (when (and subroot (subroot? subroot))
-                                    (error 'nested-subroots
-                                           :outer subroot
-                                           :inner node))
-                                  (compute-node->subroot node node))
-                                 (t
-                                  (setf (@ table node) subroot
-                                        (@ live-subroots subroot) t)
-                                  (dolist (c (children node))
-                                    (compute-node->subroot c subroot)))))))))
-          (compute-node->subroot node nil)
-          (delete-dead-subroots)
-          table)))))
+      (labels ((delete-dead-subroots ()
+                 (boolean-unless first-time
+                   (iter (for (node subroot) in-hashtable table)
+                         (unless (@ live-subroots subroot)
+                           (remhash node table)))))
+               (compute-node->subroot (node subroot)
+                 (declare (optimize (debug 0))) ;tail recursion
+                 (let ((node
+                         (if (typep node 'node) node
+                             (fset:convert 'node node))))
+                   (if (null subroot)
+                       (compute-node->subroot node node)
+                       (progn
+                         (boolean-unless first-time
+                           ;; If the subroot hasn't changed, the
+                           ;; subroots of the children can't have
+                           ;; changed and we don't need to walk them
+                           ;; again.
+                           (when (subroot? subroot)
+                             (let ((old-subroot (@ table node)))
+                               (when (eq old-subroot subroot)
+                                 (setf (@ live-subroots subroot) t)
+                                 (return-from compute-node->subroot)))))
+                         (cond ((and (not (eq node subroot))
+                                     (subroot? node))
+                                (when (and subroot (subroot? subroot))
+                                  (error 'nested-subroots
+                                         :outer subroot
+                                         :inner node))
+                                (compute-node->subroot node node))
+                               (t
+                                (setf (@ table node) subroot
+                                      (@ live-subroots subroot) t)
+                                (dolist (c (children node))
+                                  (compute-node->subroot c subroot)))))))))
+        (compute-node->subroot node nil)
+        (delete-dead-subroots)
+        table))))
 
 (defun update-subroot-mapping (&optional (attrs *attrs*))
   "Update the node-to-subroot mapping of ATTRS.
@@ -568,7 +556,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                 (when cache
                   (setf (cache-lookup root) attrs))
                 (setf new t))))))
-    (unless (eql cache (not (attrs.cachep *attrs*)))
+    (unless (eql cache (attrs.cachep *attrs*))
       (error 'incompatible-cache-option))
     ;; The session is "new" if the root was unknown. But it could
     ;; still have a subroot map attached. If so, make sure it's up to
