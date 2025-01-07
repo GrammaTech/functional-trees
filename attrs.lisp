@@ -225,6 +225,10 @@ This holds at least the root of the attribute computation."
 (defsubst attrs-root (attrs)
   (attrs.root attrs))
 
+(defsubst attrs-root* ()
+  "Get the root of the current attrs table."
+  (attrs-root *attrs*))
+
 (defmethod fset:convert ((to (eql 'node)) (attrs attrs) &key)
   (attrs-root attrs))
 
@@ -427,10 +431,6 @@ function is called, the root of ATTRs will have its own subroot map."
 (defsubst attrs.node->proxy (attrs)
   "Ensure the attr proxy table for ATTRS."
   (subroot-map.node->proxy (ensure-subroot-map attrs)))
-
-(defsubst attrs-root* ()
-  "Get the root of the current attrs table."
-  (attrs-root *attrs*))
 
 (defun node-attr-table (node)
   (if *enable-cross-session-cache*
