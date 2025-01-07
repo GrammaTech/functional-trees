@@ -712,17 +712,17 @@ one.
 
 If NODE is a proxy, ORIG-NODE should be the original node."
   (declare ((or null node) orig-node))
-  (let ((alist (gethash node table)))
-    (iter (for p in alist)
-          (when (eql (car p) fn-name)
-            (etypecase-of memoized-value (cdr p)
-              (list (return-from retrieve-memoized-attr-fn (values alist p)))
-              (in-progress
-               (error 'circular-attribute
-                      :fn fn-name
-                      :node (or orig-node node)
-                      :proxy (and orig-node node))))))
-    (values alist nil)))
+  (let* ((alist (gethash node table))
+         (pair (assoc fn-name alist)))
+    (if pair
+        (etypecase-of memoized-value (cdr pair)
+          (list (values alist pair))
+          (in-progress
+           (error 'circular-attribute
+                  :fn fn-name
+                  :node (or orig-node node)
+                  :proxy (and orig-node node))))
+        (values alist nil))))
 
 (defun cached-attr-fn (node orig-node fn-name)
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
