@@ -71,12 +71,17 @@
 
 ;;; Variables
 
-(defconstant +in-progress+ :in-progress)
+(defconstant +in-progress+ :in-progress
+  "Sentinel value for in-progress computation.
+Stored while an attribute is being computed to allow detecting
+circular attribute dependencies.")
 
 (deftype in-progress ()
   '(eql #.+in-progress+))
 
 (deftype memoized-value ()
+  "Type of a attribute value: either the in-progress
+sentinel, or a list of the values returned by the attribute function."
   '(or in-progress list))
 
 (defvar-unbound *attrs*
