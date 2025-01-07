@@ -648,7 +648,7 @@ depend on invalid subroots."
         ((eql node root)
          ;; If we are computing top-down (after an attr-missing call),
          ;; mask the subroot stack.
-         (let ((*subroot-stack* (list root)))
+         (let ((*subroot-stack* nil))
            (funcall fn)))
         (t
          (let* ((current-subroot (current-subroot node))
@@ -658,7 +658,7 @@ depend on invalid subroots."
                       ;; If there is no subroot but there is a subroot
                       ;; stack, that also means we're computing
                       ;; top-down and should mask the subroot stack.
-                      (list root))))
+                      nil)))
            (record-deps node
                         :current-subroot current-subroot
                         :root root)
