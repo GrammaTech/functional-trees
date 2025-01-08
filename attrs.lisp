@@ -32,6 +32,7 @@
     :box
     :boxp
     :def
+    :defconst
     :defplace
     :defstruct-read-only
     :defsubst
@@ -72,7 +73,7 @@
 
 ;;; Variables
 
-(defconstant +in-progress+ :in-progress
+(defconst +in-progress+ :in-progress
   "Sentinel value for in-progress computation.
 Stored while an attribute is being computed to allow detecting
 circular attribute dependencies.")
