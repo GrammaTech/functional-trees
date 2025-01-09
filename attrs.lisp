@@ -31,6 +31,7 @@
     :bound-value
     :box
     :boxp
+    :callf
     :def
     :defconst
     :defplace
@@ -172,9 +173,9 @@ This is for convenience and entirely equivalent to specializing
                       (:conc-name subroot-map.)
                       (:constructor
                           make-subroot-map
-                          (&key (subroot->attr-table (make-attr-table))
-                             (subroot->deps (make-attr-table))
-                             (node->proxy (make-attr-table)))))
+                          (&key (subroot->attr-table (make-weak-node-table))
+                             (subroot->deps (make-weak-node-table))
+                             (node->proxy (make-weak-node-table)))))
   "Data structure associated with a root to track its subroots."
   ;; Table from subroots to attributes
   (subroot->attr-table :type hash-table)
@@ -187,15 +188,51 @@ This is for convenience and entirely equivalent to specializing
 (defmethod print-object ((self subroot-map) stream)
   (print-unreadable-object (self stream :type t :identity t)))
 
+(defstruct (cow-table
+            (:conc-name cow-table.)
+            (:copier nil))
+  "COW (copy-on-write) wrapper for a hash table."
+  (table (make-weak-node-table) :type hash-table)
+  (copiedp nil :type boolean))
+
+(defun copy-cow-table (table)
+  (make-cow-table
+   :table (cow-table.table table)
+   :copiedp nil))
+
+(defun cow-table.ref (table key)
+  (gethash key (cow-table.table table)))
+
+(defun ref (table key)
+  (etypecase table
+    (hash-table
+     (gethash key table))
+    (cow-table
+     (cow-table.ref table key))))
+
+(defun (setf cow-table.ref) (value table key)
+  (symbol-macrolet ((ht (cow-table.table table)))
+    (if (eq value (@ ht key)) value
+        (progn
+          (unless (cow-table.copiedp table)
+            (callf #'copy-weak-node-table ht)
+            (setf (cow-table.copiedp table) t))
+          (setf (@ ht key) value)))))
+
+(defun (setf ref) (value table key)
+  (etypecase table
+    (hash-table
+     (setf (gethash key table) value))
+    (cow-table
+     (setf (cow-table.ref table key) value))))
+
 (defun copy-subroot->attr-table (table)
   "Copy the table from subroots to attr tables, ensuring each attr
 table is a fresh table."
-  (lret ((table (copy-attr-table table)))
+  (lret ((table (copy-weak-node-table table)))
     (iter (for (subroot attr-table) in-hashtable table)
-          ;; We don't copy the alists as they are never mutated
-          ;; (except by in-progress computations).
           (setf (@ table subroot)
-                (copy-attr-table attr-table)))))
+                (copy-cow-table attr-table)))))
 
 (-> copy-subroot-map (subroot-map) subroot-map)
 (defun copy-subroot-map (map)
@@ -204,8 +241,8 @@ The new subroot map should be fully independent of MAP."
   (make-subroot-map
    :subroot->attr-table
    (copy-subroot->attr-table (subroot-map.subroot->attr-table map))
-   :subroot->deps (copy-attr-table (subroot-map.subroot->deps map))
-   :node->proxy (copy-attr-table (subroot-map.node->proxy map))))
+   :subroot->deps (copy-weak-node-table (subroot-map.subroot->deps map))
+   :node->proxy (copy-weak-node-table (subroot-map.node->proxy map))))
 
 (defstruct-read-only (attrs
                       (:conc-name attrs.)
@@ -218,7 +255,7 @@ The new subroot map should be fully independent of MAP."
 This holds at least the root of the attribute computation."
   (root :type attrs-root)
   ;; This is only used if *enable-cross-session-cache* is nil.
-  (table (make-attr-table) :type hash-table)
+  (table (make-weak-node-table) :type hash-table)
   (cachep *enable-cross-session-cache* :type boolean)
   ;; Pre-computed table from nodes to their subroots.
   (node->subroot :type hash-table))
@@ -236,16 +273,16 @@ This holds at least the root of the attribute computation."
 
 ;;; Subroot implementation
 
-(defun make-attr-table (&rest args)
+(defun make-weak-node-table (&rest args)
   "Make a weak 'eq hash table."
   (multiple-value-call #'make-weak-hash-table
     :weakness :key
     :test #'eq
     (values-list args)))
 
-(defun copy-attr-table (table-in &rest args)
+(defun copy-weak-node-table (table-in &rest args)
   "Copy a weak 'eq hash table."
-  (let ((table-out (apply #'make-attr-table :size (hash-table-size table-in) args)))
+  (let ((table-out (apply #'make-weak-node-table :size (hash-table-size table-in) args)))
     (iter (for (k v) in-hashtable table-in)
           (setf (gethash k table-out) v))
     table-out))
@@ -435,14 +472,15 @@ function is called, the root of ATTRs will have its own subroot map."
 
 (defun node-attr-table (node)
   (if *enable-cross-session-cache*
-      (subroot-attr-table (current-subroot node))
+      (cow-table (current-subroot node))
       (attrs.table *attrs*)))
 
-(defun subroot-attr-table (subroot)
-  "Get the attr table for SUBROOT in the current session."
+(defun cow-table (subroot)
+  "Get the attr table for SUBROOT in the current session.
+This implements copy-on-write logic."
   (ensure-gethash subroot
                   (attrs.subroot->attr-table *attrs*)
-                  (make-attr-table)))
+                  (make-cow-table)))
 
 (defun subroot-deps (subroot)
   "Get the dependencies of SUBROOT in the current session."
@@ -717,7 +755,7 @@ one.
 
 If NODE is a proxy, ORIG-NODE should be the original node."
   (declare ((or null node) orig-node))
-  (let* ((alist (gethash node table))
+  (let* ((alist (ref table node))
          (pair (assoc fn-name alist)))
     (if pair
         (etypecase-of memoized-value (cdr pair)
@@ -760,10 +798,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (assert-attrs-bound fn-name)
   (let* ((orig-node node)
          (proxy (attr-proxy node))
-         (node (or proxy node))
-         (table (node-attr-table node)))
+         (node (or proxy node)))
     (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn node (and proxy orig-node) fn-name table)
+        (retrieve-memoized-attr-fn
+         node
+         (and proxy orig-node)
+         fn-name
+         (node-attr-table node))
       (when p
         (etypecase-of memoized-value (cdr p)
           (list (return-from memoize-attr-fun (values-list (cdr p))))
@@ -774,7 +815,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
       (let* ((p (cons fn-name +in-progress+))
              (trail-pair (cons fn-name node))
              (*attribute-trail*
-               (cons trail-pair *attribute-trail*)))
+               (cons trail-pair *attribute-trail*))
+             (table (node-attr-table node)))
         (declare (dynamic-extent trail-pair *attribute-trail*))
         ;; additional pushes onto the alist may occur in the call to THUNK,
         ;; so get the push of p onto the list out of the way now.  If we
@@ -783,7 +825,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
              (progn
                (when proxy
                  (record-deps proxy))
-               (setf (gethash node table) (cons p alist))
+               (setf (ref table node)
+                     (cons p alist))
                (let ((vals (multiple-value-list
                             (funcall thunk))))
                  (setf (cdr p) vals)
@@ -794,7 +837,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           (etypecase-of memoized-value (cdr p)
             (list)
             (in-progress
-             (removef (gethash node table) p))))))))
+             (removef (ref table node) p))))))))
 
 (define-condition attribute-condition (condition)
   ())
@@ -950,7 +993,7 @@ If ATTR-NAME is not supplied, return T if NODE has any attributes."
   (when (boundp '*attrs*)
     (and-let* ((node (or (attr-proxy node) node))
                (table (node-attr-table node))
-               (alist (gethash node table)))
+               (alist (ref table node)))
       (if attr-name-supplied-p
           (assoc attr-name alist)
           alist))))
