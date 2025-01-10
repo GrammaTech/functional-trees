@@ -921,7 +921,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (:report
    (lambda (c s)
      (with-slots (outer inner inherit) c
-       (format s "Attempt to shadow attribute session for ~a by~@[ unrelated~] session for ~a"
+       (format s "Attempt to shadow attribute session for ~a by~@[ unrelated~:*~] session for ~a"
                outer
                inherit
                inner)))))
