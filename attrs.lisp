@@ -637,7 +637,7 @@ depend on invalid subroots."
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
         (node->subroot (attrs.node->subroot attrs))
-        (removed '()))
+        (removed (fset:empty-set)))
     (when (and subroot->attr-table subroot->deps)
       ;; Remove unreachable subroots from the table.
       (iter (for (subroot nil) in-hashtable subroot->attr-table)
@@ -646,7 +646,7 @@ depend on invalid subroots."
             (unless reachable?
               (remhash subroot subroot->attr-table)
               (remhash subroot subroot->deps)
-              (push subroot removed)))
+              (callf #'fset:with removed subroot)))
       ;; Recursively uncache any subroot that depends on an
       ;; unreachable subroot.
       (iter (for newly-removed-count =
@@ -658,7 +658,7 @@ depend on invalid subroots."
                                         (not (gethash dep subroot->attr-table)))))
                          (remhash subroot subroot->deps)
                          (remhash subroot subroot->attr-table)
-                         (pushnew subroot removed)
+                         (callf #'fset:with removed subroot)
                          (sum 1))))
             (until (zerop newly-removed-count))))
     removed))
