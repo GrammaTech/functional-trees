@@ -413,13 +413,13 @@ This implements the subroot map copy-on-write behavior: after this
 function is called, the root of ATTRs will have its own subroot map."
   (let ((root (attrs-root attrs)))
     (assert (slot-exists-p root 'subroot-map))
-    (if (slot-boundp root 'subroot-map)
-        (let ((value (slot-value root 'subroot-map)))
-          (if (typep value 'subroot-map) value
-              (setf (slot-value root 'subroot-map)
-                    (copy-subroot-map (unbox value)))))
-        (setf (slot-value root 'subroot-map)
-              (make-subroot-map)))))
+    (with-slots (subroot-map) root
+      (if (slot-boundp root 'subroot-map)
+          (if (typep subroot-map 'subroot-map)
+              subroot-map
+              (setf subroot-map
+                    (copy-subroot-map (unbox subroot-map))))
+          (setf subroot-map (make-subroot-map))))))
 
 (defsubst attrs.subroot->attr-table (attrs)
   "Ensure the subroots table for ATTRS."
