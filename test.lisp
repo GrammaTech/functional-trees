@@ -1997,7 +1997,7 @@ they had proxies already."
   "Test that copies of a root have independent subroots.
 
 This regression only took place if (1) there are multiple
-attributes, (2) one some attributes are computed on the original root,
+attributes, (2) only some attributes are computed on the original root,
 and (3) other attributes are computed on the copies. One attribute
 being computed on the original root created subroot->attr mappings for
 every subroot. Then copies of the original root would inherit those
