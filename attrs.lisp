@@ -192,10 +192,10 @@ This is for convenience and entirely equivalent to specializing
 table is a fresh table."
   (lret ((table (copy-attr-table table)))
     (iter (for (subroot attr-table) in-hashtable table)
-          (let ((attr-table (copy-attr-table attr-table)))
-            ;; We don't copy the alists as they are never mutated
-            ;; (except by in-progress computations).
-            (setf (@ table subroot) attr-table)))))
+          ;; We don't copy the alists as they are never mutated
+          ;; (except by in-progress computations).
+          (setf (@ table subroot)
+                (copy-attr-table attr-table)))))
 
 (-> copy-subroot-map (subroot-map) subroot-map)
 (defun copy-subroot-map (map)
