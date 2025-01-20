@@ -653,16 +653,26 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 ;;; NOTE: There should be a way to chain together methods for COPY for
 ;;; classes and their superclasses, perhaps using the initialization
 ;;; infrastructure in CL for objects.
-(defmethod copy ((node node) &rest keys)
-  (nest
-   (compute-descendant-map node)
-   (apply #'make-instance (class-of node))
-   (apply #'append keys)
-   (cl:mapcar (lambda (slot) (list (make-keyword slot) (slot-value node slot))))
-   (cl:remove-if-not (lambda (slot) (slot-boundp node slot)))
-   (cl:mapcar #'slot-definition-name)
-   (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot))))
-   (class-slots (class-of node))))
+(defmethod copy ((old-node node) &rest keys)
+  (declare (optimize speed)
+           ;; Surprisingly SBCL requires this, as of 2.4.9.
+           (node old-node)
+           (dynamic-extent keys))
+  (let* ((kwargs
+          (iter (for slot in (class-slots (class-of old-node)))
+                (unless (eql :class (slot-definition-allocation slot))
+                  (let ((slot (slot-definition-name slot)))
+                    (when (slot-boundp old-node slot)
+                      (collecting (make-keyword slot))
+                      (collecting (slot-value old-node slot)))))))
+         (new-node
+           (multiple-value-call #'make-instance
+             (class-of old-node)
+             (values-list keys)
+             (values-list kwargs))))
+    (declare (dynamic-extent kwargs))
+    (compute-descendant-map old-node new-node)
+    new-node))
 
 ;;; Fill in the slot lazily
 
