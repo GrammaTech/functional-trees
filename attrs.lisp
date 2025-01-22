@@ -58,6 +58,7 @@
    :circular-attribute
    :def-attr-fun
    :has-attribute-p
+   :invalidate-subroot
    :reachable?
    :update-subroot-mapping
    :session-shadowing
@@ -662,6 +663,13 @@ depend on invalid subroots."
                          (sum 1))))
             (until (zerop newly-removed-count))))
     removed))
+
+(defun invalidate-subroot (subroot &key (attrs (bound-value '*attrs*)))
+  "Invalidate attributes on SUBROOT.
+This should be used if SUBROOT is mutated."
+  (when attrs
+    (remhash subroot (attrs.subroot->attr-table attrs))
+    subroot))
 
 (defun record-deps (node &key
                            (current-subroot (current-subroot node))
