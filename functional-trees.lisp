@@ -1416,6 +1416,13 @@ act on the root of the tree (the previous behavior)."
   (mapc (lambda (node) (push node all)) node)
   (nreverse all))
 
+(defmethod convert ((to-type (eql 'fset:set)) (node node) &key &allow-other-keys)
+  "Convert NODE to a set of its descendants."
+  (let ((set (fset:empty-set)))
+    (mapc (lambda (node) (setf set (with set node)))
+          node)
+    set))
+
 (defmethod convert ((to-type (eql 'alist)) (node node)
                     &key (value-fn nil value-fn-p) &allow-other-keys)
   (convert
