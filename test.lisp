@@ -1898,6 +1898,7 @@ attributes both of the proxy and the original node?"
         ;; Can't proxy an AST already in the tree.
         (signals error
           (setf (ft/attrs:attr-proxy t1) t2))
+        ;; Nodes cannot contain their proxies.
         (signals error
           (setf (ft/attrs:attr-proxy t4) t1))))))
 
