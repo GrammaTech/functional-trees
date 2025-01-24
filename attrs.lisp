@@ -476,16 +476,20 @@ node proxied into the tree instead."
          (node->subroot (attrs.node->subroot *attrs*))
          (proxy-subroot (@ node->subroot proxy)))
     (update-subroot-mapping attrs)
+    (when-let (real-proxy (@ node->proxy proxy))
+      (when (@ node->proxy real-proxy)
+        ;; This shouldn't be possible.
+        (error 'proxy-has-proxy
+               :node node
+               :proxy proxy))
+      (return-from attr-proxy
+        (setf (attr-proxy node) real-proxy)))
+    ;; Can't proxy a node with a proxy.
     ;; A node can't proxy itself.
     (when (eq proxy node)
       (error 'self-proxy
              :proxy proxy
              :node node))
-    ;; Can't proxy a node with a proxy.
-    (when (@ node->proxy proxy)
-      (error 'proxy-has-proxy
-             :node node
-             :proxy proxy))
     ;; Proxying a node already in the tree would be useless.
     (when (reachable? node :proxy nil :from root)
       (error 'useless-proxy
@@ -494,6 +498,7 @@ node proxied into the tree instead."
     ;; A node that's not in the tree can't be a proxy.
     (unless proxy-subroot
       (error 'unreachable-proxy
+             :root (attrs-root*)
              :node node
              :proxy proxy))
     ;; The node must not contain its proxy. (See below on proxying the
@@ -905,8 +910,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (node :initarg :node))
   (:report
    (lambda (c s)
-     (with-slots (root node) c
-       (format s "Proxy ~a is not reachable from ~a" node root)))))
+     (with-slots (root proxy) c
+       (format s "Proxy ~a is not reachable from ~a"
+               proxy root)))))
 
 (define-condition session-shadowing (attribute-error)
   ((outer :initarg :outer)

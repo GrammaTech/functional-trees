@@ -1901,6 +1901,17 @@ attributes both of the proxy and the original node?"
         (signals error
           (setf (ft/attrs:attr-proxy t4) t1))))))
 
+(deftest test-no-double-proxy ()
+  "Proxying to a proxy should elide the intermediate proxy."
+  ;; Try on the original.
+  (let ((t1 (convert 'data-root '(a (b c) (d e)))))
+    (with-attr-table t1
+      (let ((t2 (make-instance 'node))
+            (t3 (make-instance 'node)))
+        (setf (ft/attrs:attr-proxy t2) t1)
+        (setf (ft/attrs:attr-proxy t3) t2)
+        (is (eql t1 (ft/attrs::attr-proxy t3)))))))
+
 (deftest test-inserted-proxied ()
   "Do we catch if a proxied AST has been added to the tree?"
   ;; Try on the original.
