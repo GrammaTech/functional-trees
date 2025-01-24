@@ -465,6 +465,7 @@ node proxied into the tree instead."
     (when (and proxy *enable-cross-session-cache*)
       (unless (reachable? proxy :use-attrs t)
         (error 'unreachable-proxy
+               :root (attrs-root*)
                :proxy proxy
                :node node)))))
 
@@ -898,6 +899,14 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (lambda (c s)
      (with-slots (root node) c
        (format s "~a is not reachable from ~a" node root)))))
+
+(define-condition unreachable-proxy (unreachable-node attr-proxy-error)
+  ((root :initarg :root)
+   (node :initarg :node))
+  (:report
+   (lambda (c s)
+     (with-slots (root node) c
+       (format s "Proxy ~a is not reachable from ~a" node root)))))
 
 (define-condition session-shadowing (attribute-error)
   ((outer :initarg :outer)
