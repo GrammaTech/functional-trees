@@ -193,34 +193,46 @@ This is for convenience and entirely equivalent to specializing
             (:conc-name cow-table.)
             (:copier nil))
   "COW (copy-on-write) wrapper for a hash table."
-  (table (make-weak-node-table) :type hash-table)
-  (copiedp nil :type boolean))
+  (hash-table (make-weak-node-table) :type hash-table)
+  (hash-table-copied-p nil :type boolean))
 
-(defun copy-cow-table (table)
+(defun cow-table.on-write (cow-table)
+  "Do the actual on-write copy."
+  (unless (cow-table.hash-table-copied-p cow-table)
+    (callf #'copy-weak-node-table (cow-table.hash-table cow-table))
+    (setf (cow-table.hash-table-copied-p cow-table) t))
+  cow-table)
+
+(defun copy-cow-table (cow-table)
+  "Copy COW-TABLE without copying the wrapped hash table."
   (make-cow-table
-   :table (cow-table.table table)
-   :copiedp nil))
+   :hash-table (cow-table.hash-table cow-table)
+   :hash-table-copied-p nil))
 
-(defun cow-table.ref (table key)
-  (gethash key (cow-table.table table)))
+(defun cow-table.ref (cow-table key)
+  "Lookup KEY in COW-TABLE's wrapped hash table."
+  (gethash key (cow-table.hash-table cow-table)))
 
 (defun ref (table key)
+  "Lookup KEY in a COW table or a bare hash table."
   (etypecase table
     (hash-table
      (gethash key table))
     (cow-table
      (cow-table.ref table key))))
 
-(defun (setf cow-table.ref) (value table key)
-  (symbol-macrolet ((ht (cow-table.table table)))
-    (if (eq value (@ ht key)) value
+(defun (setf cow-table.ref) (value cow-table key)
+  "Set KEY to VALUE in COW-TABLE's wrapped hash table."
+  (symbol-macrolet ((ht (cow-table.hash-table cow-table)))
+    (if (eq value (@ ht key))
+        ;; Optimization: don't copy if the value is the same.
+        value
         (progn
-          (unless (cow-table.copiedp table)
-            (callf #'copy-weak-node-table ht)
-            (setf (cow-table.copiedp table) t))
+          (cow-table.on-write cow-table)
           (setf (@ ht key) value)))))
 
 (defun (setf ref) (value table key)
+  "Set KEY to VALUE in TABLE, a COW table or bare hash table."
   (etypecase table
     (hash-table
      (setf (gethash key table) value))
