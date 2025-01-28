@@ -742,6 +742,20 @@ This should be used if SUBROOT is mutated."
     `(call/attr-session ,root ,body ,@args)))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
+  "Define an attribute.
+The attribute function is always at least arity 1, the node whose
+attribute is being computed; if OPTIONAL-ARGS are provided they are
+the inputs for the attribute computation (e.g. in the symbol table,
+the symbol tables of parents or prior siblings).
+
+Attribute functions without OPTIONAL-ARGS are \"synthesized\"
+attributes; attribute functions with OPTIONAL-ARGS are \"inherited\"
+attributes.
+
+If you are defining an inherited attribute you may also want to
+specialize `attr-missing' to restart the computation of the attribute
+from the root node, if it has not been computed for the node passed in
+here."
   (assert (symbolp name))
   (assert (every #'symbolp optional-args))
   (with-gensyms (node present?)
