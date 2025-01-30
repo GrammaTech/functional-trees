@@ -80,7 +80,7 @@
 
 ;;;; Additional infrastructure on node for testing.
 (defclass parent (node)
-  ((children :reader children
+  ((children :accessor children
              :type list
              :initarg :children
              :initarg children
@@ -1957,6 +1957,17 @@ they had proxies already."
       (is (eql (ft/attrs:attr-proxy (first (children t2)))
                (first (children t1))))
       (is (eql (ft/attrs:attr-proxy (second (children t2))) t1)))))
+
+(deftest test-update-mapping-before-add-proxy ()
+  "Test we can proxy to newly added nodes."
+  (let* ((r1 (convert 'data-root '(a (b c) (d e))))
+         (r2 (convert 'data-root '((f g) (a b))))
+         (r3 (make-instance 'node)))
+    (ft/attrs:with-attr-table r1)
+    (setf (children r1) (append (children r1) (list r2)))
+    (ft/attrs:with-attr-table r1
+      (finishes
+        (setf (ft/attrs:attr-proxy r3) (lastcar (children r2)))))))
 
 (deftest test-subroot-nesting-detected ()
   "Test that we signal an error when subroots are nested."

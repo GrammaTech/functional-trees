@@ -474,8 +474,11 @@ node proxied into the tree instead."
          (root (attrs-root attrs))
          (node->proxy (attrs.node->proxy *attrs*))
          (node->subroot (attrs.node->subroot *attrs*))
-         (proxy-subroot (@ node->subroot proxy)))
-    (update-subroot-mapping attrs)
+         (proxy-subroot
+           (progn
+             ;; Update the subroot mapping before querying it.
+             (update-subroot-mapping attrs)
+             (@ node->subroot proxy))))
     (when-let (real-proxy (@ node->proxy proxy))
       (when (@ node->proxy real-proxy)
         ;; This shouldn't be possible.
