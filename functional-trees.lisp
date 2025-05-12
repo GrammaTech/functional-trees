@@ -766,7 +766,7 @@ Duplicates are allowed in both lists."
 
 ;;; TODO -- specialize this in define-node-class
 (defmethod tree-copy ((node node))
-  (let* ((child-slots (slot-value node 'child-slots))
+  (let* ((child-slots (child-slots node))
          (slots (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot)))
                            (class-slots (class-of node))))
          (slot-names (remove-if (lambda (s) (or (eql s 'serial-number)
