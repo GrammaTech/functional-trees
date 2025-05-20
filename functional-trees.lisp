@@ -202,6 +202,11 @@ it requests a new serial number."
                      :documentation "Map from serial numbers to child slots"))
     (:documentation "Mixin for the descendant-map slot"))
 
+  (defmethod serializable-slots :around ((self descendant-map-mixin))
+    (remove 'descendant-map
+            (call-next-method)
+            :key #'slot-definition-name))
+
   (defclass node-identity-ordering-mixin (identity-ordering-mixin) ())
 
 ;;; NOTE: We might want to propose a patch to FSet to allow setting
