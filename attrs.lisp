@@ -57,6 +57,7 @@
    :attrs-root*
    :circular-attribute
    :def-attr-fun
+   :handle-circular-attribute
    :has-attribute-p
    :invalidate-subroot
    :reachable?
@@ -795,10 +796,14 @@ If NODE is a proxy, ORIG-NODE should be the original node."
         (etypecase-of memoized-value (cdr pair)
           (list (values alist pair))
           (in-progress
-           (error 'circular-attribute
-                  :fn fn-name
-                  :node (or orig-node node)
-                  :proxy (and orig-node node))))
+           (let ((vals
+                   (multiple-value-list
+                    ;; If this returns, we want to return its value.
+                    (handle-circular-attribute
+                     fn-name
+                     (or orig-node node)
+                     (and orig-node node)))))
+             (values alist (cons fn-name vals)))))
         (values alist nil))))
 
 (defun cached-attr-fn (node orig-node fn-name)
@@ -825,6 +830,18 @@ function on it if not found at first."
             ;; The proxy also failed.
             (error (make-condition 'uncomputed-attr :node node :fn fn-name)))))))
 
+(defgeneric handle-circular-attribute (fn-name orig-node proxy)
+  (:documentation "Called when a circular attribute is detected.
+By default, signals `circular-attribute'.
+
+If this function returns, its values will be used during attribute
+compilation, but not memoized.")
+  (:method (fn-name orig-node proxy)
+    (error 'circular-attribute
+           :node orig-node
+           :proxy proxy
+           :fn fn-name)))
+
 (defun memoize-attr-fun (node fn-name thunk)
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
@@ -840,12 +857,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
          fn-name
          (node-attr-table node))
       (when p
-        (etypecase-of memoized-value (cdr p)
-          (list (return-from memoize-attr-fun (values-list (cdr p))))
-          (in-progress
-           (error 'circular-attribute :node orig-node
-                                      :proxy proxy
-                                      :fn fn-name))))
+        (return-from memoize-attr-fun
+          (values-list (cdr p))))
       (let* ((p (cons fn-name +in-progress+))
              (trail-pair (cons fn-name node))
              (*attribute-trail*
