@@ -40,11 +40,11 @@ for integer intervals."))
 
 (declaim (inline make-node))
 (defstruct node
-  (left nil :type (or null node))
-  (right nil :type (or null node))
-  (lo nil :type bound)
-  (hi nil :type bound)
-  (data nil :type t))
+  (left nil :type (or null node) :read-only t)
+  (right nil :type (or null node) :read-only t)
+  (lo (error "No lo!") :type bound :read-only t)
+  (hi (error "No hi!") :type bound :read-only t)
+  (data nil :type t :read-only t))
 
 (defun node-key (node)
   (let ((lo (node-lo node))
@@ -58,7 +58,7 @@ for integer intervals."))
 
 (defstruct itree
   (root nil :type (or null node))
-  (size 0 :type bound))
+  (size 0 :type bound :read-only t))
 
 (defgeneric nodes (tree)
   (:documentation "Returns the nodes in TREE")
