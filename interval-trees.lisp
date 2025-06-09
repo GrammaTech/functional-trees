@@ -480,7 +480,6 @@ abut the newly inserted node."
 
 (defun itree-delete-node (tree node path)
   "Delete NODE from end of PATH in TREE.  Returns a new tree."
-  (declare (ignorable tree node))
   ;; If NODE has more than one child, lift the least larger node
   ;; below it into its place
   (cond
