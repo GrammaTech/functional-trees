@@ -724,6 +724,7 @@ Duplicates are allowed in both lists."
 ;;; a threshold.  Instead, lookups that would use the map would
 ;;; instead search the subtree directly.
 (defgeneric compute-descendant-map (old-node new-node)
+  (:documentation "Diff the children of OLD-NODE and NEW-NODE and update maps.")
   (:method ((old-node t) (new-node t)) new-node)
   (:method ((old-node node) (new-node node))
     (assert (eql (class-of old-node) (class-of new-node)))
