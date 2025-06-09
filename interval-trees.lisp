@@ -559,21 +559,22 @@ overlaps one already in the tree."
                                            :data (node-data node))))
                      (setf itree (itree-replace-node itree new1 path 1))
                      (return))
+                   ;; Move the overlapping node (on the low end)
+                   ;; completely out of the interval.
                    (let ((new (make-node :left (node-left node)
                                          :right (node-right node)
                                          :data (node-data node)
-                                         :lo n-lo :hi (1- lo)
-                                         )))
+                                         :lo n-lo :hi (1- lo))))
                      (setf itree (itree-replace-node itree new path))
                      (return))))
               ;; (>= n-lo lo)
               ((> n-hi hi)
-               ;; Final iteration
+               ;; Final iteration. Move the overlapping node (on the
+               ;; high end) out of the interval.
                (let ((new (make-node :left (node-left node)
                                      :right (node-right node)
                                      :data (node-data node)
-                                     :lo (1+ hi) :hi n-hi
-                                     )))
+                                     :lo (1+ hi) :hi n-hi)))
                  (setf itree (itree-replace-node itree new path)))
                (return))
               (t
