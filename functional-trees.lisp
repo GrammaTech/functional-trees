@@ -759,8 +759,29 @@ Duplicates are allowed in both lists."
                 (t ;; was (and (not (listp old)) (not (listp new)))
                  (qpreconc (intervals-of-node old) intervals-to-remove)
                  (qpreconc (add-slot-to-intervals (intervals-of-node new) slot) intervals-to-add)))))
-      (flet ((record-node (e)
-               (setf (ft/it:node e) new-node)))
+      (flet ((record-node (collision)
+               "Record the current node and the colliding nodes in E."
+               (multiple-value-bind (i1 i2)
+                   (ft/it:colliding-intervals collision)
+                 (let* ((added-nodes
+                          (iter (for slot-spec in differing-child-slot-specifiers)
+                                (let* ((slot (slot-specifier-slot slot-spec))
+                                       (old (slot-value old-node slot))
+                                       (new (slot-value new-node slot)))
+                                  (cond
+                                    ((and (listp old) (listp new))
+                                     (appending (set-difference/hash new old)))
+                                    (t (collecting new))))))
+                        (intervals->nodes (make-hash-table :test #'equal)))
+                   (iter (for node in added-nodes)
+                         (iter (for interval in (intervals-of-node node))
+                               (push node (gethash interval intervals->nodes))))
+                   (setf (ft/it:node collision) new-node
+                         (ft/it:colliding-trees collision)
+                         (remove-duplicates
+                          (append
+                           (gethash i1 intervals->nodes)
+                           (gethash i2 intervals->nodes))))))))
         (declare (dynamic-extent #'record-node))
         (handler-bind ((ft/it:interval-collision-error #'record-node))
           (setf (slot-value new-node 'descendant-map)

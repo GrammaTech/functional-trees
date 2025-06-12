@@ -2,21 +2,36 @@
   (:nicknames :ft/it)
   (:use :common-lisp :alexandria :iterate)
   (:shadowing-import-from :fset :convert)
-  (:export itree itree-root itree-size
-           node node-left node-right node-key node-lo
-           node-hi node-data node-size
-           itree-find-node itree-find-node-path
-           itree-find
-           itree-glb-node itree-glb
-           itree-lub-node itree-lub
-           itree-insert itree-delete-node
-           itree-delete
-           itree-remove-interval
-           intervals-of-itree
-           itree-add-intervals
-           itree-remove-intervals
-           itree-merge-root-nodes
-           interval-collision-error)
+  (:export
+    :colliding-intervals
+    :colliding-trees
+    :interval-collision-error
+    :intervals-of-itree
+    :itree
+    :itree-add-intervals
+    :itree-delete
+    :itree-delete-node
+    :itree-find
+    :itree-find-node
+    :itree-find-node-path
+    :itree-glb
+    :itree-glb-node
+    :itree-insert
+    :itree-lub
+    :itree-lub-node
+    :itree-merge-root-nodes
+    :itree-remove-interval
+    :itree-remove-intervals
+    :itree-root
+    :itree-size
+    :node
+    :node-data
+    :node-hi
+    :node-key
+    :node-left
+    :node-lo
+    :node-right
+    :node-size)
   (:documentation "Functional implementation of splay trees
 for integer intervals."))
 
@@ -99,14 +114,24 @@ for integer intervals."))
    (lo2 :reader lo2 :initarg :lo2)
    (hi2 :reader hi2 :initarg :hi2)
    (data :reader data :initarg :data)
-   (node :accessor node :initform nil))
+   (node :accessor node :initform nil)
+   (colliding-trees :accessor colliding-trees :initform nil))
   (:default-initargs :data nil)
   (:documentation "Error thrown when an inserted interval overlaps an existing interval")
-  (:report (lambda (cnd s)
-             (format s "Interval collision~@[ inserting into ~a~]~@[ of ~a~]: [~a,~a] intersects [~a,~a]"
-                     (data cnd)
-                     (node cnd)
-                     (lo1 cnd) (hi1 cnd) (lo2 cnd) (hi2 cnd)))))
+  (:report
+   (lambda (cnd s)
+     (format s "Interval collision~@[ inserting into ~a~]~@[ of ~a~]: ~
+[~a,~a] intersects [~a,~a]~
+~@[~%The following trees contain colliding intervals:~%~{  ~a~^~%~}~]"
+             (data cnd)
+             (node cnd)
+             (lo1 cnd) (hi1 cnd) (lo2 cnd) (hi2 cnd)
+             (colliding-trees cnd)))))
+
+(defmethod colliding-intervals ((self interval-collision-error))
+  (with-slots (lo1 hi1 lo2 hi2) self
+    (values (cons lo1 hi1)
+            (cons lo2 hi2))))
 
 ;;; TODO -- in the itree-find... functions, move the found node
 ;;; (or last node in the path) to the root.  This will involve
