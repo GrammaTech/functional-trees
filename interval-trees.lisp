@@ -115,18 +115,24 @@ for integer intervals."))
    (hi2 :reader hi2 :initarg :hi2)
    (data :reader data :initarg :data)
    (node :accessor node :initform nil)
-   (colliding-trees :accessor colliding-trees :initform nil))
+   (colliding-trees :accessor colliding-trees :initform nil)
+   (interval1-trees :accessor interval1-trees :initform nil)
+   (interval2-trees :accessor interval2-trees :initform nil))
   (:default-initargs :data nil)
   (:documentation "Error thrown when an inserted interval overlaps an existing interval")
   (:report
    (lambda (cnd s)
      (format s "Interval collision~@[ inserting into ~a~]~@[ of ~a~]: ~
 [~a,~a] intersects [~a,~a]~
-~@[~%The following trees contain colliding intervals:~%~{  ~a~^~%~}~]"
+~@[~%The following trees contain colliding intervals:~%~{  ~a~^~%~}~]~
+~@[~%Trees in interval 1:~%~{  ~a~^~%~}~]~
+~@[~%Trees in interval 2:~%~{  ~a~^~%~}~]"
              (data cnd)
              (node cnd)
              (lo1 cnd) (hi1 cnd) (lo2 cnd) (hi2 cnd)
-             (colliding-trees cnd)))))
+             (colliding-trees cnd)
+             (interval1-trees cnd)
+             (interval2-trees cnd)))))
 
 (defmethod colliding-intervals ((self interval-collision-error))
   (with-slots (lo1 hi1 lo2 hi2) self

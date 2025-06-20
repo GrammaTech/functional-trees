@@ -41,7 +41,7 @@
   (:import-from :uiop/utility :nest)
   (:import-from :serapeum :queue :qconc :qpreconc :qlist
                 :set-hash-table :length< :box :unbox
-                :with-thunk :-> :lret)
+                :with-thunk :-> :lret :enq)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -772,16 +772,31 @@ Duplicates are allowed in both lists."
                                     ((and (listp old) (listp new))
                                      (appending (set-difference/hash new old)))
                                     (t (collecting new))))))
-                        (intervals->nodes (make-hash-table :test #'equal)))
+                        (intervals->nodes (make-hash-table :test #'equal))
+                        (i1-nodes (queue))
+                        (i2-nodes (queue)))
+                   ;; Initialize intervals->nodes.
                    (iter (for node in added-nodes)
                          (iter (for interval in (intervals-of-node node))
                                (push node (gethash interval intervals->nodes))))
+                   ;; Initialize i1-nodes and i2-nodes.
+                   (dolist (added-node added-nodes)
+                     (mapc (lambda (node)
+                             (when (<= (car i1) (serial-number node) (cdr i1))
+                               (enq (cons added-node node) i1-nodes))
+                             (when (<= (car i2) (serial-number node) (cdr i2))
+                               (enq (cons added-node node) i2-nodes)))
+                           added-node))
                    (setf (ft/it:node collision) new-node
                          (ft/it:colliding-trees collision)
                          (remove-duplicates
                           (append
                            (gethash i1 intervals->nodes)
-                           (gethash i2 intervals->nodes))))))))
+                           (gethash i2 intervals->nodes)))
+                         (ft/it::interval1-trees collision)
+                         (qlist i1-nodes)
+                         (ft/it::interval2-trees collision)
+                         (qlist i2-nodes))))))
         (declare (dynamic-extent #'record-node))
         (handler-bind ((ft/it:interval-collision-error #'record-node))
           (setf (slot-value new-node 'descendant-map)
