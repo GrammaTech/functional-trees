@@ -306,6 +306,7 @@ rebalance nodes back along that reversed path.  Returns the root node."
   ;; a child under its parent.  So, compare keys instead.
   (flet ((%less (a b)
            (< (node-hi a) (node-lo b))))
+    (declare (inline %less))
     (iter (while rpath)
       (let ((p (car rpath))
             (pp (cadr rpath)))
