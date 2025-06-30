@@ -50,6 +50,7 @@ for integer intervals."))
 
 (declaim
  (inline make-node
+         move-node
          itree-find-node-splay
          itree-find-node-path))
 
@@ -310,7 +311,7 @@ rebalance nodes back along that reversed path.  Returns the root node."
             (pp (cadr rpath)))
         (declare (type node p))
         (unless pp
-          ;; Final step
+          ;; Final step; "zig".
           (if (%less x p)
               (setf x (move-node x
                                  (node-left x)
@@ -329,14 +330,14 @@ rebalance nodes back along that reversed path.  Returns the root node."
                                    (move-node p (node-right x)
                                               (move-node pp (node-right p)
                                                          (node-right pp))))
-                        ;; zag zig
+                        ;; zig-zag
                         (move-node x (move-node pp (node-left pp) (node-left x))
                                    (move-node p (node-right x) (node-right p))))
                     (if (%less p pp)
-                        ;; zig zag
+                        ;; zig-zag
                         (move-node x (move-node p (node-left p) (node-left x))
                                    (move-node pp (node-right x) (node-right pp)))
-                        ;; zig zig
+                        ;; zig-zig
                         (move-node x (move-node p (move-node pp (node-left pp)
                                                              (node-left p))
                                                 (node-left x))
