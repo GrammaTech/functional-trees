@@ -54,7 +54,6 @@ for integer intervals."))
          itree-find-node-splay
          itree-find-node-path))
 
-(declaim (inline make-node))
 (defstruct node
   (left nil :type (or null node) :read-only t)
   (right nil :type (or null node) :read-only t)
