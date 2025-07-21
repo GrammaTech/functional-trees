@@ -652,8 +652,15 @@ telling the user to use (setf (@ ... :<slot>) ...)"
          ))))
 
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
-  (setf (slot-value obj 'size)
-        (reduce #'+ (children obj) :key #'size :initial-value 1)))
+  ;; Avoid invoking `children'
+  (let ((size 1))
+    (dolist (slot-spec (child-slots obj))
+      (let ((slot-value (slot-value obj (slot-spec-slot slot-spec))))
+        (if (eql 1 (slot-spec-arity slot-spec))
+            (incf size (size slot-value))
+            (dolist (child slot-value)
+              (incf size (size child))))))
+    (setf (slot-value obj 'size) size)))
 
 ;;; NOTE: There should be a way to chain together methods for COPY for
 ;;; classes and their superclasses, perhaps using the initialization
@@ -681,24 +688,37 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 
 ;;; Fill in the slot lazily
 
+(defparameter *size-threshold* 10)
+
 (defmethod slot-unbound ((class t) (node node) (slot (eql 'descendant-map)))
-  (let* ((intervals
-           (iter (for slot-spec in (child-slot-specifiers node))
-             (let* ((slot (slot-specifier-slot slot-spec))
-                    (val (slot-value node slot)))
-               (nconcing
-                (if (listp val)
-                    (iter (for v in val)
-                      (nconcing (add-slot-to-intervals (intervals-of-node v) slot)))
-                    (add-slot-to-intervals (intervals-of-node val) slot))))))
-         (sn (serial-number node)))
-    (setf (slot-value node 'descendant-map)
-          (convert 'ft/it:itree (cons (list (cons sn sn) nil) intervals)))))
+  (if (< (size node) *size-threshold*)
+      (setf (slot-value node 'descendant-map) :self)
+      (let* ((intervals
+               (iter (for slot-spec in (child-slot-specifiers node))
+                     (let* ((slot (slot-specifier-slot slot-spec))
+                            (val (slot-value node slot)))
+                       (nconcing
+                        (if (listp val)
+                            (iter (for v in val)
+                                  (nconcing (add-slot-to-intervals (intervals-of-node v) slot)))
+                            (add-slot-to-intervals (intervals-of-node val) slot))))))
+             (sn (serial-number node)))
+        (setf (slot-value node 'descendant-map)
+              (convert 'ft/it:itree (cons (list (cons sn sn) nil) intervals))))))
 
 (defgeneric intervals-of-node (node)
   (:documentation "Compute a fresh list of intervals for the subtree rooted at NODE.")
   (:method ((node node))
-    (ft/it:intervals-of-itree (descendant-map node)))
+    (let ((dm (descendant-map node)))
+      (etypecase dm
+        (ft/it:itree (ft/it:intervals-of-itree dm))
+        ((eql :self)
+         (let (intervals)
+           (mapc (lambda (node)
+                   (push (cons (serial-number node) (serial-number node))
+                         intervals))
+                 node)
+           intervals)))))
   (:method ((node t)) nil))
 
 (defun add-slot-to-intervals (intervals slot)
@@ -723,9 +743,35 @@ Duplicates are allowed in both lists."
 ;;; TODO -- do not fill in the map if the node's size is below
 ;;; a threshold.  Instead, lookups that would use the map would
 ;;; instead search the subtree directly.
+
 (defgeneric compute-descendant-map (old-node new-node)
   (:documentation "Diff the children of OLD-NODE and NEW-NODE and update maps.")
   (:method ((old-node t) (new-node t)) new-node)
+  (:method :around ((old-node node) (new-node node))
+    (cond ((< (size new-node) *size-threshold*)
+           (setf (slot-value new-node 'descendant-map) :self)
+           ;; Check for collisions. TODO: Is this enough?
+           (let ((ht (make-hash-table :size (size new-node))))
+             (pure-traverse-tree
+              new-node
+              (lambda (node &aux (sn (serial-number node)))
+                (when-let (other-node (gethash sn ht))
+                  (error 'ft/it:interval-collision-error
+                         :lo1 sn
+                         :hi1 sn
+                         :lo2 sn
+                         :hi2 sn
+                         :node node
+                         :data (child-slot-with-sn new-node sn)
+                         :colliding-trees (list other-node node)))
+                (setf (gethash sn ht) node))))
+           new-node)
+          ((eql (slot-value old-node 'descendant-map) :self)
+           ;; Recompute the new node's descendant map from scratch.
+           (slot-makunbound new-node 'descendant-map)
+           (descendant-map new-node)
+           new-node)
+          (t (call-next-method))))
   (:method ((old-node node) (new-node node))
     (assert (eql (class-of old-node) (class-of new-node)))
     (let* ((old-dm (descendant-map old-node))
@@ -841,8 +887,23 @@ Duplicates are allowed in both lists."
     (if (listp val) val (list val))))
 
 (defun child-slot-with-sn (node sn)
-  (when-let ((itree-node (ft/it::itree-find-node-splay (descendant-map node) sn)))
-     (ft/it:node-data itree-node)))
+  (let ((map (descendant-map node)))
+    (etypecase map
+      (ft/it:itree
+       (when-let ((itree-node (ft/it::itree-find-node-splay map sn)))
+         (ft/it:node-data itree-node)))
+      ((eql :self)
+       (dolist (slot (child-slots node))
+         (let* ((slot (ensure-car slot))
+                (value (childs-list node slot)))
+           (when (some (lambda (child)
+                         (and (typep child 'node)
+                              (find-if
+                               (lambda (node)
+                                 (eql (serial-number node) sn))
+                               child)))
+                       value)
+             (return slot))))))))
 
 (defgeneric rpath-to-node (root node &key error)
   (:documentation "Returns the (reversed) path from ROOT to a node
@@ -891,11 +952,7 @@ return NIL, unless ERROR is true, in which case error.")
           (let ((child found)
                 (path nil))
             (iter (for a in rpath)
-                  (let ((slot (when-let ((itree-node (ft/it::itree-find-node-splay
-                                                      (descendant-map a)
-                                                      (serial-number child)
-                                                      )))
-                                        (ft/it:node-data itree-node))))
+                  (let ((slot (child-slot-with-sn a (serial-number child))))
                     (assert slot () "Could not find SLOT of ~a in descendant map of ~a" child a)
                     (let ((v (slot-value a slot)))
                       (push
