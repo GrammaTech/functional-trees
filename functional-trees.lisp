@@ -686,10 +686,38 @@ telling the user to use (setf (@ ... :<slot>) ...)"
     (compute-descendant-map old-node new-node)
     new-node))
 
-;;; Fill in the slot lazily
-
 (defparameter *size-threshold* 10)
 
+(defun test-thresholds (workload-fn values)
+  "Helper function to test different threshold values."
+  (let ((results '()))
+    (dolist (*size-threshold* values)
+      (let ((runtimes '())
+            (devnull (make-broadcast-stream))
+            start)
+        (loop repeat 5 do
+          (let ((*standard-output* devnull)
+                (*error-output* devnull)
+                (*trace-output* devnull)
+                (*debug-io* devnull)
+                (*terminal-io* devnull))
+            (setf start (get-internal-run-time))
+            (funcall workload-fn)
+            (let ((runtime (- (get-internal-run-time) start)))
+              (push (/ runtime
+                       internal-time-units-per-second)
+                    runtimes))))
+        (let ((runtimes
+                (mapcar (lambda (x) (coerce x 'double-float))
+                        ;; Drop the first two as warmups.
+                        (nthcdr 2 runtimes))))
+          (push (list *size-threshold*
+                      (mean runtimes)
+                      (standard-deviation runtimes))
+                results))))
+    (print results)))
+
+;;; Fill in the slot lazily
 (defmethod slot-unbound ((class t) (node node) (slot (eql 'descendant-map)))
   (if (< (size node) *size-threshold*)
       (setf (slot-value node 'descendant-map) :self)
