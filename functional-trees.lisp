@@ -924,17 +924,22 @@ Duplicates are allowed in both lists."
        (when-let ((itree-node (ft/it::itree-find-node-splay map sn)))
          (ft/it:node-data itree-node)))
       ((eql :self)
-       (dolist (slot (child-slots node))
-         (let* ((slot (ensure-car slot))
-                (value (childs-list node slot)))
-           (when (some (lambda (child)
-                         (and (typep child 'node)
-                              (find-if
-                               (lambda (node)
-                                 (eql (serial-number node) sn))
-                               child)))
-                       value)
-             (return slot))))))))
+       (flet ((has-sn-p (child sn)
+                (and (typep child 'node)
+                     (find-if
+                      (lambda (node)
+                        (eql (serial-number node) sn))
+                      child))))
+         (dolist (slot (child-slots node))
+           (let* ((slot (ensure-car slot))
+                  (value (slot-value node slot))
+                  (has-sn-p
+                    (if (listp value)
+                        (iter (for child in value)
+                              (thereis (has-sn-p child sn)))
+                        (has-sn-p value sn))))
+             (when has-sn-p
+               (return slot)))))))))
 
 (defgeneric rpath-to-node (root node &key error)
   (:documentation "Returns the (reversed) path from ROOT to a node
