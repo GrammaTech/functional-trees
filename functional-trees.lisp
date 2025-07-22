@@ -770,31 +770,32 @@ Duplicates are allowed in both lists."
 
 ;;; Fill in the descendant-map field of a node after copy
 
-;;; TODO -- do not fill in the map if the node's size is below
-;;; a threshold.  Instead, lookups that would use the map would
-;;; instead search the subtree directly.
-
 (defgeneric compute-descendant-map (old-node new-node)
   (:documentation "Diff the children of OLD-NODE and NEW-NODE and update maps.")
   (:method ((old-node t) (new-node t)) new-node)
-  (:method :around ((old-node node) (new-node node))
-    (cond ((< (size new-node) *size-threshold*)
+  (:method :around ((old-node node) (new-node node) &aux (size (size new-node)))
+    (cond ((< size *size-threshold*)
            (setf (slot-value new-node 'descendant-map) :self)
-           ;; Check for collisions. TODO: Is this enough?
-           (let ((ht (make-hash-table :size (size new-node))))
+           ;; Check for collisions.
+           (let ((sns (make-array size :element-type 'array-index))
+                 (other-nodes (make-array size))
+                 (i 0))
+             (declare (dynamic-extent sns other-nodes)
+                      (array-index i))
              (pure-traverse-tree
               new-node
               (lambda (node &aux (sn (serial-number node)))
-                (when-let (other-node (gethash sn ht))
-                  (error 'ft/it:interval-collision-error
-                         :lo1 sn
-                         :hi1 sn
-                         :lo2 sn
-                         :hi2 sn
-                         :node node
-                         :data (child-slot-with-sn new-node sn)
-                         :colliding-trees (list other-node node)))
-                (setf (gethash sn ht) node))))
+                (if (find sn sns :end (1+ i))
+                    (let ((other-node (aref other-nodes i)))
+                      (signal-interval-collision
+                       sn
+                       node
+                       (child-slot-with-sn new-node sn)
+                       other-node))
+                    (progn
+                      (setf (aref sns i) sn
+                            (aref other-nodes i) node)
+                      (incf i))))))
            new-node)
           ((eql (slot-value old-node 'descendant-map) :self)
            ;; Recompute the new node's descendant map from scratch.
