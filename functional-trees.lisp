@@ -694,13 +694,15 @@ telling the user to use (setf (@ ... :<slot>) ...)"
   (if (< (size node) *size-threshold*)
       (setf (slot-value node 'descendant-map) :self)
       (let* ((intervals
-               (iter (for slot-spec in (child-slot-specifiers node))
+               (iter outer
+                     (for slot-spec in (child-slot-specifiers node))
                      (let* ((slot (slot-specifier-slot slot-spec))
                             (val (slot-value node slot)))
-                       (nconcing
-                        (if (listp val)
-                            (iter (for v in val)
-                                  (nconcing (add-slot-to-intervals (intervals-of-node v) slot)))
+                       (if (listp val)
+                           (iter (for v in val)
+                                 (in outer
+                                     (nconcing (add-slot-to-intervals (intervals-of-node v) slot))))
+                           (nconcing
                             (add-slot-to-intervals (intervals-of-node val) slot))))))
              (sn (serial-number node)))
         (setf (slot-value node 'descendant-map)
