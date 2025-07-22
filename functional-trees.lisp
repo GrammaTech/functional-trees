@@ -686,7 +686,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
     (compute-descendant-map old-node new-node)
     new-node))
 
-(defparameter *size-threshold* 10)
+(defparameter *size-threshold* 20)
 
 (defun test-thresholds (workload-fn values)
   "Helper function to test different threshold values."
