@@ -247,11 +247,11 @@ for `ft:node`:
 
   Slots with :CLASS allocation:
     CHILD-SLOTS                    = ((THEN . 1) ELSE)
-    CHILD-SLOT-SPECIFIERS          = (#<FUNCTIONAL-TREES::SLOT-SPECIFIER THEN 1>..
+    CHILD-SLOT-SPECIFIERS          = #<unbound slot>
   Slots with :INSTANCE allocation:
-    DESCENDANT-MAP                 = #<4=>THEN,6=>ELSE,8=>ELSE,9=>NIL,[10,11]=>THEN>
+    DESCENDANT-MAP                 = :SELF
     SERIAL-NUMBER                  = 9
-    SIZE                           = #<unbound slot>
+    SIZE                           = 6
     THEN                           = #<IF-THEN-ELSE-NODE 11 (#<NODE 4 NIL> #<NODE 10 NIL>)>
     ELSE                           = (#<FUNCTIONAL-TREES:NODE 8 NIL> #<FUNCTIONAL-TREES:NODE 6 NIL>)
   ```
