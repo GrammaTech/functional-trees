@@ -688,14 +688,14 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 
 (defparameter *size-threshold* 20)
 
-(defun test-thresholds (workload-fn values)
-  "Helper function to test different threshold values."
+(defun test-thresholds (workload-fn values &key (iterations 5))
+  "Helper function to profile different threshold values."
   (let ((results '()))
     (dolist (*size-threshold* values)
       (let ((runtimes '())
             (devnull (make-broadcast-stream))
             start)
-        (loop repeat 5 do
+        (loop repeat iterations do
           (let ((*standard-output* devnull)
                 (*error-output* devnull)
                 (*trace-output* devnull)
@@ -715,7 +715,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
                       (mean runtimes)
                       (standard-deviation runtimes))
                 results))))
-    (print results)))
+    (reverse results)))
 
 ;;; Fill in the slot lazily
 (defmethod slot-unbound ((class t) (node node) (slot (eql 'descendant-map)))
