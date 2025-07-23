@@ -719,21 +719,21 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 
 ;;; Fill in the slot lazily
 (defmethod slot-unbound ((class t) (node node) (slot (eql 'descendant-map)))
-  (if (< (size node) *size-threshold*)
-      (setf (slot-value node 'descendant-map) :self)
-      (let* ((intervals
-               (iter outer
-                     (for slot-spec in (child-slot-specifiers node))
-                     (let* ((slot (slot-specifier-slot slot-spec))
-                            (val (slot-value node slot)))
-                       (if (listp val)
-                           (iter (for v in val)
-                                 (in outer
-                                     (nconcing (add-slot-to-intervals (intervals-of-node v) slot))))
-                           (nconcing
-                            (add-slot-to-intervals (intervals-of-node val) slot))))))
-             (sn (serial-number node)))
-        (setf (slot-value node 'descendant-map)
+  (let* ((intervals
+           (iter outer
+                 (for slot-spec in (child-slot-specifiers node))
+                 (let* ((slot (slot-specifier-slot slot-spec))
+                        (val (slot-value node slot)))
+                   (if (listp val)
+                       (iter (for v in val)
+                             (in outer
+                                 (nconcing (add-slot-to-intervals (intervals-of-node v) slot))))
+                       (nconcing
+                        (add-slot-to-intervals (intervals-of-node val) slot))))))
+         (sn (serial-number node)))
+    (setf (slot-value node 'descendant-map)
+          (if (< (size node) *size-threshold*)
+              (coerce (cons (list (cons sn sn) nil) intervals) 'vector)
               (convert 'ft/it:itree (cons (list (cons sn sn) nil) intervals))))))
 
 (defgeneric intervals-of-node (node)
@@ -742,13 +742,8 @@ telling the user to use (setf (@ ... :<slot>) ...)"
     (let ((dm (descendant-map node)))
       (etypecase dm
         (ft/it:itree (ft/it:intervals-of-itree dm))
-        ((eql :self)
-         (let (intervals)
-           (mapc (lambda (node)
-                   (push (cons (serial-number node) (serial-number node))
-                         intervals))
-                 node)
-           intervals)))))
+        (vector
+         (map 'list #'car dm)))))
   (:method ((node t)) nil))
 
 (defun add-slot-to-intervals (intervals slot)
@@ -775,7 +770,6 @@ Duplicates are allowed in both lists."
   (:method ((old-node t) (new-node t)) new-node)
   (:method :around ((old-node node) (new-node node) &aux (size (size new-node)))
     (cond ((< size *size-threshold*)
-           (setf (slot-value new-node 'descendant-map) :self)
            ;; Check for collisions.
            (let ((sns (make-array size :element-type 'array-index))
                  (other-nodes (make-array size))
@@ -796,8 +790,11 @@ Duplicates are allowed in both lists."
                       (setf (aref sns i) sn
                             (aref other-nodes i) node)
                       (incf i))))))
+           ;; Initialize the descendant map.
+           (slot-makunbound new-node 'descendant-map)
+           (descendant-map new-node)
            new-node)
-          ((eql (slot-value old-node 'descendant-map) :self)
+          ((typep (slot-value old-node 'descendant-map) 'vector)
            ;; Recompute the new node's descendant map from scratch.
            (slot-makunbound new-node 'descendant-map)
            (descendant-map new-node)
@@ -923,23 +920,9 @@ Duplicates are allowed in both lists."
       (ft/it:itree
        (when-let ((itree-node (ft/it::itree-find-node-splay map sn)))
          (ft/it:node-data itree-node)))
-      ((eql :self)
-       (flet ((has-sn-p (child sn)
-                (and (typep child 'node)
-                     (find-if
-                      (lambda (node)
-                        (eql (serial-number node) sn))
-                      child))))
-         (dolist (slot (child-slots node))
-           (let* ((slot (ensure-car slot))
-                  (value (slot-value node slot))
-                  (has-sn-p
-                    (if (listp value)
-                        (iter (for child in value)
-                              (thereis (has-sn-p child sn)))
-                        (has-sn-p value sn))))
-             (when has-sn-p
-               (return slot)))))))))
+      (vector
+       (iter (for (interval slot) in-vector map)
+             (finding slot such-that (<= (car interval) sn (cdr interval))))))))
 
 (defgeneric rpath-to-node (root node &key error)
   (:documentation "Returns the (reversed) path from ROOT to a node
