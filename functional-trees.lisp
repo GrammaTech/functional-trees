@@ -41,7 +41,8 @@
   (:import-from :uiop/utility :nest)
   (:import-from :serapeum :queue :qconc :qpreconc :qlist
                 :set-hash-table :length< :box :unbox
-                :with-thunk :-> :lret :enq)
+                :with-thunk :-> :lret :enq
+                :bisect-left)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -733,7 +734,9 @@ telling the user to use (setf (@ ... :<slot>) ...)"
          (sn (serial-number node)))
     (setf (slot-value node 'descendant-map)
           (if (< (size node) *size-threshold*)
-              (coerce (cons (list (cons sn sn) nil) intervals) 'vector)
+              (sort (coerce (cons (list (cons sn sn) nil) intervals) 'vector)
+                    #'<
+                    :key #'caar)
               (convert 'ft/it:itree (cons (list (cons sn sn) nil) intervals))))))
 
 (defgeneric intervals-of-node (node)
@@ -921,8 +924,11 @@ Duplicates are allowed in both lists."
        (when-let ((itree-node (ft/it::itree-find-node-splay map sn)))
          (ft/it:node-data itree-node)))
       (vector
-       (iter (for (interval slot) in-vector map)
-             (finding slot such-that (<= (car interval) sn (cdr interval))))))))
+       (let ((idx (bisect-left map `((nil . ,sn)) #'< :key #'cdar)))
+         (when (< idx (length map))
+           (destructuring-bind ((start . end) slot) (aref map idx)
+             (when (<= start sn end)
+               slot))))))))
 
 (defgeneric rpath-to-node (root node &key error)
   (:documentation "Returns the (reversed) path from ROOT to a node
