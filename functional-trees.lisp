@@ -773,31 +773,34 @@ Duplicates are allowed in both lists."
   (:method ((old-node t) (new-node t)) new-node)
   (:method :around ((old-node node) (new-node node) &aux (size (size new-node)))
     (cond ((< size *size-threshold*)
-           ;; Check for collisions.
-           (let ((sns (make-array size :element-type 'array-index))
-                 (other-nodes (make-array size))
-                 (i 0))
-             (declare (dynamic-extent sns other-nodes)
-                      (array-index i))
-             (pure-traverse-tree
-              new-node
-              (lambda (node &aux (sn (serial-number node)))
-                (if (find sn sns :end (1+ i))
-                    (let ((other-node (aref other-nodes i)))
-                      (signal-interval-collision
-                       sn
-                       node
-                       (child-slot-with-sn new-node sn)
-                       other-node))
-                    (progn
-                      (setf (aref sns i) sn
-                            (aref other-nodes i) node)
-                      (incf i))))))
            ;; Initialize the descendant map.
            (slot-makunbound new-node 'descendant-map)
-           (descendant-map new-node)
+           ;; Invoking descendant-map initializes the map as a side effect.
+           (let ((map (descendant-map new-node)))
+             (declare (array map))
+             ;; Check for collisions.
+             (flet ((collision (lo1 hi1 lo2 hi2 data)
+                      (error 'ft/it:interval-collision-error
+                             :lo1 lo1
+                             :hi1 hi1
+                             :lo2 lo2
+                             :hi2 hi2
+                             :data data)))
+               ;; Keep out of line.
+               (declare (notinline collision))
+               (iter (for i from 0)
+                     (for j from 1)
+                     (when (>= j (length map))
+                       (return))
+                     (let ((i1 (aref map i))
+                           (i2 (aref map j)))
+                       (destructuring-bind ((lo1 . hi1) slot1) i1
+                         (destructuring-bind ((lo2 . hi2) slot2) i2
+                           (declare (ignore slot2))
+                           (unless (< hi1 lo2)
+                             (collision lo1 hi1 lo2 hi2 slot1))))))))
            new-node)
-          ((typep (slot-value old-node 'descendant-map) 'vector)
+          ((vectorp (slot-value old-node 'descendant-map))
            ;; Recompute the new node's descendant map from scratch.
            (slot-makunbound new-node 'descendant-map)
            (descendant-map new-node)
