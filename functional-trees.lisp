@@ -772,7 +772,23 @@ Duplicates are allowed in both lists."
   (:documentation "Diff the children of OLD-NODE and NEW-NODE and update maps.")
   (:method ((old-node t) (new-node t)) new-node)
   (:method :around ((old-node node) (new-node node) &aux (size (size new-node)))
-    (cond ((< size *size-threshold*)
+    (cond ((and
+            (< size *size-threshold*)
+            ;; Don't trigger slot-unbound method.
+            (slot-boundp old-node 'descendant-map)
+            (vectorp (slot-value old-node 'descendant-map))
+            ;; All the child slots are the same.
+            (iter (for slot-spec in (child-slot-specifiers new-node))
+                  (let ((slot (slot-specifier-slot slot-spec)))
+                    (always
+                     (eql (slot-value old-node slot)
+                          (slot-value new-node slot))))))
+           ;; The vectors are never mutated, both nodes can share the
+           ;; same one.
+           (setf (slot-value new-node 'descendant-map)
+                 (slot-value old-node 'descendant-map))
+           new-node)
+          ((< size *size-threshold*)
            ;; Initialize the descendant map.
            (slot-makunbound new-node 'descendant-map)
            ;; Invoking descendant-map initializes the map as a side effect.
