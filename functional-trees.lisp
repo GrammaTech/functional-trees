@@ -687,7 +687,8 @@ telling the user to use (setf (@ ... :<slot>) ...)"
     (compute-descendant-map old-node new-node)
     new-node))
 
-(defparameter *size-threshold* 20)
+(defparameter *size-threshold* 20
+  "Threshold of node size above which to use interval trees.")
 
 (defun test-thresholds (workload-fn values &key (iterations 5))
   "Helper function to profile different threshold values."
