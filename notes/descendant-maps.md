@@ -57,7 +57,12 @@ the space needed to represent these sets, and won't cost very much
 because traversing small subtrees is relatively cheap.  There will be
 a size cutoff constant indicating when this happens.
 
-(As implemented, instead of omitting subtrees for small nodes, we uses a different representation for them – a sorted vector. Entirely omitting an index is undesirable, because we want to be able to do fast collision checking when copying a node. Using sorted vectors enables both fast lookups, using bisection, and fast collision checks.)
+(As implemented, instead of omitting subtrees for small nodes, we use
+a different representation for them – a sorted vector. Entirely
+omitting an index is undesirable, because we want to be able to do
+fast collision checking when copying a node. Using sorted vectors
+enables both fast lookups, using bisection, and fast collision
+checks.)
 
 Even without the size cutoff, if all labels are sequentially (in a
 newly allocated tree) then the set at a given node will have size
