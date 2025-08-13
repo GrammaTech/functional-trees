@@ -1307,6 +1307,22 @@ diagnostic information on error or failure."
                     '(:a (:b) (:b (:c) (:d) (:e)) (:d)))
               '(:a (:b) (:b (:foo) (:d) (:e)) (:d)))))
 
+(deftest mapcar-splices-lists ()
+  (flet ((try-splice (class)
+           (nest (convert 'list)
+                 (mapcar
+                  (lambda (it)
+                    (when (eql (first (children it)) :c)
+                      (list
+                       (convert class '(:foo))
+                       (convert class '(:bar))))))
+                 (convert class
+                          '(:a (:b) (:b (:c) (:d) (:e)) (:d))))))
+    (signals error
+      (try-splice 'node-cons))
+    (equal (try-splice 'node-list)
+           '(:a (:b) (:b (:foo) (:bar) (:d) (:e)) (:d)))))
+
 (deftest prefix?.1 ()
   (is (prefix? nil nil))
   (is (prefix? nil '(a)))

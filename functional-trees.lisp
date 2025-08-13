@@ -1048,11 +1048,12 @@ Return nil if NODE is equal to ROOT or is not in the subtree of ROOT.")
                         (value nil valuep))
                    &body body)
   "Generalized tree traversal used to implement common lisp sequence functions.
-VALUE is the value to return upon completion.  INDEX may hold a
+VALUE is the value to return upon completion. INDEX may hold a
 variable bound in BODY to the *reversed* path leading to the current
-node.  If REBUILD then the body should return the new node that will
-replace NODE, NODE itself if it is not to be replaced, and NIL if NODE
-is to be deleted (from a variable arity list of children in its parent)."
+node. If REBUILD then the body should return the new node, or a list
+of nodes, that will replace NODE, NODE itself if it is not to be
+replaced, and NIL if NODE is to be deleted (from a variable arity list
+of children in its parent)."
   ;; (declare (ignorable start end from-end))
   ;; (when (or startp endp from-end-p)
   ;;   (warn "TODO: implement start end and from-end-p."))
@@ -1171,22 +1172,29 @@ returning a plist suitable for passing to COPY"))
 (defmethod mapcar-children ((node node) (fn function))
   (mappend
    (lambda (child-slot &aux modifiedp)
-      (let ((children
-             (cl:mapcar (lambda (child)
-                          (let ((new (traverse-tree child fn)))
-                            (unless (eq new child) (setf modifiedp t))
-                            new))
-                        (child-list node child-slot))))
-        ;; Adjust the children list for special arities.
-        (case (slot-spec-arity child-slot)
-          ;; Unpack a single-arity child from the list.
-          (1 (setf children (car children)))
-          ;; Remove nils from flexible-arity child lists.
-          (0 (setf children (remove nil children))))
-        (when modifiedp
-          ;; TODO: precompute keyword in slot spec
-          (list (make-keyword (slot-spec-slot child-slot))
-                children))))
+     (let* ((children
+              (cl:mapcar (lambda (child)
+                           (let ((new (traverse-tree child fn)))
+                             (unless (eq new child) (setf modifiedp t))
+                             new))
+                         (child-list node child-slot)))
+            (arg
+              ;; Adjust the children list for special arities.
+              (case (slot-spec-arity child-slot)
+                ;; Unpack a single-arity child from the list.
+                (1
+                 (let ((child (car children)))
+                   (when (consp child)
+                     (error "Attempt to splice into single-arity slot of ~a:~%~a"
+                            node child))
+                   child))
+                ;; Remove nils and flatten sublists in flexible-arity child
+                ;; lists.
+                (0 (mappend #'ensure-list children)))))
+       (when modifiedp
+         ;; TODO: precompute keyword in slot spec
+         (list (make-keyword (slot-spec-slot child-slot))
+               arg))))
    (child-slots node)))
 
 (defgeneric node-valid (node)
@@ -1659,7 +1667,8 @@ act on the root of the tree (the previous behavior)."
 (defmethod mapcar (function (tree node) &rest more)
   "Map FUNCTION over TREE collecting the results into a new tree.
 Non-nil return values of FUNCTION replace the current node in the tree
-and nil return values of FUNCTION leave the existing node."
+with the returned node or list of nodes, and nil return values of
+FUNCTION leave the existing node."
   (fset::check-two-arguments more 'mapcar 'node)
   (let ((function (ensure-function function)))
     (do-tree (node tree :rebuild t)
