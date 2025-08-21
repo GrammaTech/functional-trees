@@ -810,7 +810,7 @@ If NODE is a proxy, ORIG-NODE should be the original node."
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
 function on it if not found at first."
   (declare (type function))
-  (assert-attrs-bound fn-name)
+  (check-attrs-bound fn-name)
   (let* ((table (node-attr-table node)))
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node orig-node fn-name table)
@@ -846,7 +846,7 @@ compilation, but not memoized.")
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
-  (assert-attrs-bound fn-name)
+  (check-attrs-bound fn-name)
   (let* ((orig-node node)
          (proxy (attr-proxy node))
          (node (or proxy node)))
@@ -973,7 +973,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                      'attr-missing
                      (reachable? (uncomputed-attr-node condition))))))
 
-(defun assert-attrs-bound (fn-name)
+(defun check-attrs-bound (fn-name)
   (unless (boundp '*attrs*)
     (error (make-condition 'unbound-attrs :fn-name fn-name))))
 
