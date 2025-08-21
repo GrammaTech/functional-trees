@@ -34,12 +34,14 @@
     :callf
     :def
     :defconst
+    :defparameter-unbound
     :defplace
     :defstruct-read-only
     :defsubst
     :defvar-unbound
     :etypecase-of
     :lret
+    :nest
     :nlet
     :slot-value-safe
     :unbox
@@ -81,13 +83,16 @@
 Stored while an attribute is being computed to allow detecting
 circular attribute dependencies.")
 
+(defstruct (cycle (:constructor cycle (values)))
+  (values (error "No value") :type t))
+
 (deftype in-progress ()
   '(eql #.+in-progress+))
 
 (deftype memoized-value ()
   "Type of a attribute value: either the in-progress
 sentinel, or a list of the values returned by the attribute function."
-  '(or in-progress list))
+  '(or in-progress cycle list))
 
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
@@ -793,20 +798,37 @@ If NODE is a proxy, ORIG-NODE should be the original node."
   (let* ((alist (ref table node))
          (pair (assoc fn-name alist)))
     (if pair
-        (etypecase-of memoized-value (cdr pair)
-          (list (values alist pair))
-          (in-progress
-           (let ((vals
-                   (multiple-value-list
-                    ;; If this returns, we want to return its value.
-                    (handle-circular-attribute
-                     fn-name
-                     (or orig-node node)
-                     (and orig-node node)))))
-             (values alist (cons fn-name vals)))))
+        (symbol-macrolet ((memo (cdr pair)))
+          (etypecase-of memoized-value memo
+            (list (values alist pair))
+            ;; TODO All of the potentially-circular attributes in the
+            ;; cycle need to be marked as circular?
+            (cycle
+             (let ((vals
+                     (multiple-value-list
+                      (handle-circular-attribute
+                       fn-name
+                       (or orig-node node)
+                       (and orig-node node)
+                       :previous-values memo))))
+               (if (equal vals memo)
+                   (progn
+                     (setf memo vals)
+                     (values alist pair))
+                   (values alist (cons fn-name vals)))))
+            (in-progress
+             (let ((vals
+                     (multiple-value-list
+                      ;; If this returns, we want to return its value.
+                      (handle-circular-attribute
+                       fn-name
+                       (or orig-node node)
+                       (and orig-node node)))))
+               (setf memo (cycle vals))
+               (values alist (cons fn-name vals))))))
         (values alist nil))))
 
-(defun cached-attr-fn (node orig-node fn-name)
+(defun cached-attr-fn (node orig-node fn-name &key )
   "Retrieve the cached value of FN-NAME on NODE, trying the ATTR-MISSING
 function on it if not found at first."
   (declare (type function))
@@ -830,61 +852,97 @@ function on it if not found at first."
             ;; The proxy also failed.
             (error (make-condition 'uncomputed-attr :node node :fn fn-name)))))))
 
-(defgeneric handle-circular-attribute (fn-name orig-node proxy)
+(defgeneric handle-circular-attribute (fn-name orig-node proxy
+                                       &key previous-values)
   (:documentation "Called when a circular attribute is detected.
 By default, signals `circular-attribute'.
 
 If this function returns, its values will be used during attribute
 compilation, but not memoized.")
-  (:method (fn-name orig-node proxy)
+  (:method (fn-name orig-node proxy &key previous-values)
+    (declare (ignore previous-values))
     (error 'circular-attribute
            :node orig-node
            :proxy proxy
            :fn fn-name)))
+
+(defvar *circle* nil)
+(defparameter-unbound *change*
+  "Track whether a change has occured in a circle.")
+
+(defgeneric attribute-circular-p (attr)
+  (:method ((attr t)) nil))
 
 (defun memoize-attr-fun (node fn-name thunk)
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
   (declare (type function thunk))
   (check-attrs-bound fn-name)
-  (let* ((orig-node node)
-         (proxy (attr-proxy node))
-         (node (or proxy node)))
-    (multiple-value-bind (alist p)
-        (retrieve-memoized-attr-fn
-         node
-         (and proxy orig-node)
-         fn-name
-         (node-attr-table node))
-      (when p
-        (return-from memoize-attr-fun
-          (values-list (cdr p))))
-      (let* ((p (cons fn-name +in-progress+))
-             (trail-pair (cons fn-name node))
-             (*attribute-trail*
-               (cons trail-pair *attribute-trail*))
-             (table (node-attr-table node)))
-        (declare (dynamic-extent trail-pair *attribute-trail*))
-        ;; additional pushes onto the alist may occur in the call to THUNK,
-        ;; so get the push of p onto the list out of the way now.  If we
-        ;; tried to assign after the call we might lose information.
-        (unwind-protect
-             (progn
-               (when proxy
-                 (record-deps proxy))
-               (setf (ref table node)
-                     (cons p alist))
-               (let ((vals (multiple-value-list
-                            (funcall thunk))))
-                 (setf (cdr p) vals)
-                 (values-list vals)))
-          ;; If a non-local return occured from THUNK, we need
-          ;; to remove p from the alist, otherwise we will never
-          ;; be able to compute the function here
-          (etypecase-of memoized-value (cdr p)
-            (list)
-            (in-progress
-             (removef (ref table node) p))))))))
+  (nest
+   (let* ((orig-node node)
+          (proxy (attr-proxy node))
+          (node (or proxy node))))
+   (multiple-value-bind
+         (alist p)
+       (retrieve-memoized-attr-fn
+        node
+        (and proxy orig-node)
+        fn-name
+        (node-attr-table node)))
+   (if (listp (cdr p))
+       (values-list (cdr p)))
+   (let* ((p (cons fn-name +in-progress+))
+          (trail-pair (cons fn-name node))
+          (*attribute-trail*
+            (cons trail-pair *attribute-trail*))
+          (table (node-attr-table node)))
+     (declare (dynamic-extent trail-pair *attribute-trail*)))
+   ;; additional pushes onto the alist may occur in the call to THUNK,
+   ;; so get the push of p onto the list out of the way now.  If we
+   ;; tried to assign after the call we might lose information.
+   (unwind-protect
+        (progn
+          (when proxy
+            (record-deps proxy))
+          (setf (ref table node)
+                (cons p alist))
+          (cond ((not *circle*)
+                 (let ((*circle* t)
+                       (*change* nil))
+                   (setf (cdr p) :in-progress)
+                   (iter
+                     (setf (bound-value '*change*) nil)
+                     (let ((new-vals
+                             (multiple-value-list (funcall thunk))))
+                       (unless (and (cycle-p (cdr p))
+                                    (equal new-vals
+                                           (cycle-values (cdr p))))
+                         (setf (bound-value '*change*) t))
+                       (setf (cdr p) (cycle new-vals)))
+                     (while *change*))
+                   (setf (cdr p) (cycle-values (cdr p)))
+                   (values-list (cdr p))))
+                ((not (listp (cdr p)))
+                 (setf (cdr p) :in-progress)
+                 (let ((new-vals
+                         (multiple-value-list (funcall thunk))))
+                   (unless (and (cycle-p (cdr p))
+                                (equal new-vals
+                                       (cycle-values (cdr p))))
+                     (setf (bound-value '*change*) t))
+                   (setf (cdr p) (cycle new-vals))
+                   (values-list (cdr p))))
+                (t
+                 (values-list (cdr p))))
+          p)
+     ;; If a non-local return occured from THUNK, we need
+     ;; to remove p from the alist, otherwise we will never
+     ;; be able to compute the function here
+     (etypecase-of memoized-value (cdr p)
+       (list)
+       ;; Is this right for cycle?
+       ((or cycle in-progress)
+        (removef (ref table node) p))))))
 
 (define-condition attribute-condition (condition)
   ())
