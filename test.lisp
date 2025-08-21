@@ -1819,12 +1819,13 @@ diagnostic information on error or failure."
                     in &key)
   (convert 'data-subroot (convert 'node-with-data in)))
 
+(def-attr-fun attr.1-fn (parent)
+  "Label each node with its parent"
+  (:method ((node node) &optional parent)
+    (mapc {attr.1-fn _ node} (children node))
+    parent))
+
 (deftest attr.1 ()
-  (def-attr-fun attr.1-fn (parent)
-    "Label each node with its parent"
-    (:method ((node node) &optional parent)
-      (mapc {attr.1-fn _ node} (children node))
-      parent))
   (let ((t1 (convert 'data-root '(a b c)))
         at)
     (with-attr-table t1
@@ -1999,9 +2000,10 @@ they had proxies already."
     (signals error
       (with-attr-table t1))))
 
+(def-attr-fun attr.3-fn ()
+  (:method ((node node)) (attr.3-fn node)))
+
 (deftest attr-circular ()
-  (def-attr-fun attr.3-fn ()
-    (:method ((node node)) (attr.3-fn node)))
   (let ((t1 (convert 'data-root '(a))))
     (with-attr-table t1
       (is (handler-case (progn (attr.3-fn t1) nil)
