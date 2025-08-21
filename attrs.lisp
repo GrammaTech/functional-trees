@@ -95,8 +95,8 @@
 Stored while an attribute is being computed to allow detecting
 circular attribute dependencies.")
 
-(defstruct (cycle (:constructor cycle (values)))
-  (values (error "No value") :type t))
+(defstruct (cycle (:constructor cycle (&optional values)))
+  (values nil :type t))
 
 (deftype in-progress ()
   '(eql #.+in-progress+))
@@ -881,39 +881,56 @@ If not there, invoke the thunk THUNK and memoize the values returned."
             (record-deps proxy))
           (setf (ref table node)
                 (cons p alist))
-          (cond  ((not *circle*)
-                  (let ((*circle* (queue))
-                        (*change* nil))
-                    (setf (cdr p) :in-progress)
-                    (iter
-                      (setf (bound-value '*change*) nil)
-                      (let ((new-vals
-                              (multiple-value-list (funcall thunk))))
-                        (unless (and (cycle-p (cdr p))
-                                     (equal new-vals
-                                            (cycle-values (cdr p))))
-                          (setf (bound-value '*change*) t))
-                        (setf (cdr p) (cycle new-vals))
-                        (enq p *circle*))
-                      (while *change*))
-                    ;; The cycle is complete, fix up the pairs.
-                    (dolist (p (qlist *circle*))
-                      (when (cycle-p (cdr p))
-                        (setf (cdr p) (cycle-values (cdr p)))))
-                    (values-list (cdr p))))
-                 ((not (listp (cdr p)))
-                  (setf (cdr p) :in-progress)
-                  (let ((new-vals
-                          (multiple-value-list (funcall thunk))))
-                    (unless (and (cycle-p (cdr p))
-                                 (equal new-vals
-                                        (cycle-values (cdr p))))
-                      (setf (bound-value '*change*) t))
-                    (setf (cdr p) (cycle new-vals))
-                    (enq p *circle*)
-                    (values-list (cdr p))))
-                 (t
-                  (values-list (cdr p))))
+          (cond
+            ((listp (cdr p))
+             (values-list (cdr p)))
+            ((attribute-circular-p fn-name)
+             (when (cycle-p (cdr p))
+               (error 'circular-attribute
+                      :node node
+                      :proxy proxy
+                      :fn fn-name))
+             (setf (cdr p) (cycle))
+             (if *circle*
+                 (let* ((*change* nil)
+                        (*circle* nil))
+                   (setf (cdr p)
+                         (multiple-value-list (funcall thunk))))
+                 (setf (cdr p)
+                       (multiple-value-list (funcall thunk))))
+             (values-list (cdr p)))
+            ((not *circle*)
+             (let ((*circle* (queue))
+                   (*change* nil))
+               (declare (dynamic-extent *circle*))
+               (setf (cdr p) (cycle))
+               (iter
+                 (setf (bound-value '*change*) nil)
+                 (let ((new-vals
+                         (multiple-value-list (funcall thunk))))
+                   (unless (equal new-vals
+                                  (cycle-values (cdr p)))
+                     (setf (bound-value '*change*) t))
+                   (setf (cdr p) (cycle new-vals))
+                   (enq p *circle*))
+                 (while *change*))
+               ;; The cycle is complete, fix up the pairs.
+               (dolist (p (qlist *circle*))
+                 (when (cycle-p (cdr p))
+                   (setf (cdr p) (cycle-values (cdr p)))))
+               (values-list (cdr p))))
+            ((not (cycle-p (cdr p)))
+             (setf (cdr p) (cycle))
+             (let ((new-vals
+                     (multiple-value-list (funcall thunk))))
+               (unless (equal new-vals
+                              (cycle-values (cdr p)))
+                 (setf (bound-value '*change*) t))
+               (setf (cdr p) (cycle new-vals))
+               (enq p *circle*)
+               (values-list (cycle-values (cdr p)))))
+            (t
+             (values-list (cycle-values (cdr p)))))
           p)
      ;; If a non-local return occured from THUNK, we need
      ;; to remove p from the alist, otherwise we will never
