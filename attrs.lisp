@@ -39,10 +39,13 @@
     :defstruct-read-only
     :defsubst
     :defvar-unbound
+    :enq
     :etypecase-of
     :lret
     :nest
     :nlet
+    :qlist
+    :queue
     :slot-value-safe
     :unbox
     :standard/context
@@ -77,6 +80,15 @@
 
 
 ;;; Variables
+
+
+(defvar *circle* nil)
+
+(defparameter-unbound *change*
+  "Track whether a change has occured in a circle.")
+
+(defgeneric attribute-circular-p (attr)
+  (:method ((attr t)) nil))
 
 (defconst +in-progress+ :in-progress
   "Sentinel value for in-progress computation.
@@ -798,34 +810,18 @@ If NODE is a proxy, ORIG-NODE should be the original node."
   (let* ((alist (ref table node))
          (pair (assoc fn-name alist)))
     (if pair
-        (symbol-macrolet ((memo (cdr pair)))
-          (etypecase-of memoized-value memo
-            (list (values alist pair))
-            ;; TODO All of the potentially-circular attributes in the
-            ;; cycle need to be marked as circular?
-            (cycle
-             (let ((vals
-                     (multiple-value-list
-                      (handle-circular-attribute
-                       fn-name
-                       (or orig-node node)
-                       (and orig-node node)
-                       :previous-values memo))))
-               (if (equal vals memo)
-                   (progn
-                     (setf memo vals)
-                     (values alist pair))
-                   (values alist (cons fn-name vals)))))
-            (in-progress
-             (let ((vals
-                     (multiple-value-list
-                      ;; If this returns, we want to return its value.
-                      (handle-circular-attribute
-                       fn-name
-                       (or orig-node node)
-                       (and orig-node node)))))
-               (setf memo (cycle vals))
-               (values alist (cons fn-name vals))))))
+        (etypecase-of memoized-value (cdr pair)
+          (list (values alist pair))
+          ;; TODO All of the potentially-circular attributes in the
+          ;; cycle need to be marked as circular?
+          (cycle (values alist pair))
+          (in-progress
+           (if *circle*
+               (values alist pair)
+               (error 'circular-attribute
+                      :node (or orig-node node)
+                      :proxy (and orig-node node)
+                      :fn fn-name))))
         (values alist nil))))
 
 (defun cached-attr-fn (node orig-node fn-name &key )
@@ -851,27 +847,6 @@ function on it if not found at first."
                 (return (cached-attr-fn proxy node fn-name))))
             ;; The proxy also failed.
             (error (make-condition 'uncomputed-attr :node node :fn fn-name)))))))
-
-(defgeneric handle-circular-attribute (fn-name orig-node proxy
-                                       &key previous-values)
-  (:documentation "Called when a circular attribute is detected.
-By default, signals `circular-attribute'.
-
-If this function returns, its values will be used during attribute
-compilation, but not memoized.")
-  (:method (fn-name orig-node proxy &key previous-values)
-    (declare (ignore previous-values))
-    (error 'circular-attribute
-           :node orig-node
-           :proxy proxy
-           :fn fn-name)))
-
-(defvar *circle* nil)
-(defparameter-unbound *change*
-  "Track whether a change has occured in a circle.")
-
-(defgeneric attribute-circular-p (attr)
-  (:method ((attr t)) nil))
 
 (defun memoize-attr-fun (node fn-name thunk)
   "Look for a memoized value for attr function FN-NAME on NODE.
@@ -906,34 +881,39 @@ If not there, invoke the thunk THUNK and memoize the values returned."
             (record-deps proxy))
           (setf (ref table node)
                 (cons p alist))
-          (cond ((not *circle*)
-                 (let ((*circle* t)
-                       (*change* nil))
-                   (setf (cdr p) :in-progress)
-                   (iter
-                     (setf (bound-value '*change*) nil)
-                     (let ((new-vals
-                             (multiple-value-list (funcall thunk))))
-                       (unless (and (cycle-p (cdr p))
-                                    (equal new-vals
-                                           (cycle-values (cdr p))))
-                         (setf (bound-value '*change*) t))
-                       (setf (cdr p) (cycle new-vals)))
-                     (while *change*))
-                   (setf (cdr p) (cycle-values (cdr p)))
-                   (values-list (cdr p))))
-                ((not (listp (cdr p)))
-                 (setf (cdr p) :in-progress)
-                 (let ((new-vals
-                         (multiple-value-list (funcall thunk))))
-                   (unless (and (cycle-p (cdr p))
-                                (equal new-vals
-                                       (cycle-values (cdr p))))
-                     (setf (bound-value '*change*) t))
-                   (setf (cdr p) (cycle new-vals))
-                   (values-list (cdr p))))
-                (t
-                 (values-list (cdr p))))
+          (cond  ((not *circle*)
+                  (let ((*circle* (queue))
+                        (*change* nil))
+                    (setf (cdr p) :in-progress)
+                    (iter
+                      (setf (bound-value '*change*) nil)
+                      (let ((new-vals
+                              (multiple-value-list (funcall thunk))))
+                        (unless (and (cycle-p (cdr p))
+                                     (equal new-vals
+                                            (cycle-values (cdr p))))
+                          (setf (bound-value '*change*) t))
+                        (setf (cdr p) (cycle new-vals))
+                        (enq p *circle*))
+                      (while *change*))
+                    ;; The cycle is complete, fix up the pairs.
+                    (dolist (p (qlist *circle*))
+                      (when (cycle-p (cdr p))
+                        (setf (cdr p) (cycle-values (cdr p)))))
+                    (values-list (cdr p))))
+                 ((not (listp (cdr p)))
+                  (setf (cdr p) :in-progress)
+                  (let ((new-vals
+                          (multiple-value-list (funcall thunk))))
+                    (unless (and (cycle-p (cdr p))
+                                 (equal new-vals
+                                        (cycle-values (cdr p))))
+                      (setf (bound-value '*change*) t))
+                    (setf (cdr p) (cycle new-vals))
+                    (enq p *circle*)
+                    (values-list (cdr p))))
+                 (t
+                  (values-list (cdr p))))
           p)
      ;; If a non-local return occured from THUNK, we need
      ;; to remove p from the alist, otherwise we will never
