@@ -82,10 +82,8 @@
 
 ;;; Memoized values
 
-(defvar *circle* nil)
-
-(defparameter-unbound *change*
-  "Track whether a change has occured in a circle.")
+(defvar *circle* nil
+  "The currently executing circular attribute evaluation, if any.")
 
 (defparameter *max-circular-iterations* 100)
 
@@ -111,6 +109,7 @@ This can return multiple values.")
     :type hash-table))
   (:documentation "Circular evaluation state"))
 
+(declaim (inline approximation))
 (defstruct (approximation
             (:constructor approximation
                 (&optional values visited-p)))
@@ -905,7 +904,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (unwind-protect
         ;; This implements the evaluation strategy for circular
         ;; attributes from Magnusson 2007.
-        (prog1
+        (multiple-value-prog1
             (econd
              ((listp (cdr p))
               (values-list (cdr p)))
@@ -944,8 +943,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                   ;; attribute. The value of `*circle*' is all the
                   ;; approximations to finalize when a fixed point is
                   ;; reached.
-                  ((circle (make-instance 'circular-eval
-                             :subroot (current-subroot node)))
+                  ((circle (make-instance 'circular-eval))
                    (*circle* circle)
                    (max-iterations *max-circular-iterations*))
                 (declare (dynamic-extent circle))
@@ -962,6 +960,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                       (unless (equal? new-vals
                                       (approximation-values (cdr p)))
                         (setf changep t)
+                        ;; TODO mutate
                         (setf (cdr p) (approximation new-vals)))
                       (ensure-gethash p memo-cells p))
                     (while changep))
@@ -982,10 +981,11 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                           (multiple-value-list (funcall thunk))))
                     (unless (equal? new-vals
                                     (approximation-values (cdr p)))
-                      (list new-vals (approximation-values (cdr p)))
                       (setf changep t))
                     changep
+                    ;; TODO mutate
                     (setf (cdr p) (approximation new-vals))
+                    (setf (approximation-visited-p (cdr p)) nil)
                     (values-list (approximation-values (cdr p)))))))
              ((approximation-p (cdr p))
               (values-list (approximation-values (cdr p)))))
@@ -996,7 +996,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
      (unless normal-exit
        (etypecase-of memoized-value (cdr p)
          (list)
-         ;; Is this right for approximation?
          (approximation
           (removef (ref table node) p)))))))
 
