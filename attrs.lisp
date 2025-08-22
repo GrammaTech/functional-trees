@@ -1,12 +1,12 @@
 (defpackage :functional-trees/attrs
   (:nicknames :ft/attrs)
   (:use
-   :common-lisp
-   :alexandria
-   :curry-compose-reader-macros
-   :functional-trees/functional-trees
-   :iterate
-   :named-readtables)
+    :common-lisp
+    :alexandria
+    :curry-compose-reader-macros
+    :functional-trees/functional-trees
+    :iterate
+    :named-readtables)
   (:import-from :cl-store)
   (:import-from :closer-mop)
   (:import-from :fset)
@@ -15,6 +15,7 @@
     :make-weak-hash-table)
   (:shadowing-import-from
     :fset
+    :equal?
     :mapc
     :mapcar
     :subst
@@ -44,34 +45,35 @@
     :mvlet*
     :nest
     :nlet
+    :pop-assoc
     :slot-value-safe
     :unbox
     :standard/context
     :with-boolean
     :with-thunk)
   (:export
-   :*attrs*
-   :*enable-cross-session-cache*
-   :attr-missing
-   :attr-proxy
-   :attribute-error
-   :attrs-root
-   :attrs-root
-   :attrs-root*
-   :circular-attribute
-   :def-attr-fun
-   :handle-circular-attribute
-   :has-attribute-p
-   :invalidate-subroot
-   :reachable?
-   :update-subroot-mapping
-   :session-shadowing
-   :subroot
-   :subroot?
-   :uncomputed-attr
-   :unreachable-node
-   :with-attr-session
-   :with-attr-table))
+    :*attrs*
+    :*enable-cross-session-cache*
+    :attr-missing
+    :attr-proxy
+    :attribute-error
+    :attrs-root
+    :attrs-root
+    :attrs-root*
+    :circular-attribute
+    :def-attr-fun
+    :handle-circular-attribute
+    :has-attribute-p
+    :invalidate-subroot
+    :reachable?
+    :update-subroot-mapping
+    :session-shadowing
+    :subroot
+    :subroot?
+    :uncomputed-attr
+    :unreachable-node
+    :with-attr-session
+    :with-attr-table))
 
 (in-package :functional-trees/attrs)
 (in-readtable :curry-compose-reader-macros)
@@ -84,11 +86,12 @@
 (defparameter-unbound *change*
   "Track whether a change has occured in a circle.")
 
-(defparameter *max-circular-iterations* 10000)
+(defparameter *max-circular-iterations* 100)
 
 (defgeneric attribute-bottom-values (attr)
   (:documentation
-   "Return, as multiple values, the bottom value for a circular attribute.")
+   "Return the bottom value for a circular attribute.
+This can return multiple values.")
   (:method ((attr t))
     (values)))
 
@@ -102,10 +105,10 @@ circular attribute dependencies.")
     :documentation "Has there been a change in this iteration?"
     :initform nil
     :type boolean)
-   (iterations-remaining
-    :documentation "How many iterations are left?"
-    :initform *max-circular-iterations*
-    :type (integer *))
+   (iterations
+    :documentation "How many iterations have been performed?"
+    :initform 0
+    :type (integer 0))
    (visited
     :documentation "Has this node been visited in this iteration?"
     :initform (make-hash-table :test 'eq)
@@ -809,22 +812,28 @@ here."
           (body
             (let ((body '((call-next-method))))
               (with-thunk (body)
-                `(memoize-attr-fun ,node ',name ,body)))))
-      `(defgeneric ,name (,node ,@(when optional-args `(&optional ,@optional-args)))
-         ,@(when docstring `((:documentation ,docstring)))
-         (:method-combination standard/context)
-         (:method :context (,node ,@(when optional-args
-                                      `(&optional (,(car optional-args) nil ,present?)
-                                                  ,@(cdr optional-args))))
-           ,@(when optional-args
-               `((declare (ignorable ,@optional-args))))
-           (with-record-subroot-deps (,node)
-             ,(if optional-args
-                  `(if ,present?
-                       ,body
-                       (cached-attr-fn ,node ',name))
-                  body)))
-         ,@methods))))
+                `(memoize-attr-fun ,node ',name ,body))))
+          (bottom-values
+            (pop-assoc :bottom-values methods)))
+      `(progn
+         ,@(when bottom-values
+             `((defmethod attribute-bottom-values ((attr (eql ',name)))
+                 ,(second bottom-values))))
+         (defgeneric ,name (,node ,@(when optional-args `(&optional ,@optional-args)))
+           ,@(when docstring `((:documentation ,docstring)))
+           (:method-combination standard/context)
+           (:method :context (,node ,@(when optional-args
+                                        `(&optional (,(car optional-args) nil ,present?)
+                                                    ,@(cdr optional-args))))
+             ,@(when optional-args
+                 `((declare (ignorable ,@optional-args))))
+             (with-record-subroot-deps (,node)
+               ,(if optional-args
+                    `(if ,present?
+                         ,body
+                         (cached-attr-fn ,node ',name))
+                    body)))
+           ,@methods)))))
 
 (defun retrieve-memoized-attr-fn (node fn-name table)
   "Look up memoized value for FN-NAME on NODE.
@@ -844,8 +853,14 @@ function on it if not found at first."
     (multiple-value-bind (alist p)
         (retrieve-memoized-attr-fn node fn-name table)
       (when p
-        (return-from cached-attr-fn
-          (values-list (cdr p))))
+        (etypecase-of memoized-value (cdr p)
+          (in-progress)
+          (list
+           (return-from cached-attr-fn
+             (values-list (cdr p))))
+          (approximation
+           (return-from cached-attr-fn
+             (values-list (approximation-values (cdr p)))))))
       (attr-missing fn-name node)
       (setf (values alist p)
             (retrieve-memoized-attr-fn node fn-name table))
@@ -866,12 +881,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (check-attrs-bound fn-name)
   (nest
    (let* ((proxy (attr-proxy node))
-          (node (or proxy node))))
+          (node (or proxy node))
+          (table (node-attr-table node))))
    (multiple-value-bind (alist p)
        (retrieve-memoized-attr-fn
         node
         fn-name
-        (node-attr-table node)))
+        table))
    (if (and p (listp (cdr p)))
        ;; Already final.
        (values-list (cdr p)))
@@ -881,9 +897,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
             (cons trail-pair *attribute-trail*)))
      (declare (dynamic-extent trail-pair *attribute-trail*)))
    (let* ((p (or p (cons fn-name +in-progress+)))
-          (table (node-attr-table node))
           (bottom-values
-            (multiple-value-list (attribute-bottom-values fn-name))))
+            (multiple-value-list (attribute-bottom-values fn-name)))
+          normal-exit)
      (when proxy
        (record-deps proxy))
      ;; additional pushes onto the alist may occur in the call to
@@ -891,97 +907,102 @@ If not there, invoke the thunk THUNK and memoize the values returned."
      ;; If we tried to assign after the call we might lose
      ;; information.
      (setf (ref table node)
-           (cons p alist)))
+           (cons p alist))
+     table)
    (unwind-protect
         ;; This implements the evaluation strategy for circular
         ;; attributes from Magnusson 2007.
-        (cond
-          ((listp (cdr p))
-           (values-list (cdr p)))
-          ;; TODO Should we distinguish "agnostic" attributes (that
-          ;; allow circular eval, but don't require it) from
-          ;; noncircular attributes (that always start a new
-          ;; subgraph?) Cf. Öqvist 2017.
-          ((not bottom-values)
-           (when (approximation-p (cdr p))
-             (error 'circular-attribute
-                    :node node
-                    :proxy proxy
-                    :fn fn-name))
-           (setf (cdr p) (approximation))
-           (if *circle*
-               ;; Start a new SCC.
-               (let* ((*change* nil)
-                      (*circle* nil))
-                 (setf (cdr p)
-                       (multiple-value-list (funcall thunk))))
-               (setf (cdr p)
-                     (multiple-value-list (funcall thunk))))
-           (values-list (cdr p)))
-          ((not *circle*)
-           (let*
-               ;; `*circle*' distinguishes whether we are in a circle,
-               ;; and tracks the approximated attributes so we can
-               ;; finalize them once we've reached a fixed point. Note
-               ;; this does mean we may be evaluating cycles in other
-               ;; SCCs of the attribute graph; we do start new cycles
-               ;; when we encounter a definitely noncircular
-               ;; attribute. The value of `*circle*' is all the
-               ;; approximations to finalize when a fixed point is
-               ;; reached.
-               ((circle (make-instance 'circular-eval))
-                (*circle* circle))
-             (declare (dynamic-extent circle))
-             (with-slots (changep max-iterations memo-cells visited)
-                 circle
-               (setf (@ visited node) t
-                     (cdr p) (approximation bottom-values))
-               (iter
-                 (when (zerop (decf max-iterations))
-                   (error "Divergent attribute after ~a iteration~:p: ~s"
-                          max-iterations
-                          fn-name))
-                 (setf changep nil)
-                 (let ((new-vals
+        (prog1
+            (cond
+              ((listp (cdr p))
+               (values-list (cdr p)))
+              ;; TODO Should we distinguish "agnostic" attributes (that
+              ;; allow circular eval, but don't require it) from
+              ;; noncircular attributes (that always start a new
+              ;; subgraph?) Cf. Öqvist 2017.
+              ((not bottom-values)
+               (when (approximation-p (cdr p))
+                 (error 'circular-attribute
+                        :node node
+                        :proxy proxy
+                        :fn fn-name))
+               (setf (cdr p) (approximation))
+               (if *circle*
+                   ;; Start a new SCC.
+                   (let* ((*change* nil)
+                          (*circle* nil))
+                     (setf (cdr p)
+                           (multiple-value-list (funcall thunk))))
+                   (setf (cdr p)
                          (multiple-value-list (funcall thunk))))
-                   (unless (equal new-vals
-                                  (approximation-values (cdr p)))
-                     (setf changep t))
-                   (setf (cdr p) (approximation new-vals))
-                   (ensure-gethash p memo-cells p))
-                 (while changep))
-               (setf (@ visited node) nil)
-               ;; We've reached a fixed point, finalize the
-               ;; approximations.
-               (iter (for (k nil) in-hashtable memo-cells)
-                     (when (approximation-p (cdr p))
-                       (setf (cdr p) (approximation-values (cdr p)))))
-               (values-list (cdr p)))))
-          ((not (@ (visited *circle*) node))
-           (let ((circle *circle*))
-             (with-slots (changep memo-cells visited) circle
-               (setf (@ visited node) t)
-               (when (eql (cdr p) +in-progress+)
-                 (setf (cdr p) (approximation bottom-values)
-                       (@ memo-cells p) t))
-               (let ((new-vals
-                       (multiple-value-list (funcall thunk))))
-                 (unless (equal new-vals
-                                (approximation-values (cdr p)))
-                   (setf changep t))
-                 (setf (cdr p) (approximation new-vals)
-                       (@ visited node) nil)
-                 (values-list (approximation-values (cdr p)))))))
-          (t
-           (values-list (approximation-values (cdr p)))))
+               (values-list (cdr p)))
+              ((not *circle*)
+               (let*
+                   ;; `*circle*' distinguishes whether we are in a circle,
+                   ;; and tracks the approximated attributes so we can
+                   ;; finalize them once we've reached a fixed point. Note
+                   ;; this does mean we may be evaluating cycles in other
+                   ;; SCCs of the attribute graph; we do start new cycles
+                   ;; when we encounter a definitely noncircular
+                   ;; attribute. The value of `*circle*' is all the
+                   ;; approximations to finalize when a fixed point is
+                   ;; reached.
+                   ((circle (make-instance 'circular-eval))
+                    (*circle* circle)
+                    (max-iterations *max-circular-iterations*))
+                 (declare (dynamic-extent circle))
+                 (with-slots (changep iterations memo-cells visited)
+                     circle
+                   (setf (@ visited node) t
+                         (cdr p) (approximation bottom-values))
+                   (iter
+                     (when (= (incf iterations) max-iterations)
+                       (error "Divergent attribute after ~a iteration~:p: ~s"
+                              max-iterations
+                              fn-name))
+                     (setf changep nil)
+                     (let ((new-vals
+                             (multiple-value-list (funcall thunk))))
+                       (unless (equal? new-vals
+                                       (approximation-values (cdr p)))
+                         (setf changep t))
+                       (setf (cdr p) (approximation new-vals))
+                       (ensure-gethash p memo-cells p))
+                     (while changep))
+                   (setf (@ visited node) nil)
+                   ;; We've reached a fixed point, finalize the
+                   ;; approximations.
+                   (iter (for (k nil) in-hashtable memo-cells)
+                         (when (approximation-p (cdr p))
+                           (setf (cdr p) (approximation-values (cdr p)))))
+                   (values-list (cdr p)))))
+              ((not (@ (visited *circle*) node))
+               (let ((circle *circle*))
+                 (with-slots (changep memo-cells visited) circle
+                   (setf (@ visited node) t)
+                   (when (eql (cdr p) +in-progress+)
+                     (setf (cdr p) (approximation bottom-values)
+                           (@ memo-cells p) t))
+                   (let ((new-vals
+                           (multiple-value-list (funcall thunk))))
+                     (unless (equal? new-vals
+                                     (approximation-values (cdr p)))
+                       (setf changep t))
+                     (setf (cdr p) (approximation new-vals)
+                           (@ visited node) nil)
+                     (values-list (approximation-values (cdr p)))))))
+              (t
+               (values-list (approximation-values (cdr p)))))
+          (setf normal-exit t))
      ;; If a non-local return occured from THUNK, we need
      ;; to remove p from the alist, otherwise we will never
      ;; be able to compute the function here
-     (etypecase-of memoized-value (cdr p)
-       (list)
-       ;; Is this right for approximation?
-       ((or approximation in-progress)
-        (removef (ref table node) p))))))
+     (unless normal-exit
+       (etypecase-of memoized-value (cdr p)
+         (list)
+         ;; Is this right for approximation?
+         ((or approximation in-progress)
+          (removef (ref table node) p)))))))
 
 (define-condition attribute-condition (condition)
   ())

@@ -2,22 +2,60 @@
   (:nicknames :ft/sel-attributes :ft/sel-attrs)
   (:use
    :gt/full
-   :software-evolution-library/software/tree-sitter
-   :software-evolution-library/software/c
    :functional-trees
-   :functional-trees/attrs
-   :named-readtables
-   :curry-compose-reader-macros
-   :named-readtables)
-  (:shadowing-import-from :software-evolution-library/software/parseable
-                          :source-text :text)
+   :functional-trees/attrs)
   (:shadowing-import-from :fset :set :map :union :empty-set :empty-map
                           :restrict)
-  (:export :st :defs :uses)
+  (:export
+    :c-ast
+    :c-compound-statement
+    :c-declaration
+    :c-identifier
+    :c-primitive-type
+    :c-translation-unit
+    :c-type
+    :st
+    :defs
+    :uses)
   (:documentation "Package for integration of SEL with FT attributes."))
 
 (in-package :functional-trees/sel-attributes)
-(in-readtable :curry-compose-reader-macros)
+
+;;; Minimal AST implementation.
+
+(define-node-class c-ast (node attrs-root)
+  ((child-slots
+    :allocation :class
+    :initform '(children))
+   (children
+    :initarg :children
+    :initform nil)
+   (text :initarg :text :reader text)))
+
+(define-node-class c-compound-statement (c-ast)
+  ())
+
+(define-node-class c-declaration (c-ast)
+  ;; TODO Defining :c-declarator or :c-type would claim the keyword
+  ;; globally for this package's symbol. See `ft::store-actual-slot'.
+  ((c-declarator*
+    :initarg :c-declarator*
+    :reader c-declarator)
+   (c-type*
+    :initarg :c-type*
+    :reader c-type)
+   (child-slots
+    :allocation :class
+    :initform '(c-declarator* (c-type* . 1)))))
+
+(define-node-class c-identifier (c-ast)
+  ())
+
+(define-node-class c-primitive-type (c-ast)
+  ())
+
+(define-node-class c-translation-unit (c-ast)
+  ())
 
 ;;; Define a simple propagator for type information on C terms
 
@@ -33,6 +71,7 @@
 
 (def-attr-fun st (in)
   "Compute the symbol table at this node."
+  (:bottom-values (empty-map))
   ;; Default method: propagate down
   (:method ((node node) &optional in)
     ;; This passes the full ST down to the subtree
@@ -54,19 +93,19 @@
     ;; Propagate across children
     (reduce (lambda (in2 child) (st-union (st child in2) (defs child)))
             (children node)
-            :initial-value in))
-  )
+            :initial-value in)))
 
 (def-attr-fun defs ()
   "Map of definitions from a node"
+  (:bottom-values (empty-map))
   (:method ((node node))
     (empty-map))
   (:method ((node c-declaration))
-    (decl-map node))
-  )
+    (decl-map node)))
 
 (def-attr-fun uses ()
   "Set of names that occur in a subtree"
+  (:bottom-values (empty-set))
   (:method ((node node))
     (reduce #'union (children node)
             :key #'uses :initial-value (fset:empty-set)))

@@ -97,6 +97,6 @@ TODO: consider how lazy attributes could fit into this scheme.
 
 ## Example
 
-See sel-attributes.lisp and sel-attributes-test.lisp for a toy example
-of using attributes to propagate type declarations in a very simple subset
-of C.
+See sel-attributes.lisp and the sel-attrs.1 test in test.lisp for a
+toy example of using attributes to propagate type declarations in a
+very simple subset of C.

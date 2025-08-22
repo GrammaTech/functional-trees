@@ -13,66 +13,73 @@
 (defpackage :functional-trees/test
   (:nicknames :ft/test)
   (:use :common-lisp
-        :functional-trees
         :alexandria
-        :named-readtables
-        :curry-compose-reader-macros
-        :stefil+
-        :iterate
         :cl-store
+        :curry-compose-reader-macros
+        :functional-trees
+        :functional-trees/sel-attributes
+        :iterate
+        :named-readtables
+        :stefil+
         #+gt :testbot)
-  (:import-from :uiop/utility :nest)
-  (:import-from :uiop/stream :with-temporary-file)
+  (:import-from :bordeaux-threads)
   (:import-from :cl-store)
   (:import-from :flexi-streams)
-  (:import-from :bordeaux-threads)
+  (:import-from
+    :serapeum
+    :box
+    :make)
+  (:import-from
+    :uiop/stream
+    :with-temporary-file)
+  (:import-from
+    :uiop/utility
+    :nest)
   (:shadowing-import-from
-   :functional-trees
-   :dump
-   :equal?
-   :lexicographic-<
-   :mapc
-   :mapcar
-   :node
-   :node-can-implant
-   :node-valid
-   :nodes-disjoint
-   :path-of-node
-   :path-p
-   :prefix?
-   :serial-number
-   :subst
-   :subst-if
-   :subst-if-not
-   :with-encapsulation)
-
+    :fset
+    :@ :convert :less :splice :insert :lookup :alist
+    :map :set :partition :alist :size
+    :range :compose :unionf :appendf :with :removef
+    ;; Shadowed set operations
+    :union :intersection :set-difference :complement
+    ;; Shadowed sequence operations
+    :first :last :subseq :reverse :sort :stable-sort
+    :reduce
+    :find :find-if :find-if-not
+    :count :count-if :count-if-not
+    :position :position-if :position-if-not
+    :remove :remove-if :remove-if-not
+    :substitute :substitute-if :substitute-if-not
+    :some :every :notany :notevery)
   (:shadowing-import-from
-   :functional-trees/attrs
-   :def-attr-fun
-   :*attrs*
-   :with-attr-table
-   :attr-missing
-   :attrs-root
-   :subroot
-   :subroot?
-   :has-attribute-p)
-   
+    :functional-trees
+    :dump
+    :equal?
+    :lexicographic-<
+    :mapc
+    :mapcar
+    :node
+    :node-can-implant
+    :node-valid
+    :nodes-disjoint
+    :path-of-node
+    :path-p
+    :prefix?
+    :serial-number
+    :subst
+    :subst-if
+    :subst-if-not
+    :with-encapsulation)
   (:shadowing-import-from
-   :fset
-   :@ :convert :less :splice :insert :lookup :alist
-   :map :set :partition :alist :size
-   :range :compose :unionf :appendf :with :removef
-   ;; Shadowed set operations
-   :union :intersection :set-difference :complement
-   ;; Shadowed sequence operations
-   :first :last :subseq :reverse :sort :stable-sort
-   :reduce
-   :find :find-if :find-if-not
-   :count :count-if :count-if-not
-   :position :position-if :position-if-not
-   :remove :remove-if :remove-if-not
-   :substitute :substitute-if :substitute-if-not
-   :some :every :notany :notevery)
+    :functional-trees/attrs
+    :*attrs*
+    :attr-missing
+    :attrs-root
+    :def-attr-fun
+    :has-attribute-p
+    :subroot
+    :subroot?
+    :with-attr-table)
   #+gt (:shadowing-import-from :testbot :batch-test)
   (:export :test))
 (in-package :ft/test)
@@ -421,6 +428,10 @@ bucket getting at least 1.  Return as a list."
 
 ;;;; Test suite.
 (defroot test)
+
+
+;;; Functional treee tests.
+
 (defsuite ft-test "Functional trees top-level test suite.")
 
 ;;; Simple Copy Tests
@@ -2480,3 +2491,43 @@ a different caching policy."
     ;; than the spawned thread serial numbers.
     (is (< base-thread-serial-number-1
            base-thread-serial-number-2))))
+
+(deftest sel-attrs.1 ()
+  "Simplified symbol table should work."
+  (let ((root
+          ;; Equivalent to (convert 'c-ast "int x; int y; char z;").
+          (make 'c-translation-unit
+                :children
+                (list
+                 (make 'c-declaration
+                       :c-declarator*
+                       (list (make 'c-identifier :text "x"))
+                       :c-type*
+                       (make 'c-primitive-type :text "int"))
+                 (make 'c-declaration
+                       :c-declarator*
+                       (list (make 'c-identifier :text "y"))
+                       :c-type*
+                       (make 'c-primitive-type :text "int"))
+                 (make 'c-declaration
+                       :c-declarator*
+                       (list (make 'c-identifier :text "z"))
+                       :c-type*
+                       (make 'c-primitive-type :text "char"))))))
+    (with-attr-table root
+      (is (equal? (st root (fset:empty-map))
+                  (convert 'fset:map '(("x" . "int") ("y" . "int") ("z" . "char")))))
+      (is (equal? (st root)
+                  (convert 'fset:map '(("x" . "int") ("y" . "int") ("z" . "char")))))
+      (is (equal? (st (first (children root))) (fset:empty-map)))
+      (is (equal? (defs (first (children root)))
+                  (convert 'fset:map '(("x" . "int")))))
+      (is (equal? (st (second (children root)))
+                  (convert 'fset:map '(("x" . "int")))))
+      (is (equal? (defs (second (children root)))
+                  (convert 'fset:map '(("y" . "int")))))
+      (is (equal? (st (third (children root)))
+                  (convert 'fset:map '(("x" . "int") ("y" . "int")))))
+      (is (equal? (defs (third (children root)))
+                  (convert 'fset:map '(("z" . "char")))))
+      (is (equal? (uses root) (set "x" "y" "z"))))))
