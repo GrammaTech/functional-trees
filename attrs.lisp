@@ -39,14 +39,11 @@
     :defstruct-read-only
     :defsubst
     :defvar-unbound
-    :enq
     :etypecase-of
     :lret
     :mvlet*
     :nest
     :nlet
-    :qlist
-    :queue
     :slot-value-safe
     :unbox
     :standard/context
@@ -80,17 +77,18 @@
 (in-readtable :curry-compose-reader-macros)
 
 
-;;; Variables
-
+;;; Memoized values
 
 (defvar *circle* nil)
 
 (defparameter-unbound *change*
   "Track whether a change has occured in a circle.")
 
+(defparameter *max-circular-iterations* 10000)
+
 (defgeneric attribute-bottom-values (attr)
-  (:documentation "If an attribute has a bottom value (is circular), return it as
-multiple values.")
+  (:documentation
+   "Return, as multiple values, the bottom value for a circular attribute.")
   (:method ((attr t))
     (values)))
 
@@ -99,7 +97,28 @@ multiple values.")
 Stored while an attribute is being computed to allow detecting
 circular attribute dependencies.")
 
+(defclass circular-eval ()
+  ((changep
+    :documentation "Has there been a change in this iteration?"
+    :initform nil
+    :type boolean)
+   (iterations-remaining
+    :documentation "How many iterations are left?"
+    :initform *max-circular-iterations*
+    :type (integer *))
+   (visited
+    :documentation "Has this node been visited in this iteration?"
+    :initform (make-hash-table :test 'eq)
+    :reader visited
+    :type hash-table)
+   (memo-cells
+    :documentation "Holds memo cells to finalize when done."
+    :initform (make-hash-table :test 'eq)
+    :type hash-table))
+  (:documentation "Circular evaluation state"))
+
 (defstruct (approximation (:constructor approximation (&optional values)))
+  "Holds the approximation to attributes during circular evaluation."
   (values nil :type t))
 
 (deftype in-progress ()
@@ -109,6 +128,9 @@ circular attribute dependencies.")
   "Type of a attribute value: either the in-progress
 sentinel, or a list of the values returned by the attribute function."
   '(or in-progress approximation list))
+
+
+;;; Attribute sessions.
 
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
@@ -845,22 +867,23 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   (nest
    (let* ((proxy (attr-proxy node))
           (node (or proxy node))))
-   (multiple-value-bind
-         (alist p)
+   (multiple-value-bind (alist p)
        (retrieve-memoized-attr-fn
         node
         fn-name
         (node-attr-table node)))
    (if (and p (listp (cdr p)))
+       ;; Already final.
        (values-list (cdr p)))
-   (mvlet* ((p (or p (cons fn-name +in-progress+)))
-            (trail-pair (cons fn-name node))
-            (*attribute-trail*
-             (cons trail-pair *attribute-trail*))
-            (table (node-attr-table node))
-            (bottom-values
-             (multiple-value-list (attribute-bottom-values fn-name))))
-     (declare (dynamic-extent trail-pair *attribute-trail*))
+   ;; Stack of attributes being computed.
+   (let* ((trail-pair (cons fn-name node))
+          (*attribute-trail*
+            (cons trail-pair *attribute-trail*)))
+     (declare (dynamic-extent trail-pair *attribute-trail*)))
+   (let* ((p (or p (cons fn-name +in-progress+)))
+          (table (node-attr-table node))
+          (bottom-values
+            (multiple-value-list (attribute-bottom-values fn-name))))
      (when proxy
        (record-deps proxy))
      ;; additional pushes onto the alist may occur in the call to
@@ -896,49 +919,59 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                      (multiple-value-list (funcall thunk))))
            (values-list (cdr p)))
           ((not *circle*)
-           (let
-               ;; *circle* distinguishes whether we are in a circle,
-               ;; *and tracks the approximated attributes so we can
-               ;; *finalize them once we've reached a fixed point.
-               ;; *Note this does mean we may be evaluating cycles in
-               ;; *other SCCs of the attribute graph; we do start new
-               ;; *cycles when we encounter a definitely noncircular
-               ;; *attribute.
-               ((*circle* (queue))
-                ;; *change* tracks whether any change has taken
-                ;; *place in this iteration, at any level.
-                (*change* nil))
-             (declare (dynamic-extent *circle*))
-             (setf (cdr p) (approximation bottom-values))
-             (iter
-               (for i downfrom 10000)
-               (when (zerop i)
-                 (error "Divergent attribute: ~s" fn-name))
-               (setf (bound-value '*change*) nil)
+           (let*
+               ;; `*circle*' distinguishes whether we are in a circle,
+               ;; and tracks the approximated attributes so we can
+               ;; finalize them once we've reached a fixed point. Note
+               ;; this does mean we may be evaluating cycles in other
+               ;; SCCs of the attribute graph; we do start new cycles
+               ;; when we encounter a definitely noncircular
+               ;; attribute. The value of `*circle*' is all the
+               ;; approximations to finalize when a fixed point is
+               ;; reached.
+               ((circle (make-instance 'circular-eval))
+                (*circle* circle))
+             (declare (dynamic-extent circle))
+             (with-slots (changep max-iterations memo-cells visited)
+                 circle
+               (setf (@ visited node) t
+                     (cdr p) (approximation bottom-values))
+               (iter
+                 (when (zerop (decf max-iterations))
+                   (error "Divergent attribute after ~a iteration~:p: ~s"
+                          max-iterations
+                          fn-name))
+                 (setf changep nil)
+                 (let ((new-vals
+                         (multiple-value-list (funcall thunk))))
+                   (unless (equal new-vals
+                                  (approximation-values (cdr p)))
+                     (setf changep t))
+                   (setf (cdr p) (approximation new-vals))
+                   (ensure-gethash p memo-cells p))
+                 (while changep))
+               (setf (@ visited node) nil)
+               ;; We've reached a fixed point, finalize the
+               ;; approximations.
+               (iter (for (k nil) in-hashtable memo-cells)
+                     (when (approximation-p (cdr p))
+                       (setf (cdr p) (approximation-values (cdr p)))))
+               (values-list (cdr p)))))
+          ((not (@ (visited *circle*) node))
+           (let ((circle *circle*))
+             (with-slots (changep memo-cells visited) circle
+               (setf (@ visited node) t)
+               (when (eql (cdr p) +in-progress+)
+                 (setf (cdr p) (approximation bottom-values)
+                       (@ memo-cells p) t))
                (let ((new-vals
                        (multiple-value-list (funcall thunk))))
                  (unless (equal new-vals
                                 (approximation-values (cdr p)))
-                   (setf (bound-value '*change*) t))
-                 (setf (cdr p) (approximation new-vals))
-                 (enq p *circle*))
-               (while *change*))
-             ;; We've reached a fixed point, finalize the
-             ;; approximations.
-             (dolist (p (qlist *circle*))
-               (when (approximation-p (cdr p))
-                 (setf (cdr p) (approximation-values (cdr p)))))
-             (values-list (cdr p))))
-          ((not (approximation-p (cdr p)))
-           (setf (cdr p) (approximation bottom-values))
-           (let ((new-vals
-                   (multiple-value-list (funcall thunk))))
-             (unless (equal new-vals
-                            (approximation-values (cdr p)))
-               (setf (bound-value '*change*) t))
-             (setf (cdr p) (approximation new-vals))
-             (enq p *circle*)
-             (values-list (approximation-values (cdr p)))))
+                   (setf changep t))
+                 (setf (cdr p) (approximation new-vals)
+                       (@ visited node) nil)
+                 (values-list (approximation-values (cdr p)))))))
           (t
            (values-list (approximation-values (cdr p)))))
      ;; If a non-local return occured from THUNK, we need
