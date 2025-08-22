@@ -880,6 +880,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         node
         fn-name
         table))
+   (flet ((equal-lists-p (x y)
+            ;; fset:equal? doesn't check lengths first.
+            (and (length= x y)
+                 (every #'equal? x y)))))
    (if (and p (listp (cdr p)))
        ;; Already final.
        (values-list (cdr p)))
@@ -955,8 +959,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                      (setf changep nil)
                      (let ((new-vals
                              (multiple-value-list (funcall thunk))))
-                       (unless (equal? new-vals
-                                       (approximation-values (cdr p)))
+                       (unless (equal-lists-p
+                                new-vals
+                                (approximation-values (cdr p)))
                          (setf changep t)
                          ;; TODO mutate
                          (setf (approximation-values (cdr p))
@@ -978,8 +983,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                          (@ memo-cells p) t)
                    (let ((new-vals
                            (multiple-value-list (funcall thunk))))
-                     (unless (equal? new-vals
-                                     (approximation-values (cdr p)))
+                     (unless (equal-lists-p
+                              new-vals
+                              (approximation-values (cdr p)))
                        (setf changep t))
                      changep
                      (setf (approximation-values (cdr p))
