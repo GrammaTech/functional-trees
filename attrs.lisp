@@ -88,7 +88,7 @@
 
 (defparameter *max-circular-iterations* 100)
 
-(defgeneric attribute-bottom-values (attr)
+(defgeneric attribute-bottom (attr)
   (:documentation
    "Return the bottom value for a circular attribute.
 This can return multiple values.")
@@ -813,12 +813,12 @@ here."
             (let ((body '((call-next-method))))
               (with-thunk (body)
                 `(memoize-attr-fun ,node ',name ,body))))
-          (bottom-values
-            (pop-assoc :bottom-values methods)))
+          (bottom
+            (pop-assoc :bottom methods)))
       `(progn
-         ,@(when bottom-values
-             `((defmethod attribute-bottom-values ((attr (eql ',name)))
-                 ,(second bottom-values))))
+         ,@(when bottom
+             `((defmethod attribute-bottom ((attr (eql ',name)))
+                 ,(second bottom))))
          (defgeneric ,name (,node ,@(when optional-args `(&optional ,@optional-args)))
            ,@(when docstring `((:documentation ,docstring)))
            (:method-combination standard/context)
@@ -897,8 +897,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
             (cons trail-pair *attribute-trail*)))
      (declare (dynamic-extent trail-pair *attribute-trail*)))
    (let* ((p (or p (cons fn-name +in-progress+)))
-          (bottom-values
-            (multiple-value-list (attribute-bottom-values fn-name)))
+          (bottom
+            (multiple-value-list (attribute-bottom fn-name)))
           normal-exit)
      (when proxy
        (record-deps proxy))
@@ -920,7 +920,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
               ;; allow circular eval, but don't require it) from
               ;; noncircular attributes (that always start a new
               ;; subgraph?) Cf. Öqvist 2017.
-              ((not bottom-values)
+              ((not bottom)
                (when (approximation-p (cdr p))
                  (error 'circular-attribute
                         :node node
@@ -954,7 +954,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                  (with-slots (changep iterations memo-cells visited)
                      circle
                    (setf (@ visited node) t
-                         (cdr p) (approximation bottom-values))
+                         (cdr p) (approximation bottom))
                    (iter
                      (when (= (incf iterations) max-iterations)
                        (error "Divergent attribute after ~a iteration~:p: ~s"
@@ -981,7 +981,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                  (with-slots (changep memo-cells visited) circle
                    (setf (@ visited node) t)
                    (when (eql (cdr p) +in-progress+)
-                     (setf (cdr p) (approximation bottom-values)
+                     (setf (cdr p) (approximation bottom)
                            (@ memo-cells p) t))
                    (let ((new-vals
                            (multiple-value-list (funcall thunk))))
