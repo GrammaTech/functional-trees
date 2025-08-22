@@ -925,8 +925,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                      (values-list
                       (if *circle*
                           ;; Start a new SCC.
-                          (let* ((*change* nil)
-                                 (*circle* nil))
+                          (let ((*circle* nil))
                             (setf (cdr p)
                                   (multiple-value-list (funcall thunk))))
                           (setf (cdr p)
@@ -960,7 +959,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                                        (approximation-values (cdr p)))
                          (setf changep t)
                          ;; TODO mutate
-                         (setf (cdr p) (approximation new-vals)))
+                         (setf (approximation-values (cdr p))
+                               new-vals))
                        (ensure-gethash p memo-cells p))
                      (while changep))
                    (setf (approximation-visited-p (cdr p)) nil)
@@ -982,9 +982,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                                      (approximation-values (cdr p)))
                        (setf changep t))
                      changep
-                     ;; TODO mutate
-                     (setf (cdr p) (approximation new-vals))
-                     (setf (approximation-visited-p (cdr p)) nil)
+                     (setf (approximation-values (cdr p))
+                           new-vals
+                           (approximation-visited-p (cdr p))
+                           nil)
                      (values-list (approximation-values (cdr p)))))))
               ((approximation-p (cdr p))
                (values-list (approximation-values (cdr p)))))
