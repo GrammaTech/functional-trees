@@ -94,6 +94,12 @@ This can return multiple values.")
   (:method ((attr t))
     (values)))
 
+(defgeneric attribute-converged-p (attr old new)
+  (:documentation
+   "Return true if OLD and NEW have converged.")
+  (:method ((attr t) x y)
+    (equal x y)))
+
 (defclass circular-eval ()
   ((changep
     :documentation "Has there been a change in this iteration?"
@@ -793,37 +799,70 @@ attributes.
 If you are defining an inherited attribute you may also want to
 specialize `attr-missing' to restart the computation of the attribute
 from the root node, if it has not been computed for the node passed in
-here."
+here.
+
+To define a circular attribute, supply `(:circular)'. The first
+argument to `:circular' is the test used to compare if values have
+converged; the second value is a function to call to get the bottom
+value \(defaults to nil if not provided). Both arguments are evaluated
+in the lexical environment. Note you can use `(values ...)` to return
+multiple values in bottom thunk; also, returning no values means an
+attribute will not be considered circular.
+
+    ;; The attribute returns two values as its bottom. `fset:equal?`
+    ;; will be used to compare the values to see if they've converged.
+    (:circular #'fset:equal? (lambda () (values (empty-map) (empty-set))))
+"
   (assert (symbolp name))
   (assert (every #'symbolp optional-args))
   (with-gensyms (node present?)
-    (let ((docstring
-            (when (stringp (car methods))
-              (pop methods)))
-          (body
-            (let ((body '((call-next-method))))
-              (with-thunk (body)
-                `(memoize-attr-fun ,node ',name ,body))))
-          (bottom
-            (pop-assoc :bottom methods)))
-      `(progn
-         (defmethod attribute-bottom ((attr (eql ',name)))
-           ,(if bottom (second bottom) '(values)))
-         (defgeneric ,name (,node ,@(when optional-args `(&optional ,@optional-args)))
-           ,@(when docstring `((:documentation ,docstring)))
-           (:method-combination standard/context)
-           (:method :context (,node ,@(when optional-args
-                                        `(&optional (,(car optional-args) nil ,present?)
-                                                    ,@(cdr optional-args))))
-             ,@(when optional-args
-                 `((declare (ignorable ,@optional-args))))
-             (with-record-subroot-deps (,node)
-               ,(if optional-args
-                    `(if ,present?
-                         ,body
-                         (cached-attr-fn ,node ',name))
-                    body)))
-           ,@methods)))))
+    (mvlet*
+        ((docstring
+          (when (stringp (car methods))
+            (pop methods)))
+         (body
+          (let ((body '((call-next-method))))
+            (with-thunk (body)
+              `(memoize-attr-fun ,node ',name ,body))))
+         (circular
+          (pop-assoc :circular methods))
+         (test bottom
+          (when circular
+            (destructuring-bind (test bottom)
+                (rest circular)
+              (values test bottom)))))
+      (with-unique-names (bottom-val test-val)
+        `(progn
+           ;; These are always defined so they are overridden if the
+           ;; attribute is redefined to be noncircular.
+           ,(if circular
+                `(let ((,bottom-val (ensure-function ,bottom)))
+                   (defmethod attribute-bottom ((attr (eql ',name)))
+                     (funcall ,bottom-val)))
+                `(defmethod attribute-bottom ((attr (eql ',name)))
+                   (values)))
+           ,(if circular
+                `(let ((,test-val (ensure-function ,test)))
+                   (defmethod attribute-converted-p ((attr (eql ',name)) old new)
+                     (funcall ,test-val old new)))
+                `(defmethod attribute-converged-p ((attr (eql ',name)) old new)
+                   (declare (ignore old new))
+                   (call-next-method)))
+           (defgeneric ,name (,node ,@(when optional-args `(&optional ,@optional-args)))
+             ,@(when docstring `((:documentation ,docstring)))
+             (:method-combination standard/context)
+             (:method :context (,node ,@(when optional-args
+                                          `(&optional (,(car optional-args) nil ,present?)
+                                                      ,@(cdr optional-args))))
+               ,@(when optional-args
+                   `((declare (ignorable ,@optional-args))))
+               (with-record-subroot-deps (,node)
+                 ,(if optional-args
+                      `(if ,present?
+                           ,body
+                           (cached-attr-fn ,node ',name))
+                      body)))
+             ,@methods))))))
 
 (defun retrieve-memoized-attr-fn (node fn-name table)
   "Look up memoized value for FN-NAME on NODE.
@@ -881,10 +920,12 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         node
         fn-name
         table))
-   (flet ((equal-lists-p (x y)
-            ;; fset:equal? doesn't check lengths first.
-            (and (length= x y)
-                 (every #'equal? x y)))))
+   (flet ((equal-lists-p (xs ys)
+            (and (length= xs ys)
+                 (every
+                  (lambda (x y)
+                    (attribute-converged-p fn-name x y))
+                  xs ys)))))
    (if (and p (listp (cdr p)))
        ;; Already final.
        (values-list (cdr p)))

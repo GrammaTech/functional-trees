@@ -71,7 +71,7 @@
 
 (def-attr-fun st (in)
   "Compute the symbol table at this node."
-  (:bottom (empty-map))
+  (:circular #'fset:equal? (constantly (empty-map)))
   ;; Default method: propagate down
   (:method ((node node) &optional in)
     ;; This passes the full ST down to the subtree
@@ -97,7 +97,7 @@
 
 (def-attr-fun defs ()
   "Map of definitions from a node"
-  (:bottom (empty-map))
+  (:circular #'fset:equal? (constantly (empty-map)))
   (:method ((node node))
     (empty-map))
   (:method ((node c-declaration))
@@ -105,7 +105,7 @@
 
 (def-attr-fun uses ()
   "Set of names that occur in a subtree"
-  (:bottom (empty-set))
+  (:circular #'fset:equal? (constantly (empty-map)))
   (:method ((node node))
     (reduce #'union (children node)
             :key #'uses :initial-value (fset:empty-set)))
