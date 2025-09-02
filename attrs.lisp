@@ -82,6 +82,9 @@
 
 ;;; Memoized values
 
+(defvar *allow-circle* t
+  "Whether to allow circular attributes.")
+
 (defvar *circle* nil
   "The currently executing circular attribute evaluation, if any.")
 
@@ -955,108 +958,109 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         ;; attributes from Magnusson 2007.
         (multiple-value-prog1
             (econd
-             ((listp (cdr p))
-              (values-list (cdr p)))
-             ;; TODO Should we distinguish "agnostic" attributes (that
-             ;; allow circular eval, but don't require it) from
-             ;; noncircular attributes (that always start a new
-             ;; subgraph?) Cf. Öqvist 2017.
-             ((not bottom)
-              (if (approximation-visited-p (cdr p))
-                  (error 'circular-attribute
-                         :node node
-                         :proxy proxy
-                         :fn fn-name)
-                  (progn
-                    (setf (approximation-visited-p (cdr p)) t)
-                    (incf (approximation-access-count (cdr p)))
-                    (maxf max-access-count (approximation-access-count (cdr p)))
-                    (values-list
-                     (if *circle*
-                         ;; Start a new SCC.
-                         (let ((*circle* nil))
-                           (setf (cdr p)
-                                 (multiple-value-list (funcall thunk))))
-                         (setf (cdr p)
-                               (multiple-value-list (funcall thunk))))))))
-             ((not *circle*)
-              (let*
-                  ;; `*circle*' distinguishes whether we are in a circle,
-                  ;; and tracks the approximated attributes so we can
-                  ;; finalize them once we've reached a fixed point. Note
-                  ;; this does mean we may be evaluating cycles in other
-                  ;; SCCs of the attribute graph; we do start new cycles
-                  ;; when we encounter a definitely noncircular
-                  ;; attribute. The value of `*circle*' is all the
-                  ;; approximations to finalize when a fixed point is
-                  ;; reached.
-                  ((circle (make-instance 'circular-eval))
-                   (*circle* circle)
-                   (max-iterations *max-circular-iterations*))
-                (declare (dynamic-extent circle))
-                (with-slots (changep iterations memo-cells) circle
-                  (setf (approximation-visited-p (cdr p)) t)
-                  (incf (approximation-access-count (cdr p)))
-                  (when (= (approximation-access-count (cdr p)) 1)
-                    (push p memo-cells))
-                  (maxf max-access-count (approximation-access-count (cdr p)))
-                  (iter
-                    (when (= (incf iterations) max-iterations)
-                      (error "Divergent attribute after ~a iteration~:p: ~s"
-                             max-iterations
-                             fn-name))
-                    (setf changep nil)
-                    (let ((new-vals
-                            (multiple-value-list (funcall thunk))))
-                      (unless (equal-lists-p
-                               new-vals
-                               (approximation-values (cdr p)))
-                        (setf changep t)
-                        ;; TODO mutate
-                        (setf (approximation-values (cdr p))
-                              new-vals)))
-                    (while (and changep
-                                ;; If no attribute is accessed more
-                                ;; than once, the attribute is not
-                                ;; actually circular.
-                                (> max-access-count 1))))
-                  (setf (approximation-visited-p (cdr p)) nil)
-                  ;; We've reached a fixed point, finalize the
-                  ;; approximations.
-                  (iter (for p in memo-cells)
-                        (when (approximation-p (cdr p))
-                          (setf (cdr p) (approximation-values (cdr p)))))
-                  (values-list (cdr p)))))
-             ((not (approximation-visited-p (cdr p)))
-              node
-              (let ((circle *circle*))
-                (with-slots (changep memo-cells) circle
-                  (setf (approximation-visited-p (cdr p)) t)
-                  (incf (approximation-access-count (cdr p)))
-                  (maxf max-access-count (approximation-access-count (cdr p)))
-                  (when (= (approximation-access-count (cdr p)) 1)
-                    (push p memo-cells))
-                  (let ((new-vals
-                          (multiple-value-list (funcall thunk))))
-                    (unless (equal-lists-p
-                             new-vals
-                             (approximation-values (cdr p)))
-                      (setf changep t))
-                    changep
-                    (setf (approximation-values (cdr p))
-                          new-vals
-                          (approximation-visited-p (cdr p))
-                          nil)
-                    (values-list (approximation-values (cdr p)))))))
-             ;; TODO Bump access count?
-             ((approximation-p (cdr p))
-              ;; TODO Needed?
-              (with-slots (memo-cells) *circle*
-                (incf (approximation-access-count (cdr p)))
-                (maxf max-access-count (approximation-access-count (cdr p)))
-                (when (= (approximation-access-count (cdr p)) 1)
-                  (push p memo-cells)))
-              (values-list (approximation-values (cdr p)))))
+              ((listp (cdr p))
+               (values-list (cdr p)))
+              ;; TODO Should we distinguish "agnostic" attributes (that
+              ;; allow circular eval, but don't require it) from
+              ;; noncircular attributes (that always start a new
+              ;; subgraph?) Cf. Öqvist 2017.
+              ((or (not bottom)
+                   (not *allow-circle*))
+               (if (approximation-visited-p (cdr p))
+                   (error 'circular-attribute
+                          :node node
+                          :proxy proxy
+                          :fn fn-name)
+                   (progn
+                     (setf (approximation-visited-p (cdr p)) t)
+                     (incf (approximation-access-count (cdr p)))
+                     (maxf max-access-count (approximation-access-count (cdr p)))
+                     (values-list
+                      (if *circle*
+                          ;; Start a new SCC.
+                          (let ((*circle* nil))
+                            (setf (cdr p)
+                                  (multiple-value-list (funcall thunk))))
+                          (setf (cdr p)
+                                (multiple-value-list (funcall thunk))))))))
+              ((not *circle*)
+               (let*
+                   ;; `*circle*' distinguishes whether we are in a circle,
+                   ;; and tracks the approximated attributes so we can
+                   ;; finalize them once we've reached a fixed point. Note
+                   ;; this does mean we may be evaluating cycles in other
+                   ;; SCCs of the attribute graph; we do start new cycles
+                   ;; when we encounter a definitely noncircular
+                   ;; attribute. The value of `*circle*' is all the
+                   ;; approximations to finalize when a fixed point is
+                   ;; reached.
+                   ((circle (make-instance 'circular-eval))
+                    (*circle* circle)
+                    (max-iterations *max-circular-iterations*))
+                 (declare (dynamic-extent circle))
+                 (with-slots (changep iterations memo-cells) circle
+                   (setf (approximation-visited-p (cdr p)) t)
+                   (incf (approximation-access-count (cdr p)))
+                   (when (= (approximation-access-count (cdr p)) 1)
+                     (push p memo-cells))
+                   (maxf max-access-count (approximation-access-count (cdr p)))
+                   (iter
+                     (when (= (incf iterations) max-iterations)
+                       (error "Divergent attribute after ~a iteration~:p: ~s"
+                              max-iterations
+                              fn-name))
+                     (setf changep nil)
+                     (let ((new-vals
+                             (multiple-value-list (funcall thunk))))
+                       (unless (equal-lists-p
+                                new-vals
+                                (approximation-values (cdr p)))
+                         (setf changep t)
+                         ;; TODO mutate
+                         (setf (approximation-values (cdr p))
+                               new-vals)))
+                     (while (and changep
+                                 ;; If no attribute is accessed more
+                                 ;; than once, the attribute is not
+                                 ;; actually circular.
+                                 (> max-access-count 1))))
+                   (setf (approximation-visited-p (cdr p)) nil)
+                   ;; We've reached a fixed point, finalize the
+                   ;; approximations.
+                   (iter (for p in memo-cells)
+                         (when (approximation-p (cdr p))
+                           (setf (cdr p) (approximation-values (cdr p)))))
+                   (values-list (cdr p)))))
+              ((not (approximation-visited-p (cdr p)))
+               node
+               (let ((circle *circle*))
+                 (with-slots (changep memo-cells) circle
+                   (setf (approximation-visited-p (cdr p)) t)
+                   (incf (approximation-access-count (cdr p)))
+                   (maxf max-access-count (approximation-access-count (cdr p)))
+                   (when (= (approximation-access-count (cdr p)) 1)
+                     (push p memo-cells))
+                   (let ((new-vals
+                           (multiple-value-list (funcall thunk))))
+                     (unless (equal-lists-p
+                              new-vals
+                              (approximation-values (cdr p)))
+                       (setf changep t))
+                     changep
+                     (setf (approximation-values (cdr p))
+                           new-vals
+                           (approximation-visited-p (cdr p))
+                           nil)
+                     (values-list (approximation-values (cdr p)))))))
+              ;; TODO Bump access count?
+              ((approximation-p (cdr p))
+               ;; TODO Needed?
+               (with-slots (memo-cells) *circle*
+                 (incf (approximation-access-count (cdr p)))
+                 (maxf max-access-count (approximation-access-count (cdr p)))
+                 (when (= (approximation-access-count (cdr p)) 1)
+                   (push p memo-cells)))
+               (values-list (approximation-values (cdr p)))))
           (setf normal-exit t))
      ;; If a non-local return occured from THUNK, we need
      ;; to remove p from the alist, otherwise we will never

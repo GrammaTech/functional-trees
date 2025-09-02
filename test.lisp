@@ -2494,40 +2494,45 @@ a different caching policy."
 
 (deftest sel-attrs.1 ()
   "Simplified symbol table should work."
-  (let ((root
-          ;; Equivalent to (convert 'c-ast "int x; int y; char z;").
-          (make 'c-translation-unit
-                :children
-                (list
-                 (make 'c-declaration
-                       :c-declarator*
-                       (list (make 'c-identifier :text "x"))
-                       :c-type*
-                       (make 'c-primitive-type :text "int"))
-                 (make 'c-declaration
-                       :c-declarator*
-                       (list (make 'c-identifier :text "y"))
-                       :c-type*
-                       (make 'c-primitive-type :text "int"))
-                 (make 'c-declaration
-                       :c-declarator*
-                       (list (make 'c-identifier :text "z"))
-                       :c-type*
-                       (make 'c-primitive-type :text "char"))))))
-    (with-attr-table root
-      (is (equal? (st root (fset:empty-map))
-                  (convert 'fset:map '(("x" . "int") ("y" . "int") ("z" . "char")))))
-      (is (equal? (st root)
-                  (convert 'fset:map '(("x" . "int") ("y" . "int") ("z" . "char")))))
-      (is (equal? (st (first (children root))) (fset:empty-map)))
-      (is (equal? (defs (first (children root)))
-                  (convert 'fset:map '(("x" . "int")))))
-      (is (equal? (st (second (children root)))
-                  (convert 'fset:map '(("x" . "int")))))
-      (is (equal? (defs (second (children root)))
-                  (convert 'fset:map '(("y" . "int")))))
-      (is (equal? (st (third (children root)))
-                  (convert 'fset:map '(("x" . "int") ("y" . "int")))))
-      (is (equal? (defs (third (children root)))
-                  (convert 'fset:map '(("z" . "char")))))
-      (is (equal? (uses root) (set "x" "y" "z"))))))
+  (labels ((sel-attrs.1 ()
+             (let ((root
+                     ;; Equivalent to (convert 'c-ast "int x; int y; char z;").
+                     (make 'c-translation-unit
+                           :children
+                           (list
+                            (make 'c-declaration
+                                  :c-declarator*
+                                  (list (make 'c-identifier :text "x"))
+                                  :c-type*
+                                  (make 'c-primitive-type :text "int"))
+                            (make 'c-declaration
+                                  :c-declarator*
+                                  (list (make 'c-identifier :text "y"))
+                                  :c-type*
+                                  (make 'c-primitive-type :text "int"))
+                            (make 'c-declaration
+                                  :c-declarator*
+                                  (list (make 'c-identifier :text "z"))
+                                  :c-type*
+                                  (make 'c-primitive-type :text "char"))))))
+               (with-attr-table root
+                 (is (equal? (st root (fset:empty-map))
+                             (convert 'fset:map '(("x" . "int") ("y" . "int") ("z" . "char")))))
+                 (is (equal? (st root)
+                             (convert 'fset:map '(("x" . "int") ("y" . "int") ("z" . "char")))))
+                 (is (equal? (st (first (children root))) (fset:empty-map)))
+                 (is (equal? (defs (first (children root)))
+                             (convert 'fset:map '(("x" . "int")))))
+                 (is (equal? (st (second (children root)))
+                             (convert 'fset:map '(("x" . "int")))))
+                 (is (equal? (defs (second (children root)))
+                             (convert 'fset:map '(("y" . "int")))))
+                 (is (equal? (st (third (children root)))
+                             (convert 'fset:map '(("x" . "int") ("y" . "int")))))
+                 (is (equal? (defs (third (children root)))
+                             (convert 'fset:map '(("z" . "char")))))
+                 (is (equal? (uses root) (set "x" "y" "z")))))))
+    (let ((ft/attrs::*allow-circle* t))
+      (sel-attrs.1))
+    (let ((ft/attrs::*allow-circle* nil))
+      (sel-attrs.1))))
