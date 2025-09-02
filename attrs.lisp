@@ -128,8 +128,8 @@ This can return multiple values.")
   (access-count 0 :type (unsigned-byte 32)))
 
 (deftype memoized-value ()
-  "Type of a attribute value: either the in-progress
-sentinel, or a list of the values returned by the attribute function."
+  "Type of a attribute value: either an approximation, or a list of the
+values returned by the attribute function."
   '(or approximation list))
 
 
