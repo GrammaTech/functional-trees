@@ -150,7 +150,7 @@ values returned by the attribute function."
         (approximation-visit-count (cdr pair))))
 
 (defun mark-not-visiting (pair)
-  (declare ((cons symbol approximation) pair))
+  (declare (memo-cell pair))
   (setf (approximation-visiting-p (cdr pair)) nil))
 
 (defun call/visit (pair body-fn)
