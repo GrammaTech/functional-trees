@@ -154,7 +154,6 @@ values returned by the attribute function."
   (setf (approximation-visiting-p (cdr pair)) nil))
 
 (defun call/visit (pair body-fn)
-  ;; TODO letf?
   (let ((visiting-initially-p
           (approximation-visiting-p (cdr pair))))
     (mark-visiting pair)
@@ -1055,7 +1054,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                                 new-vals
                                 (approximation-values (cdr p)))
                          (setf changep t)
-                         ;; TODO mutate
                          (setf (approximation-values (cdr p))
                                new-vals)))
                      (while (and changep
@@ -1085,7 +1083,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                              new-vals)
                        (values-list (approximation-values (cdr p))))))))
               ((approximation-p (cdr p))
-               ;; TODO Needed?
                (with-visit (p)
                  (values-list (approximation-values (cdr p))))))
           (setf normal-exit t))
