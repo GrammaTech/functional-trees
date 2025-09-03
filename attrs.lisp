@@ -849,7 +849,14 @@ attribute will not be considered circular.
     ;; The attribute returns two values as its bottom. `fset:equal?`
     ;; will be used to compare the values to see if they've converged.
     (:circular #'fset:equal? (lambda () (values (empty-map) (empty-set))))
-"
+
+Since only attributes defined as circular can participate in a cycle
+(a non-circular attribute in a cycle starts a new, distinct
+sub-cycle), and the overhead for a potentially-circular attribute
+outside of an actual cycle is minimal, it's desirable to declare
+attributes circular whenever that makes sense. However the equality
+predicate and bottom value or values must still be specified on a
+per-attribute basis."
   (assert (symbolp name))
   (assert (every #'symbolp optional-args))
   (with-gensyms (node present?)
