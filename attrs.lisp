@@ -837,13 +837,13 @@ specialize `attr-missing' to restart the computation of the attribute
 from the root node, if it has not been computed for the node passed in
 here.
 
-To define a circular attribute, supply `(:circular)'. The first
-argument to `:circular' is the test used to compare if values have
-converged; the second value is a function to call to get the bottom
-value \(defaults to nil if not provided). Both arguments are evaluated
-in the lexical environment. Note you can use `(values ...)` to return
-multiple values in bottom thunk; also, returning no values means an
-attribute will not be considered circular.
+To define a circular attribute, supply the `(:circular)' option with
+two arguments.. The first argument is the converge test; the second
+value is a function to call to get the bottom value \(defaults to
+`nil' if not provided). Both arguments are evaluated in the lexical
+environment of the point of definition.. You can return multiple
+values in the bottom thunk, but returning no values means an attribute
+will not be considered circular.
 
     ;; The attribute returns two values as its bottom. `fset:equal?`
     ;; will be used to compare the values to see if they've converged.
