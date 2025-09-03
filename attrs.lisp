@@ -115,7 +115,11 @@ This can return multiple values.")
    (memo-cells
     :documentation "Holds memo cells to finalize when done."
     :initform nil
-    :type list))
+    :type list)
+   (max-visit-count
+    :documentation "Count the max number of accesses"
+    :accessor max-visit-count
+    :initform 0))
   (:documentation "Circular evaluation state"))
 
 (declaim (inline approximation))
@@ -125,7 +129,7 @@ This can return multiple values.")
   "Holds the approximation to attributes during circular evaluation."
   (values nil :type list)
   (visiting-p nil :type boolean)
-  (access-count 0 :type (unsigned-byte 32)))
+  (visit-count 0 :type (unsigned-byte 32)))
 
 (deftype memoized-value ()
   "Type of a attribute value: either an approximation, or a list of the
@@ -939,8 +943,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
      (declare (dynamic-extent trail-pair *attribute-trail*)))
    (let* ((bottom
             (multiple-value-list (attribute-bottom fn-name)))
-          normal-exit
-          (max-access-count 0))
+          normal-exit)
      (when proxy
        (record-deps proxy))
      (unless p
@@ -973,8 +976,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                           :fn fn-name)
                    (progn
                      (setf (approximation-visiting-p (cdr p)) t)
-                     (incf (approximation-access-count (cdr p)))
-                     (maxf max-access-count (approximation-access-count (cdr p)))
+                     (incf (approximation-visit-count (cdr p)))
+                     (when *circle*
+                       (maxf (max-visit-count *circle*)
+                             (approximation-visit-count (cdr p))))
                      (values-list
                       (if *circle*
                           ;; Start a new SCC.
@@ -998,18 +1003,19 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                     (*circle* circle)
                     (max-iterations *max-circular-iterations*))
                  (declare (dynamic-extent circle))
-                 (with-slots (changep iterations memo-cells) circle
+                 (with-slots (changep iterations max-visit-count memo-cells) circle
                    (setf (approximation-visiting-p (cdr p)) t)
-                   (incf (approximation-access-count (cdr p)))
-                   (when (= (approximation-access-count (cdr p)) 1)
-                     (push p memo-cells))
-                   (maxf max-access-count (approximation-access-count (cdr p)))
                    (iter
-                     (when (= (incf iterations) max-iterations)
+                     (when (>= (incf iterations) max-iterations)
                        (error "Divergent attribute after ~a iteration~:p: ~s"
                               max-iterations
                               fn-name))
                      (setf changep nil)
+                     (incf (approximation-visit-count (cdr p)))
+                     (when (= (approximation-visit-count (cdr p)) 1)
+                       (push p memo-cells))
+                     (maxf max-visit-count
+                           (approximation-visit-count (cdr p)))
                      (let ((new-vals
                              (multiple-value-list (funcall thunk))))
                        (unless (equal-lists-p
@@ -1023,7 +1029,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                                  ;; If no attribute is accessed more
                                  ;; than once, the attribute is not
                                  ;; actually circular.
-                                 (> max-access-count 1))))
+                                 (> max-visit-count 1))))
                    (setf (approximation-visiting-p (cdr p)) nil)
                    ;; We've reached a fixed point, finalize the
                    ;; approximations.
@@ -1032,13 +1038,12 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                            (setf (cdr p) (approximation-values (cdr p)))))
                    (values-list (cdr p)))))
               ((not (approximation-visiting-p (cdr p)))
-               node
                (let ((circle *circle*))
-                 (with-slots (changep memo-cells) circle
+                 (with-slots (changep max-visit-count memo-cells) circle
                    (setf (approximation-visiting-p (cdr p)) t)
-                   (incf (approximation-access-count (cdr p)))
-                   (maxf max-access-count (approximation-access-count (cdr p)))
-                   (when (= (approximation-access-count (cdr p)) 1)
+                   (incf (approximation-visit-count (cdr p)))
+                   (maxf max-visit-count (approximation-visit-count (cdr p)))
+                   (when (= (approximation-visit-count (cdr p)) 1)
                      (push p memo-cells))
                    (let ((new-vals
                            (multiple-value-list (funcall thunk))))
@@ -1055,10 +1060,10 @@ If not there, invoke the thunk THUNK and memoize the values returned."
               ;; TODO Bump access count?
               ((approximation-p (cdr p))
                ;; TODO Needed?
-               (with-slots (memo-cells) *circle*
-                 (incf (approximation-access-count (cdr p)))
-                 (maxf max-access-count (approximation-access-count (cdr p)))
-                 (when (= (approximation-access-count (cdr p)) 1)
+               (with-slots (max-visit-count memo-cells) *circle*
+                 (incf (approximation-visit-count (cdr p)))
+                 (maxf max-visit-count (approximation-visit-count (cdr p)))
+                 (when (= (approximation-visit-count (cdr p)) 1)
                    (push p memo-cells)))
                (values-list (approximation-values (cdr p)))))
           (setf normal-exit t))

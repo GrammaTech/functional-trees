@@ -2536,3 +2536,19 @@ a different caching policy."
       (sel-attrs.1))
     (let ((ft/attrs::*allow-circle* nil))
       (sel-attrs.1))))
+
+(defclass node/root (node attrs-root)
+  ())
+
+(def-attr-fun minimize ()
+  (:circular #'eql (constantly 10))
+  (:documentation "Trivial circular attribute. Counts down to 0.")
+  (:method ((node node-with-data/root))
+    (if (zerop (minimize node))
+        0
+        (1- (minimize node)))))
+
+(deftest test-circular-attribute ()
+  (let ((node (make 'node-with-data/root :data 20)))
+    (with-attr-table node
+      (minimize node))))
