@@ -112,14 +112,15 @@ This can return multiple values.")
     :documentation "How many iterations have been performed?"
     :initform 0
     :type (integer 0))
-   (memo-cells
-    :documentation "Holds memo cells to finalize when done."
-    :initform nil
-    :type list)
    (max-visit-count
     :documentation "Count the max number of accesses"
     :accessor max-visit-count
-    :initform 0))
+    :initform 0)
+   (memo-cells
+    :accessor memo-cells
+    :documentation "Holds memo cells to finalize when done."
+    :initform nil
+    :type list))
   (:documentation "Circular evaluation state"))
 
 (declaim (inline approximation))
@@ -135,6 +136,35 @@ This can return multiple values.")
   "Type of a attribute value: either an approximation, or a list of the
 values returned by the attribute function."
   '(or approximation list))
+
+(deftype memo-cell ()
+  '(cons symbol memoized-value))
+
+(defun mark-visiting (pair &aux (circle *circle*))
+  (declare (memo-cell pair))
+  (setf (approximation-visiting-p (cdr pair)) t)
+  (incf (approximation-visit-count (cdr pair)))
+  (when (= (approximation-visit-count (cdr pair)) 1)
+    (push pair (memo-cells circle)))
+  (maxf (max-visit-count circle)
+        (approximation-visit-count (cdr pair))))
+
+(defun mark-not-visiting (pair)
+  (declare ((cons symbol approximation) pair))
+  (setf (approximation-visiting-p (cdr pair)) nil))
+
+(defun call/visit (pair body-fn)
+  ;; TODO letf?
+  (let ((visiting-initially-p
+          (approximation-visiting-p (cdr pair))))
+    (mark-visiting pair)
+    (multiple-value-prog1 (funcall body-fn)
+      (setf (approximation-visiting-p (cdr pair))
+            visiting-initially-p))))
+
+(defmacro with-visit ((pair) &body body)
+  (with-thunk (body)
+    `(call/visit ,pair ,body)))
 
 
 ;;; Attribute sessions.
@@ -982,7 +1012,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                              (approximation-visit-count (cdr p))))
                      (values-list
                       (if *circle*
-                          ;; Start a new SCC.
+                          ;; Start a new circular eval (SCC).
                           (let ((*circle* nil))
                             (setf (cdr p)
                                   (multiple-value-list (funcall thunk))))
@@ -990,32 +1020,28 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                                 (multiple-value-list (funcall thunk))))))))
               ((not *circle*)
                (let*
-                   ;; `*circle*' distinguishes whether we are in a circle,
-                   ;; and tracks the approximated attributes so we can
-                   ;; finalize them once we've reached a fixed point. Note
-                   ;; this does mean we may be evaluating cycles in other
-                   ;; SCCs of the attribute graph; we do start new cycles
-                   ;; when we encounter a definitely noncircular
-                   ;; attribute. The value of `*circle*' is all the
-                   ;; approximations to finalize when a fixed point is
-                   ;; reached.
+                   ;; `*circle*' distinguishes whether we are in a
+                   ;; circle, and tracks the approximated attributes
+                   ;; so we can finalize them once we've reached a
+                   ;; fixed point. It also tracks the max number of
+                   ;; times any node has actually been visited, so we
+                   ;; know if evaluation was actually circular. Note
+                   ;; this does mean we may be evaluating cycles in
+                   ;; other SCCs of the attribute graph; we do start
+                   ;; new cycles when we encounter a definitely
+                   ;; noncircular attribute.
                    ((circle (make-instance 'circular-eval))
                     (*circle* circle)
                     (max-iterations *max-circular-iterations*))
-                 (declare (dynamic-extent circle))
-                 (with-slots (changep iterations max-visit-count memo-cells) circle
-                   (setf (approximation-visiting-p (cdr p)) t)
+                 (with-slots (changep iterations max-visit-count memo-cells)
+                     circle
                    (iter
                      (when (>= (incf iterations) max-iterations)
                        (error "Divergent attribute after ~a iteration~:p: ~s"
                               max-iterations
                               fn-name))
                      (setf changep nil)
-                     (incf (approximation-visit-count (cdr p)))
-                     (when (= (approximation-visit-count (cdr p)) 1)
-                       (push p memo-cells))
-                     (maxf max-visit-count
-                           (approximation-visit-count (cdr p)))
+                     (mark-visiting p)  ;Unbalanced.
                      (let ((new-vals
                              (multiple-value-list (funcall thunk))))
                        (unless (equal-lists-p
@@ -1030,7 +1056,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                                  ;; than once, the attribute is not
                                  ;; actually circular.
                                  (> max-visit-count 1))))
-                   (setf (approximation-visiting-p (cdr p)) nil)
+                   (mark-not-visiting p)
                    ;; We've reached a fixed point, finalize the
                    ;; approximations.
                    (iter (for p in memo-cells)
@@ -1039,33 +1065,22 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                    (values-list (cdr p)))))
               ((not (approximation-visiting-p (cdr p)))
                (let ((circle *circle*))
-                 (with-slots (changep max-visit-count memo-cells) circle
-                   (setf (approximation-visiting-p (cdr p)) t)
-                   (incf (approximation-visit-count (cdr p)))
-                   (maxf max-visit-count (approximation-visit-count (cdr p)))
-                   (when (= (approximation-visit-count (cdr p)) 1)
-                     (push p memo-cells))
-                   (let ((new-vals
-                           (multiple-value-list (funcall thunk))))
-                     (unless (equal-lists-p
-                              new-vals
-                              (approximation-values (cdr p)))
-                       (setf changep t))
-                     changep
-                     (setf (approximation-values (cdr p))
-                           new-vals
-                           (approximation-visiting-p (cdr p))
-                           nil)
-                     (values-list (approximation-values (cdr p)))))))
-              ;; TODO Bump access count?
+                 (with-slots (changep) circle
+                   (with-visit (p)
+                     (let ((new-vals
+                             (multiple-value-list (funcall thunk))))
+                       (unless (equal-lists-p
+                                new-vals
+                                (approximation-values (cdr p)))
+                         (setf changep t))
+                       changep
+                       (setf (approximation-values (cdr p))
+                             new-vals)
+                       (values-list (approximation-values (cdr p))))))))
               ((approximation-p (cdr p))
                ;; TODO Needed?
-               (with-slots (max-visit-count memo-cells) *circle*
-                 (incf (approximation-visit-count (cdr p)))
-                 (maxf max-visit-count (approximation-visit-count (cdr p)))
-                 (when (= (approximation-visit-count (cdr p)) 1)
-                   (push p memo-cells)))
-               (values-list (approximation-values (cdr p)))))
+               (with-visit (p)
+                 (values-list (approximation-values (cdr p))))))
           (setf normal-exit t))
      ;; If a non-local return occured from THUNK, we need
      ;; to remove p from the alist, otherwise we will never

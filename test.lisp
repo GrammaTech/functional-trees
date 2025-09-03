@@ -2543,12 +2543,12 @@ a different caching policy."
 (def-attr-fun minimize ()
   (:circular #'eql (constantly 10))
   (:documentation "Trivial circular attribute. Counts down to 0.")
-  (:method ((node node-with-data/root))
+  (:method ((node node/root))
     (if (zerop (minimize node))
         0
         (1- (minimize node)))))
 
 (deftest test-circular-attribute ()
-  (let ((node (make 'node-with-data/root :data 20)))
+  (let ((node (make 'node/root :data 20)))
     (with-attr-table node
       (minimize node))))
