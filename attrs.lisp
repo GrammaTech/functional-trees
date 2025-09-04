@@ -886,7 +886,7 @@ per-attribute basis."
                    (values)))
            ,(if circular
                 `(let ((,test-val (ensure-function ,test)))
-                   (defmethod attribute-converted-p ((attr (eql ',name)) old new)
+                   (defmethod attribute-converged-p ((attr (eql ',name)) old new)
                      (funcall ,test-val old new)))
                 `(defmethod attribute-converged-p ((attr (eql ',name)) old new)
                    (declare (ignore old new))
