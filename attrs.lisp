@@ -949,6 +949,13 @@ function on it if not found at first."
             ;; The proxy also failed.
             (error (make-condition 'uncomputed-attr :node node :fn fn-name)))))))
 
+(defun values-converged-p (fn-name xs ys)
+  (and (length= xs ys)
+       (every
+        (lambda (x y)
+          (attribute-converged-p fn-name x y))
+        xs ys)))
+
 (defun memoize-attr-fun (node fn-name thunk)
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
@@ -964,11 +971,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         fn-name
         table))
    (flet ((equal-lists-p (xs ys)
-            (and (length= xs ys)
-                 (every
-                  (lambda (x y)
-                    (attribute-converged-p fn-name x y))
-                  xs ys)))))
+            (values-converged-p fn-name xs ys))))
    (if (and p (listp (cdr p)))
        ;; Already final.
        (values-list (cdr p)))
