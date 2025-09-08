@@ -696,7 +696,9 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
               (lret ((attrs (make-attrs root)))
                 (when cache
                   (setf (cache-lookup root) attrs))
-                (setf new t))))))
+                (setf new t)))))
+         (*circle*
+           (if shadow nil *circle*)))
     (unless (eql cache (attrs.cachep *attrs*))
       (error 'incompatible-cache-option))
     ;; The session is "new" if the root was unknown. But it could
