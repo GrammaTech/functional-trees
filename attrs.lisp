@@ -167,8 +167,6 @@ values returned by the attribute function."
     (setf visiting-p t)
     (incf visit-count)
     (when circle
-      (when (= visit-count 1)
-        (push pair (memo-cells circle)))
       (maxf (max-visit-count circle)
             visit-count))))
 
@@ -1029,7 +1027,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
        (setf p
              (cons fn-name (approximation bottom-values))
              (ref table node)
-             (cons p alist)))
+             (cons p alist))
+       (when *circle*
+         (push p (memo-cells *circle*))))
      table)
    (unwind-protect
         ;; This implements the evaluation strategy for circular
@@ -1082,6 +1082,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                               max-visit-count
                               memo-cells)
                      circle
+                   (push p memo-cells)
                    (iter
                      (when (>= (incf iteration) max-iterations)
                        (error "Divergent attribute after ~a iteration~:p: ~s"
