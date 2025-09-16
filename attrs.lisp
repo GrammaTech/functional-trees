@@ -1060,7 +1060,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                           (setf (cdr p)
                                 (multiple-value-list (funcall thunk))))))))
               ((approximation-finalized-p (cdr p))
-               (values-list (approximation-values (cdr p))))
+               (setf (cdr p) (approximation-values (cdr p)))
+               (values-list (cdr p)))
               ((not *circle*)
                (let*
                    ;; `*circle*' distinguishes whether we are in a
