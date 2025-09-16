@@ -25,6 +25,7 @@
   (:import-from :bordeaux-threads)
   (:import-from :cl-store)
   (:import-from :flexi-streams)
+  (:import-from :functional-trees/attrs)
   (:import-from
     :serapeum
     :box

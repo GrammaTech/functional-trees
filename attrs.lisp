@@ -53,6 +53,7 @@
     :with-boolean
     :with-thunk)
   (:export
+    :*approximation*
     :*attrs*
     :*enable-cross-session-cache*
     :attr-missing
@@ -63,6 +64,7 @@
     :attrs-root*
     :circular-attribute
     :def-attr-fun
+    :finalize-approximation
     :handle-circular-attribute
     :has-attribute-p
     :invalidate-subroot
@@ -108,7 +110,8 @@ This can return multiple values.")
     :documentation "Has there been a change in this iteration?"
     :initform nil
     :type boolean)
-   (iterations
+   (iteration
+    :reader circle-iteration
     :documentation "How many iterations have been performed?"
     :initform 0
     :type (integer 0))
@@ -118,10 +121,16 @@ This can return multiple values.")
     :initform 0)
    (memo-cells
     :accessor memo-cells
-    :documentation "Holds memo cells to finalize when done."
+    :documentation "Holds memo cells to memoize when done."
     :initform nil
     :type list))
   (:documentation "Circular evaluation state"))
+
+(defvar *approximation* nil)
+
+(def +final-value+ -1)
+(deftype iteration ()
+  'fixnum)
 
 (declaim (inline approximation))
 (defstruct (approximation
@@ -130,7 +139,17 @@ This can return multiple values.")
   "Holds the approximation to attributes during circular evaluation."
   (values nil :type list)
   (visiting-p nil :type boolean)
+  ;; The overall cycle iteration where the value was last computed. NB
+  ;; iteration 0 never actually happens.
+  (iteration 0 :type iteration)
   (visit-count 0 :type (unsigned-byte 32)))
+
+(defun finalize-approximation ()
+  (when-let (a *approximation*)
+    (setf (approximation-iteration a) +final-value+)))
+
+(defsubst approximation-finalized-p (a)
+  (eql (approximation-iteration a) +final-value+))
 
 (deftype memoized-value ()
   "Type of a attribute value: either an approximation, or a list of the
@@ -972,8 +991,19 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         node
         fn-name
         table))
-   (flet ((equal-lists-p (xs ys)
-            (values-converged-p fn-name xs ys))))
+   (labels ((convergedp (xs ys)
+              (values-converged-p fn-name xs ys))
+            (approximation-changed-p (a &aux changep)
+              (with-accessors ((old-vals approximation-values)) a
+                (if (approximation-finalized-p a)
+                    (values-list old-vals)
+                    (let ((new-vals
+                            (let ((*approximation* a))
+                              (multiple-value-list (funcall thunk)))))
+                      (unless (convergedp new-vals old-vals)
+                        (setf changep t
+                              old-vals new-vals)))))
+              changep)))
    (if (and p (listp (cdr p)))
        ;; Already final.
        (values-list (cdr p)))
@@ -982,7 +1012,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           (*attribute-trail*
             (cons trail-pair *attribute-trail*)))
      (declare (dynamic-extent trail-pair *attribute-trail*)))
-   (let* ((bottom
+   (let* ((bottom-values
             (multiple-value-list (attribute-bottom fn-name)))
           normal-exit)
      (when proxy
@@ -993,7 +1023,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
        ;; now. If we tried to assign after the call we might lose
        ;; information.
        (setf p
-             (cons fn-name (approximation bottom))
+             (cons fn-name (approximation bottom-values))
              (ref table node)
              (cons p alist)))
      table)
@@ -1008,7 +1038,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
               ;; allow circular eval, but don't require it) from
               ;; noncircular attributes (that always start a new
               ;; subgraph?) Cf. Öqvist 2017.
-              ((or (not bottom)
+              ((or (not bottom-values)
                    (not *allow-circle*))
                (if (approximation-visiting-p (cdr p))
                    (error 'circular-attribute
@@ -1029,11 +1059,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                                   (multiple-value-list (funcall thunk))))
                           (setf (cdr p)
                                 (multiple-value-list (funcall thunk))))))))
+              ((approximation-finalized-p (cdr p))
+               (values-list (approximation-values (cdr p))))
               ((not *circle*)
                (let*
                    ;; `*circle*' distinguishes whether we are in a
                    ;; circle, and tracks the approximated attributes
-                   ;; so we can finalize them once we've reached a
+                   ;; so we can memoize them once we've reached a
                    ;; fixed point. It also tracks the max number of
                    ;; times any node has actually been visited, so we
                    ;; know if evaluation was actually circular. Note
@@ -1044,49 +1076,45 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                    ((circle (make-instance 'circular-eval))
                     (*circle* circle)
                     (max-iterations *max-circular-iterations*))
-                 (with-slots (changep iterations max-visit-count memo-cells)
+                 (with-slots (changep
+                              iteration
+                              max-visit-count
+                              memo-cells)
                      circle
                    (iter
-                     (when (>= (incf iterations) max-iterations)
+                     (when (>= (incf iteration) max-iterations)
                        (error "Divergent attribute after ~a iteration~:p: ~s"
                               max-iterations
                               fn-name))
                      (setf changep nil)
+                     (setf (approximation-iteration (cdr p)) iteration)
                      (mark-visiting p)  ;Unbalanced.
-                     (let ((new-vals
-                             (multiple-value-list (funcall thunk))))
-                       (unless (equal-lists-p
-                                new-vals
-                                (approximation-values (cdr p)))
-                         (setf changep t)
-                         (setf (approximation-values (cdr p))
-                               new-vals)))
+                     (when (approximation-changed-p (cdr p))
+                       (setf changep t))
                      (while (and changep
                                  ;; If no attribute is accessed more
                                  ;; than once, the attribute is not
                                  ;; actually circular.
                                  (> max-visit-count 1))))
                    (mark-not-visiting p)
-                   ;; We've reached a fixed point, finalize the
+                   (setf (approximation-iteration (cdr p))
+                         +final-value+)
+                   ;; We've reached a fixed point, memoize the
                    ;; approximations.
                    (iter (for p in memo-cells)
                          (when (approximation-p (cdr p))
                            (setf (cdr p) (approximation-values (cdr p)))))
                    (values-list (cdr p)))))
-              ((not (approximation-visiting-p (cdr p)))
+              ((not (eql (circle-iteration *circle*)
+                         (approximation-iteration (cdr p))))
                (let ((circle *circle*))
-                 (with-slots (changep) circle
+                 (with-slots (changep iteration) circle
+                   (setf (approximation-iteration (cdr p))
+                         iteration)
                    (with-visit (p)
-                     (let ((new-vals
-                             (multiple-value-list (funcall thunk))))
-                       (unless (equal-lists-p
-                                new-vals
-                                (approximation-values (cdr p)))
-                         (setf changep t))
-                       changep
-                       (setf (approximation-values (cdr p))
-                             new-vals)
-                       (values-list (approximation-values (cdr p))))))))
+                     (when (approximation-changed-p (cdr p))
+                       (setf changep t))
+                     (values-list (approximation-values (cdr p)))))))
               ((approximation-p (cdr p))
                (with-visit (p)
                  (values-list (approximation-values (cdr p))))))
