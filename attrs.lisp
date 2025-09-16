@@ -161,12 +161,16 @@ values returned by the attribute function."
 
 (defun mark-visiting (pair &aux (circle *circle*))
   (declare (memo-cell pair))
-  (setf (approximation-visiting-p (cdr pair)) t)
-  (incf (approximation-visit-count (cdr pair)))
-  (when (= (approximation-visit-count (cdr pair)) 1)
-    (push pair (memo-cells circle)))
-  (maxf (max-visit-count circle)
-        (approximation-visit-count (cdr pair))))
+  (with-accessors ((visiting-p approximation-visiting-p)
+                   (visit-count approximation-visit-count))
+      (cdr pair)
+    (setf visiting-p t)
+    (incf visit-count)
+    (when circle
+      (when (= visit-count 1)
+        (push pair (memo-cells circle)))
+      (maxf (max-visit-count circle)
+            visit-count))))
 
 (defun mark-not-visiting (pair)
   (declare (memo-cell pair))
