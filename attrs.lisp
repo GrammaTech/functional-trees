@@ -1050,11 +1050,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                           :proxy proxy
                           :fn fn-name)
                    (progn
-                     (setf (approximation-visiting-p (cdr p)) t)
-                     (incf (approximation-visit-count (cdr p)))
-                     (when *circle*
-                       (maxf (max-visit-count *circle*)
-                             (approximation-visit-count (cdr p))))
+                     (mark-visiting p)  ;unbalanced
                      (values-list
                       (if *circle*
                           ;; Start a new circular eval (SCC).
