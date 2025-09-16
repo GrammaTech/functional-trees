@@ -961,7 +961,7 @@ function on it if not found at first."
       (setf (values alist p)
             (retrieve-memoized-attr-fn node fn-name table))
       (if p
-          (etypecase (cdr p)
+          (etypecase-of memoized-value (cdr p)
             (list
              (values-list (cdr p)))
             (approximation
