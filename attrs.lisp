@@ -139,12 +139,14 @@ This can return multiple values.")
   "Holds the approximation to attributes during circular evaluation."
   (values nil :type list)
   (visiting-p nil :type boolean)
-  ;; The overall cycle iteration where the value was last computed. NB
+  ;; The overall cycle iteration where the value was last computed.
+  ;; Tracked to avoid evaluating the same cycle more than once. NB
   ;; iteration 0 never actually happens.
   (iteration 0 :type iteration)
   (visit-count 0 :type (unsigned-byte 32)))
 
 (defun finalize-approximation ()
+  "Mark the approximation currently being computed as having converged."
   (when-let (a *approximation*)
     (setf (approximation-iteration a) +final-value+)))
 
@@ -719,6 +721,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                   (setf (cache-lookup root) attrs))
                 (setf new t)))))
          (*circle*
+           ;; Don't continue cycles in the outer attribute session.
            (if shadow nil *circle*)))
     (unless (eql cache (attrs.cachep *attrs*))
       (error 'incompatible-cache-option))
