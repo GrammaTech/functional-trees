@@ -40,6 +40,7 @@
     :defstruct-read-only
     :defsubst
     :defvar-unbound
+    :do-each
     :econd
     :etypecase-of
     :lret
@@ -50,6 +51,7 @@
     :slot-value-safe
     :unbox
     :standard/context
+    :vect
     :with-boolean
     :with-thunk)
   (:export
@@ -122,8 +124,8 @@ This can return multiple values.")
    (memo-cells
     :accessor memo-cells
     :documentation "Holds memo cells to memoize when done."
-    :initform nil
-    :type list))
+    :initform (vect)
+    :type vector))
   (:documentation "Circular evaluation state"))
 
 (defvar *approximation* nil)
@@ -1051,7 +1053,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
              (ref table node)
              (cons cell alist))
        (when *circle*
-         (push cell (memo-cells *circle*))))
+         (vector-push-extend cell (memo-cells *circle*))))
      table)
    (with-accessors ((cell-data cell-data)) cell)
    (labels ((convergedp (xs ys)
@@ -1116,7 +1118,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                               max-visit-count
                               memo-cells)
                      circle
-                   (push cell memo-cells)
+                   (vector-push-extend cell memo-cells)
                    (iter
                      (when (>= (incf iteration) max-iterations)
                        (error "Divergent attribute after ~a iteration~:p: ~s"
@@ -1137,7 +1139,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                          +final-value+)
                    ;; We've reached a fixed point, memoize the
                    ;; approximations.
-                   (dolist (c memo-cells)
+                   (do-each (c memo-cells)
                      (when (approximation-p (cell-data c))
                        (setf (cell-data c)
                              (approximation-values (cell-data c)))))
