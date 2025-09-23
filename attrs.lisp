@@ -166,30 +166,33 @@ values returned by the attribute function."
 
 (defsubst cell-values (memo-cell)
   (cdr memo-cell))
+
+(defun mark-visiting (memo-cell &aux (circle *circle*))
+  (declare (memo-cell memo-cell))
   (with-accessors ((visiting-p approximation-visiting-p)
                    (visit-count approximation-visit-count))
-      (cdr pair)
+      (cdr memo-cell)
     (setf visiting-p t)
     (incf visit-count)
     (when circle
       (maxf (max-visit-count circle)
             visit-count))))
 
-(defun mark-not-visiting (pair)
-  (declare (memo-cell pair))
-  (setf (approximation-visiting-p (cdr pair)) nil))
+(defun mark-not-visiting (memo-cell)
+  (declare (memo-cell memo-cell))
+  (setf (approximation-visiting-p (cdr memo-cell)) nil))
 
-(defun call/visit (pair body-fn)
+(defun call/visit (memo-cell body-fn)
   (let ((visiting-initially-p
-          (approximation-visiting-p (cdr pair))))
-    (mark-visiting pair)
+          (approximation-visiting-p (cdr memo-cell))))
+    (mark-visiting memo-cell)
     (multiple-value-prog1 (funcall body-fn)
-      (setf (approximation-visiting-p (cdr pair))
+      (setf (approximation-visiting-p (cdr memo-cell))
             visiting-initially-p))))
 
-(defmacro with-visit ((pair) &body body)
+(defmacro with-visit ((memo-cell) &body body)
   (with-thunk (body)
-    `(call/visit ,pair ,body)))
+    `(call/visit ,memo-cell ,body)))
 
 
 ;;; Attribute sessions.
