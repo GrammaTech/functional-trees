@@ -1045,11 +1045,13 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    ;; Stack of attributes being computed.
    (let* ((trail-pair (cons fn-name node))
           (*attribute-trail*
-            (cons trail-pair *attribute-trail*)))
-     (declare (dynamic-extent trail-pair *attribute-trail*)))
-   (let* ((bottom-values
+            (cons trail-pair *attribute-trail*))
+          ;; Bottom values for the fixed point computation.
+          (bottom-values
             (multiple-value-list (attribute-bottom fn-name)))
+          ;; Flag to track exit kind.
           normal-exit)
+     (declare (dynamic-extent trail-pair *attribute-trail*))
      (when proxy
        (record-deps proxy))
      (unless cell
