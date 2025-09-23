@@ -165,8 +165,10 @@ values returned by the attribute function."
  (inline
   cell-attr
   cell-data
+  cell-values
   (setf cell-attr)
-  (setf cell-data)))
+  (setf cell-data)
+  (setf cell-values)))
 
 (defplace cell-attr (memo-cell)
   "Return the attribute of MEMO-CELL."
@@ -175,6 +177,19 @@ values returned by the attribute function."
 (defplace cell-data (memo-cell)
   "Return the data of MEMO-CELL (an approximation or a list of values)."
   (cdr memo-cell))
+
+(defun cell-values (memo-cell)
+  (let ((data (cell-data memo-cell)))
+    (etypecase-of memoized-value data
+      (approximation (approximation-values data))
+      (list (values-list data)))))
+
+(defun (setf cell-values) (values memo-cell)
+  (declare (list values))
+  (with-accessors ((data cell-data)) memo-cell
+    (etypecase-of memoized-value data
+      (approximation (setf (approximation-values data) values))
+      (list (setf data values)))))
 
 (defun mark-visiting (memo-cell &aux (circle *circle*))
   (declare (memo-cell memo-cell))
