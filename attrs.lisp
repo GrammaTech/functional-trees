@@ -1079,21 +1079,20 @@ If not there, invoke the thunk THUNK and memoize the values returned."
               ;; noncircular attributes (that always start a new
               ;; subgraph?) Cf. Öqvist 2017.
               ((not (and bottom-values *allow-circle*))
-               (if (approximation-visiting-p cell-data)
-                   (error 'circular-attribute
-                          :node node
-                          :proxy proxy
-                          :fn fn-name)
-                   (progn
-                     (mark-visiting cell)  ;unbalanced
-                     (values-list
-                      (if *circle*
-                          ;; Start a new circular eval (SCC).
-                          (let ((*circle* nil))
-                            (setf cell-data
-                                  (multiple-value-list (funcall thunk))))
-                          (setf cell-data
-                                (multiple-value-list (funcall thunk))))))))
+               (when (approximation-visiting-p cell-data)
+                 (error 'circular-attribute
+                        :node node
+                        :proxy proxy
+                        :fn fn-name))
+               (mark-visiting cell) ;unbalanced
+               (values-list
+                (if *circle*
+                    ;; Start a new circular eval (SCC).
+                    (let ((*circle* nil))
+                      (setf cell-data
+                            (multiple-value-list (funcall thunk))))
+                    (setf cell-data
+                          (multiple-value-list (funcall thunk))))))
               ((approximation-finalized-p cell-data)
                (setf cell-data (approximation-values cell-data))
                (values-list cell-data))
