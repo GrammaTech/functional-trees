@@ -1006,7 +1006,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (let* ((proxy (attr-proxy node))
           (node (or proxy node))
           (table (node-attr-table node))))
-   (multiple-value-bind (alist p)
+   (multiple-value-bind (alist cell)
        (retrieve-memoized-attr-fn
         node
         fn-name
@@ -1024,9 +1024,9 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                         (setf changep t
                               old-vals new-vals)))))
               changep)))
-   (if (and p (listp (cell-data p)))
+   (if (and cell (listp (cell-data cell)))
        ;; Already final.
-       (values-list (cell-data p)))
+       (values-list (cell-data cell)))
    ;; Stack of attributes being computed.
    (let* ((trail-pair (cons fn-name node))
           (*attribute-trail*
@@ -1037,49 +1037,49 @@ If not there, invoke the thunk THUNK and memoize the values returned."
           normal-exit)
      (when proxy
        (record-deps proxy))
-     (unless p
+     (unless cell
        ;; additional pushes onto the alist may occur in the call to
        ;; THUNK, so get the push of p onto the list out of the way
        ;; now. If we tried to assign after the call we might lose
        ;; information.
-       (setf p
+       (setf cell
              (cons fn-name (approximation bottom-values))
              (ref table node)
-             (cons p alist))
+             (cons cell alist))
        (when *circle*
-         (push p (memo-cells *circle*))))
+         (push cell (memo-cells *circle*))))
      table)
    (unwind-protect
         ;; This implements the evaluation strategy for circular
         ;; attributes from Magnusson 2007.
         (multiple-value-prog1
             (econd
-              ((listp (cell-data p))
-               (values-list (cell-data p)))
+              ((listp (cell-data cell))
+               (values-list (cell-data cell)))
               ;; TODO Should we distinguish "agnostic" attributes (that
               ;; allow circular eval, but don't require it) from
               ;; noncircular attributes (that always start a new
               ;; subgraph?) Cf. Öqvist 2017.
               ((or (not bottom-values)
                    (not *allow-circle*))
-               (if (approximation-visiting-p (cell-data p))
+               (if (approximation-visiting-p (cell-data cell))
                    (error 'circular-attribute
                           :node node
                           :proxy proxy
                           :fn fn-name)
                    (progn
-                     (mark-visiting p)  ;unbalanced
+                     (mark-visiting cell)  ;unbalanced
                      (values-list
                       (if *circle*
                           ;; Start a new circular eval (SCC).
                           (let ((*circle* nil))
-                            (setf (cell-data p)
+                            (setf (cell-data cell)
                                   (multiple-value-list (funcall thunk))))
-                          (setf (cell-data p)
+                          (setf (cell-data cell)
                                 (multiple-value-list (funcall thunk))))))))
-              ((approximation-finalized-p (cell-data p))
-               (setf (cell-data p) (approximation-values (cell-data p)))
-               (values-list (cell-data p)))
+              ((approximation-finalized-p (cell-data cell))
+               (setf (cell-data cell) (approximation-values (cell-data cell)))
+               (values-list (cell-data cell)))
               ((not *circle*)
                (let*
                    ;; `*circle*' distinguishes whether we are in a
@@ -1100,53 +1100,53 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                               max-visit-count
                               memo-cells)
                      circle
-                   (push p memo-cells)
+                   (push cell memo-cells)
                    (iter
                      (when (>= (incf iteration) max-iterations)
                        (error "Divergent attribute after ~a iteration~:p: ~s"
                               max-iterations
                               fn-name))
                      (setf changep nil)
-                     (setf (approximation-iteration (cell-data p)) iteration)
-                     (mark-visiting p)  ;Unbalanced.
-                     (when (approximation-changed-p (cell-data p))
+                     (setf (approximation-iteration (cell-data cell)) iteration)
+                     (mark-visiting cell)  ;Unbalanced.
+                     (when (approximation-changed-p (cell-data cell))
                        (setf changep t))
                      (while (and changep
                                  ;; If no attribute is accessed more
                                  ;; than once, the attribute is not
                                  ;; actually circular.
                                  (> max-visit-count 1))))
-                   (mark-not-visiting p)
-                   (setf (approximation-iteration (cell-data p))
+                   (mark-not-visiting cell)
+                   (setf (approximation-iteration (cell-data cell))
                          +final-value+)
                    ;; We've reached a fixed point, memoize the
                    ;; approximations.
-                   (iter (for p in memo-cells)
-                         (when (approximation-p (cell-data p))
-                           (setf (cell-data p) (approximation-values (cell-data p)))))
-                   (values-list (cell-data p)))))
+                   (iter (for cell in memo-cells)
+                         (when (approximation-p (cell-data cell))
+                           (setf (cell-data cell) (approximation-values (cell-data cell)))))
+                   (values-list (cell-data cell)))))
               ((not (eql (circle-iteration *circle*)
-                         (approximation-iteration (cell-data p))))
+                         (approximation-iteration (cell-data cell))))
                (let ((circle *circle*))
                  (with-slots (changep iteration) circle
-                   (setf (approximation-iteration (cell-data p))
+                   (setf (approximation-iteration (cell-data cell))
                          iteration)
-                   (with-visit (p)
-                     (when (approximation-changed-p (cell-data p))
+                   (with-visit (cell)
+                     (when (approximation-changed-p (cell-data cell))
                        (setf changep t))
-                     (values-list (approximation-values (cell-data p)))))))
-              ((approximation-p (cell-data p))
-               (with-visit (p)
-                 (values-list (approximation-values (cell-data p))))))
+                     (values-list (approximation-values (cell-data cell)))))))
+              ((approximation-p (cell-data cell))
+               (with-visit (cell)
+                 (values-list (approximation-values (cell-data cell))))))
           (setf normal-exit t))
      ;; If a non-local return occured from THUNK, we need
      ;; to remove p from the alist, otherwise we will never
      ;; be able to compute the function here
      (unless normal-exit
-       (etypecase-of memoized-value (cell-data p)
+       (etypecase-of memoized-value (cell-data cell)
          (list)
          (approximation
-          (removef (ref table node) p)))))))
+          (removef (ref table node) cell)))))))
 
 (define-condition attribute-condition (condition)
   ())
