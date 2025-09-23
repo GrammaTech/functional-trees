@@ -162,9 +162,11 @@ values returned by the attribute function."
   '(cons symbol memoized-value))
 
 (defsubst cell-attr (memo-cell)
+  "Return the attribute of MEMO-CELL."
   (car memo-cell))
 
 (defsubst cell-data (memo-cell)
+  "Return the data of MEMO-CELL (an approximation or a list of values)."
   (cdr memo-cell))
 
 (defun mark-visiting (memo-cell &aux (circle *circle*))
