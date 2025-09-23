@@ -1014,6 +1014,106 @@ function on it if not found at first."
           (attribute-converged-p fn-name x y))
         xs ys)))
 
+(defun memoize-noncircular-attr-fun (cell node proxy thunk)
+  "Memoize a non-circular attribute."
+  (with-accessors ((cell-attr cell-attr)
+                   (cell-data cell-data))
+      cell
+    (when (approximation-visiting-p cell-data)
+      (error 'circular-attribute
+             :node node
+             :proxy proxy
+             :fn cell-attr))
+    (mark-visiting cell)                ;unbalanced
+    (values-list
+     (if *circle*
+         ;; Start a new circular eval (SCC).
+         (let ((*circle* nil))
+           (setf cell-data
+                 (multiple-value-list (funcall thunk))))
+         (setf cell-data
+               (multiple-value-list (funcall thunk)))))))
+
+(defun approximation-changed-p (ap fn-name thunk &aux changep)
+  "Recompute AP and return whether it changed."
+  (declare (approximation ap)
+           (symbol fn-name)
+           (function thunk)
+           (boolean changep))
+  (with-accessors ((old-vals approximation-values)) ap
+    (if (approximation-finalized-p ap)
+        (values-list old-vals)
+        (let ((new-vals
+                (let ((*approximation* ap))
+                  (multiple-value-list (funcall thunk)))))
+          (unless (values-converged-p fn-name new-vals old-vals)
+            (setf changep t
+                  old-vals new-vals)))))
+  changep)
+
+(defun start-new-circle (cell thunk)
+  "Start a new cycle."
+  (declare (memo-cell cell) (function thunk))
+  (with-accessors ((cell-attr cell-attr)
+                   (cell-data cell-data))
+      cell
+    (let*
+        ;; `*circle*' distinguishes whether we are in a circle, and
+        ;; tracks the approximated attributes so we can memoize them
+        ;; once we've reached a fixed point. It also tracks the max
+        ;; number of times any node has actually been visited, so we
+        ;; know if evaluation was actually circular. Note this does
+        ;; mean we may be evaluating cycles in other SCCs of the
+        ;; attribute graph; we do start new cycles when we encounter a
+        ;; definitely noncircular attribute.
+        ((circle (make-instance 'circular-eval))
+         (*circle* circle)
+         (max-iterations *max-circular-iterations*))
+      (with-slots (changep
+                   iteration
+                   max-visit-count
+                   memo-cells)
+          circle
+        (vector-push-extend cell memo-cells)
+        (iter
+          (when (>= (incf iteration) max-iterations)
+            (error "Divergent attribute after ~a iteration~:p: ~s"
+                   max-iterations
+                   cell-attr))
+          (setf changep nil)
+          (setf (approximation-iteration cell-data) iteration)
+          (mark-visiting cell)          ;Unbalanced.
+          (when (approximation-changed-p cell-data cell-attr thunk)
+            (setf changep t))
+          (while (and changep
+                      ;; If no attribute is accessed more
+                      ;; than once, the attribute is not
+                      ;; actually circular.
+                      (> max-visit-count 1))))
+        (mark-not-visiting cell)
+        (setf (approximation-iteration cell-data)
+              +final-value+)
+        ;; We've reached a fixed point, memoize the
+        ;; approximations.
+        (do-each (c memo-cells)
+          (when (approximation-p (cell-data c))
+            (setf (cell-data c)
+                  (approximation-values (cell-data c)))))
+        (values-list cell-data)))))
+
+(defun existing-circle (cell thunk)
+  "Compute an attribute in an existing cycle."
+  (declare (memo-cell cell) (function thunk))
+  (with-accessors ((cell-attr cell-attr)
+                   (cell-data cell-data)) cell
+    (with-slots (changep iteration) *circle*
+      (setf (approximation-iteration cell-data)
+            iteration)
+      (with-visit (cell)
+        (when (approximation-changed-p cell-data cell-attr thunk)
+          (setf changep t))
+        (values-list (approximation-values cell-data))))))
+
 (defun memoize-attr-fun (node fn-name thunk)
   "Look for a memoized value for attr function FN-NAME on NODE.
 If not there, invoke the thunk THUNK and memoize the values returned."
@@ -1056,89 +1156,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
          (vector-push-extend cell (memo-cells *circle*))))
      table)
    (with-accessors ((cell-data cell-data)) cell)
-   (labels ((convergedp (xs ys)
-              (values-converged-p fn-name xs ys))
-            (approximation-changed-p (a &aux changep)
-              (with-accessors ((old-vals approximation-values)) a
-                (if (approximation-finalized-p a)
-                    (values-list old-vals)
-                    (let ((new-vals
-                            (let ((*approximation* a))
-                              (multiple-value-list (funcall thunk)))))
-                      (unless (convergedp new-vals old-vals)
-                        (setf changep t
-                              old-vals new-vals)))))
-              changep)
-            (handle-noncircular-attribute ()
-              (when (approximation-visiting-p cell-data)
-                (error 'circular-attribute
-                       :node node
-                       :proxy proxy
-                       :fn fn-name))
-              (mark-visiting cell)      ;unbalanced
-              (values-list
-               (if *circle*
-                   ;; Start a new circular eval (SCC).
-                   (let ((*circle* nil))
-                     (setf cell-data
-                           (multiple-value-list (funcall thunk))))
-                   (setf cell-data
-                         (multiple-value-list (funcall thunk))))))
-            (start-new-circle ()
-              (let*
-                  ;; `*circle*' distinguishes whether we are in a
-                  ;; circle, and tracks the approximated attributes
-                  ;; so we can memoize them once we've reached a
-                  ;; fixed point. It also tracks the max number of
-                  ;; times any node has actually been visited, so we
-                  ;; know if evaluation was actually circular. Note
-                  ;; this does mean we may be evaluating cycles in
-                  ;; other SCCs of the attribute graph; we do start
-                  ;; new cycles when we encounter a definitely
-                  ;; noncircular attribute.
-                  ((circle (make-instance 'circular-eval))
-                   (*circle* circle)
-                   (max-iterations *max-circular-iterations*))
-                (with-slots (changep
-                             iteration
-                             max-visit-count
-                             memo-cells)
-                    circle
-                  (vector-push-extend cell memo-cells)
-                  (iter
-                    (when (>= (incf iteration) max-iterations)
-                      (error "Divergent attribute after ~a iteration~:p: ~s"
-                             max-iterations
-                             fn-name))
-                    (setf changep nil)
-                    (setf (approximation-iteration cell-data) iteration)
-                    (mark-visiting cell) ;Unbalanced.
-                    (when (approximation-changed-p cell-data)
-                      (setf changep t))
-                    (while (and changep
-                                ;; If no attribute is accessed more
-                                ;; than once, the attribute is not
-                                ;; actually circular.
-                                (> max-visit-count 1))))
-                  (mark-not-visiting cell)
-                  (setf (approximation-iteration cell-data)
-                        +final-value+)
-                  ;; We've reached a fixed point, memoize the
-                  ;; approximations.
-                  (do-each (c memo-cells)
-                    (when (approximation-p (cell-data c))
-                      (setf (cell-data c)
-                            (approximation-values (cell-data c)))))
-                  (values-list cell-data))))
-            (compute-in-circle ()
-              (let ((circle *circle*))
-                (with-slots (changep iteration) circle
-                  (setf (approximation-iteration cell-data)
-                        iteration)
-                  (with-visit (cell)
-                    (when (approximation-changed-p cell-data)
-                      (setf changep t))
-                    (values-list (approximation-values cell-data))))))))
    (unwind-protect
         ;; This implements the evaluation strategy for circular
         ;; attributes from Magnusson 2007.
@@ -1151,15 +1168,19 @@ If not there, invoke the thunk THUNK and memoize the values returned."
               ;; noncircular attributes (that always start a new
               ;; subgraph?) Cf. Öqvist 2017.
               ((not (and bottom-values *allow-circle*))
-               (handle-noncircular-attribute))
+               (memoize-noncircular-attr-fun
+                cell
+                node
+                proxy
+                thunk))
               ((approximation-finalized-p cell-data)
                (setf cell-data (approximation-values cell-data))
                (values-list cell-data))
               ((not *circle*)
-               (start-new-circle))
+               (start-new-circle cell thunk))
               ((not (eql (circle-iteration *circle*)
                          (approximation-iteration cell-data)))
-               (compute-in-circle))
+               (existing-circle cell thunk))
               ((approximation-p cell-data)
                (with-visit (cell)
                  (values-list (approximation-values cell-data)))))
