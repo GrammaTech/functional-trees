@@ -1026,19 +1026,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
         node
         fn-name
         table))
-   (labels ((convergedp (xs ys)
-              (values-converged-p fn-name xs ys))
-            (approximation-changed-p (a &aux changep)
-              (with-accessors ((old-vals approximation-values)) a
-                (if (approximation-finalized-p a)
-                    (values-list old-vals)
-                    (let ((new-vals
-                            (let ((*approximation* a))
-                              (multiple-value-list (funcall thunk)))))
-                      (unless (convergedp new-vals old-vals)
-                        (setf changep t
-                              old-vals new-vals)))))
-              changep)))
    (if (and cell (listp (cell-data cell)))
        ;; Already final.
        (values-list (cell-data cell)))
@@ -1067,6 +1054,19 @@ If not there, invoke the thunk THUNK and memoize the values returned."
          (push cell (memo-cells *circle*))))
      table)
    (with-accessors ((cell-data cell-data)) cell)
+   (labels ((convergedp (xs ys)
+              (values-converged-p fn-name xs ys))
+            (approximation-changed-p (a &aux changep)
+              (with-accessors ((old-vals approximation-values)) a
+                (if (approximation-finalized-p a)
+                    (values-list old-vals)
+                    (let ((new-vals
+                            (let ((*approximation* a))
+                              (multiple-value-list (funcall thunk)))))
+                      (unless (convergedp new-vals old-vals)
+                        (setf changep t
+                              old-vals new-vals)))))
+              changep)))
    (unwind-protect
         ;; This implements the evaluation strategy for circular
         ;; attributes from Magnusson 2007.
