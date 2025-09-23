@@ -943,8 +943,8 @@ per-attribute basis."
 
 (defun retrieve-memoized-attr-fn (node fn-name table)
   "Look up memoized value for FN-NAME on NODE.
-Return the node's alist, and the pair for FN-NAME if the alist has
-one.
+Return the node's alist, and the memo cell for FN-NAME if the alist
+has one.
 
 If NODE is a proxy, ORIG-NODE should be the original node."
   (let* ((alist (ref table node)))
