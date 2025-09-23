@@ -1084,7 +1084,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                         :node node
                         :proxy proxy
                         :fn fn-name))
-               (mark-visiting cell) ;unbalanced
+               (mark-visiting cell)     ;unbalanced
                (values-list
                 (if *circle*
                     ;; Start a new circular eval (SCC).
@@ -1124,7 +1124,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                               fn-name))
                      (setf changep nil)
                      (setf (approximation-iteration cell-data) iteration)
-                     (mark-visiting cell)  ;Unbalanced.
+                     (mark-visiting cell) ;Unbalanced.
                      (when (approximation-changed-p cell-data)
                        (setf changep t))
                      (while (and changep
