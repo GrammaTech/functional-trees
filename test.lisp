@@ -2551,5 +2551,6 @@ a different caching policy."
 
 (deftest test-circular-attribute ()
   (let ((node (make 'node/root :data 20)))
-    (with-attr-table node
-      (minimize node))))
+    (finishes
+      (with-attr-table node
+        (is (zerop (minimize node)))))))
