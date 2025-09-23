@@ -161,11 +161,18 @@ values returned by the attribute function."
 (deftype memo-cell ()
   '(cons symbol memoized-value))
 
-(defsubst cell-attr (memo-cell)
+(declaim
+ (inline
+  cell-attr
+  cell-data
+  (setf cell-attr)
+  (setf cell-data)))
+
+(defplace cell-attr (memo-cell)
   "Return the attribute of MEMO-CELL."
   (car memo-cell))
 
-(defsubst cell-data (memo-cell)
+(defplace cell-data (memo-cell)
   "Return the data of MEMO-CELL (an approximation or a list of values)."
   (cdr memo-cell))
 
