@@ -95,6 +95,37 @@ also be useful to reverse this flow, computing things on an as-needed basis.
 
 TODO: consider how lazy attributes could fit into this scheme.
 
+## Circular Attributes
+
+It is sometimes natural to compute attributes in a fixed-point manner.
+For example, to compute the exception set of a function F, we need as
+input the exception sets of all of functions called by F – but what if
+F calls itself? In this case, we need to do an initial approximation
+with a “bottom” value, then refine until the value stabilizes.
+
+To compute circular attributes, we use the algorithm from:
+
+- Magnusson, Eva, and Görel Hedin. “Circular Reference Attributed
+Grammars — Their Evaluation and Applications.” Science of Computer
+Programming, Special Issue on the ETAPS 2003 Workshop on Language
+Descriptions, Tools and Applications (LDTA ’03), vol. 68, no. 1
+(2007): 21–37. https://doi.org/10.1016/j.scico.2005.06.005.
+
+With refinements from:
+
+- Öqvist, Jesper, and Görel Hedin. Concurrent Circular Reference
+Attribute Grammars (Extended Version). n.d.
+
+- Riouak, Idriss. Using Static Analysis to Improve the Efficiency of
+Program Analysis. n.d.
+
+We also introduce the refinement (1) retaining the memoization storage
+for attributes being computed and (2) tracking the number of times any
+given node is visited during the circular computation, so we can
+detect based on the maximum visit count whether a computation was, in
+fact, circular, and if not use the retained storage pointer to
+finalize the attributes without an extra pass.
+
 ## Example
 
 See sel-attributes.lisp and the sel-attrs.1 test in test.lisp for a
