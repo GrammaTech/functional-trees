@@ -164,14 +164,14 @@ values returned by the attribute function."
 (defsubst cell-attr (memo-cell)
   (car memo-cell))
 
-(defsubst cell-values (memo-cell)
+(defsubst cell-data (memo-cell)
   (cdr memo-cell))
 
 (defun mark-visiting (memo-cell &aux (circle *circle*))
   (declare (memo-cell memo-cell))
   (with-accessors ((visiting-p approximation-visiting-p)
                    (visit-count approximation-visit-count))
-      (cell-values memo-cell)
+      (cell-data memo-cell)
     (setf visiting-p t)
     (incf visit-count)
     (when circle
@@ -180,14 +180,14 @@ values returned by the attribute function."
 
 (defun mark-not-visiting (memo-cell)
   (declare (memo-cell memo-cell))
-  (setf (approximation-visiting-p (cell-values memo-cell)) nil))
+  (setf (approximation-visiting-p (cell-data memo-cell)) nil))
 
 (defun call/visit (memo-cell body-fn)
   (let ((visiting-initially-p
-          (approximation-visiting-p (cell-values memo-cell))))
+          (approximation-visiting-p (cell-data memo-cell))))
     (mark-visiting memo-cell)
     (multiple-value-prog1 (funcall body-fn)
-      (setf (approximation-visiting-p (cell-values memo-cell))
+      (setf (approximation-visiting-p (cell-data memo-cell))
             visiting-initially-p))))
 
 (defmacro with-visit ((memo-cell) &body body)
