@@ -1078,8 +1078,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
               ;; allow circular eval, but don't require it) from
               ;; noncircular attributes (that always start a new
               ;; subgraph?) Cf. Öqvist 2017.
-              ((or (not bottom-values)
-                   (not *allow-circle*))
+              ((not (and bottom-values *allow-circle*))
                (if (approximation-visiting-p cell-data)
                    (error 'circular-attribute
                           :node node
