@@ -1159,28 +1159,41 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (unwind-protect
         ;; This implements the evaluation strategy for circular
         ;; attributes from Magnusson 2007.
+
+        ;; TODO Should we distinguish "agnostic" attributes (that
+        ;; allow circular eval, but don't require it) from noncircular
+        ;; attributes (that always start a new subgraph?) Cf. Öqvist
+        ;; 2017.
         (multiple-value-prog1
             (econd
+              ;; The attribute is already computed and memoized,
+              ;; return it.
               ((listp cell-data)
                (values-list cell-data))
-              ;; TODO Should we distinguish "agnostic" attributes (that
-              ;; allow circular eval, but don't require it) from
-              ;; noncircular attributes (that always start a new
-              ;; subgraph?) Cf. Öqvist 2017.
+              ;; Not using circular computation, either because the
+              ;; attribute is noncircular or because the
+              ;; `*allow-circle*' flag is set to nil.
               ((not (and bottom-values *allow-circle*))
                (memoize-noncircular-attr-fun
                 cell
                 node
                 proxy
                 thunk))
+              ;; The approximation has already been finalized, return
+              ;; it.
               ((approximation-finalized-p cell-data)
                (setf cell-data (approximation-values cell-data))
                (values-list cell-data))
+              ;; We're not in a circle and need to starta new one.
               ((not *circle*)
                (start-new-circle cell thunk))
+              ;; We're in a circle and encoutering the attribute for
+              ;; the first time in this iteration.
               ((not (eql (circle-iteration *circle*)
                          (approximation-iteration cell-data)))
                (existing-circle cell thunk))
+              ;; We're in a circle but the attribute has already been
+              ;; computed in this iteration.
               ((approximation-p cell-data)
                (with-visit (cell)
                  (values-list (approximation-values cell-data)))))
