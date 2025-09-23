@@ -2550,7 +2550,16 @@ a different caching policy."
         (1- (minimize node)))))
 
 (deftest test-circular-attribute ()
+  "Circular attributes should reach a fixed point."
   (let ((node (make 'node/root :data 20)))
     (finishes
+      (with-attr-table node
+        (is (zerop (minimize node)))))))
+
+(deftest test-circular-attribute-iteration-limit ()
+  "Circular attributes should signal if exceeding `*max-circular-iterations'."
+  (let ((ft/attrs:*max-circular-iterations* 10)
+        (node (make 'node/root :data 20)))
+    (signals ft/attrs:divergent-attribute
       (with-attr-table node
         (is (zerop (minimize node)))))))

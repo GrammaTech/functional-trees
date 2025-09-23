@@ -58,6 +58,7 @@
     :*approximation*
     :*attrs*
     :*enable-cross-session-cache*
+    :*max-circular-iterations*
     :attr-missing
     :attr-proxy
     :attribute-error
@@ -66,6 +67,7 @@
     :attrs-root*
     :circular-attribute
     :def-attr-fun
+    :divergent-attribute
     :finalize-approximation
     :handle-circular-attribute
     :has-attribute-p
@@ -1051,7 +1053,7 @@ function on it if not found at first."
                   old-vals new-vals)))))
   changep)
 
-(defun start-new-circle (cell thunk)
+(defun start-new-circle (node cell thunk)
   "Start a new cycle."
   (declare (memo-cell cell) (function thunk))
   (with-accessors ((cell-attr cell-attr)
@@ -1077,9 +1079,10 @@ function on it if not found at first."
         (vector-push-extend cell memo-cells)
         (iter
           (when (>= (incf iteration) max-iterations)
-            (error "Divergent attribute after ~a iteration~:p: ~s"
-                   max-iterations
-                   cell-attr))
+            (error 'divergent-attribute
+                   :iterations max-iterations
+                   :fn cell-attr
+                   :node node))
           (setf changep nil)
           (setf (approximation-iteration cell-data) iteration)
           (mark-visiting cell)          ;Unbalanced.
@@ -1186,7 +1189,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                (values-list cell-data))
               ;; We're not in a circle and need to starta new one.
               ((not *circle*)
-               (start-new-circle cell thunk))
+               (start-new-circle node cell thunk))
               ;; We're in a circle and encoutering the attribute for
               ;; the first time in this iteration.
               ((not (eql (circle-iteration *circle*)
@@ -1283,6 +1286,22 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                  fn node proxy
                  (cons (cons fn node)
                        trail)))))))
+
+(define-condition divergent-attribute (node-attribute-error)
+  ((node :reader divergent-attribute-node)
+   (fn :reader divergent-attribute-function)
+   (iterations
+    :initarg :iterations
+    :reader divergent-attribute-iterations
+    :type (integer 0)))
+  (:report
+   (lambda (c s)
+     (with-slots (iterations fn node) c
+       (format s
+               "Divergent attribute ~s after ~a iteration~:p on ~a"
+               fn
+               iterations
+               node)))))
 
 (define-condition uncomputed-attr (node-attribute-error)
   ((node :reader uncomputed-attr-node)
