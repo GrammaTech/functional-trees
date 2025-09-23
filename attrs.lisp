@@ -161,8 +161,11 @@ values returned by the attribute function."
 (deftype memo-cell ()
   '(cons symbol memoized-value))
 
-(defun mark-visiting (pair &aux (circle *circle*))
-  (declare (memo-cell pair))
+(defsubst cell-attr (memo-cell)
+  (car memo-cell))
+
+(defsubst cell-values (memo-cell)
+  (cdr memo-cell))
   (with-accessors ((visiting-p approximation-visiting-p)
                    (visit-count approximation-visit-count))
       (cdr pair)
