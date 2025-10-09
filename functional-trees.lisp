@@ -39,10 +39,22 @@
   (:shadowing-import-from :alexandria :compose)
   (:shadowing-import-from :functional-trees/interval-trees)
   (:import-from :uiop/utility :nest)
-  (:import-from :serapeum :queue :qconc :qpreconc :qlist
-                :set-hash-table :length< :box :unbox
-                :with-thunk :-> :lret :enq
-                :bisect-left)
+  (:import-from
+    :serapeum
+    :->
+    :bisect-left
+    :box
+    :define-do-macro
+    :enq
+    :length<
+    :lret
+    :qconc
+    :qlist
+    :qpreconc
+    :queue
+    :set-hash-table
+    :unbox
+    :with-thunk)
   (:import-from :closer-mop
                 :slot-definition-name
                 :slot-definition-allocation
@@ -64,6 +76,7 @@
     :define-methods-for-node-class
     :define-node-class
     :descendant-map
+    :do-child-slot-nodes
     :do-tree
     :insert-after
     :mapc
@@ -493,6 +506,26 @@ its nodes.")
 
 (defrestore-cl-store (node stream)
   (cl-store::restore-type-object stream))
+
+(defun walk-child-slot-nodes (fn obj)
+  "Invoke FN on the children of OBJ, as determined by walking child-slots.
+This bypasses `children' for cases where we don't care about the order
+of the children, or don't want to bother allocating the child list."
+  (declare (optimize speed (debug 0))
+           (node obj))
+  (let ((fn (ensure-function fn)))
+    (dolist (slot-spec (child-slots obj))
+      (let ((slot-value (slot-value obj (slot-spec-slot slot-spec))))
+        (if (eql 1 (slot-spec-arity slot-spec))
+            (when slot-value
+              (funcall fn slot-value))
+            (dolist (child slot-value)
+              (funcall fn child)))))))
+
+(serapeum:define-do-macro do-child-slot-nodes ((var obj &optional ret) &body body)
+  "Walk the children of OBJ like `walk-child-slot-nodes'."
+  (with-thunk (body var)
+    `(walk-child-slot-nodes ,body ,obj)))
 
 (define-compiler-macro children (node)
   `(locally (declare (notinline children))
