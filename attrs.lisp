@@ -408,7 +408,15 @@ This holds at least the root of the attribute computation."
   (table (make-weak-node-table) :type hash-table)
   (cachep *enable-cross-session-cache* :type boolean)
   ;; Pre-computed table from nodes to their subroots.
-  (node->subroot :type hash-table))
+  (node->subroot :type hash-table)
+  ;; Track live subroots to avoid having to regularly walk the entire
+  ;; node->subroot table to purge them.
+  (live-subroots (make-hash-table) :type hash-table))
+
+(defun node-subroot (node &key (attrs *attrs*))
+  (let ((subroot (@ (attrs.node->subroot attrs) node)))
+    (and (@ (attrs.live-subroots attrs) subroot)
+         subroot)))
 
 (defsubst attrs-root (attrs)
   (attrs.root attrs))
@@ -485,11 +493,10 @@ This holds at least the root of the attribute computation."
   "Does NODE have a subroot (or a proxy) recorded in the current
 attribute tables?"
   (when-let (attrs (bound-value '*attrs*))
-    (let ((node->subroot (attrs.node->subroot attrs))
-          (node (fset:convert 'node node)))
-      (or (@ node->subroot node)
+    (let ((node (fset:convert 'node node)))
+      (or (node-subroot node)
           (when-let (proxy (and proxy (attr-proxy node)))
-            (@ node->subroot proxy))))))
+            (node-subroot node))))))
 
 (defun reachable-from-root? (root dest &key (proxy t))
   "Is DEST reachable from ROOT? This is careful to check not just if
@@ -519,10 +526,9 @@ DEST has a path, but if DEST is the node at that path."
     (let ((attrs-root (attrs-root *attrs*)))
       (restart-case
           (or (when (boundp '*attrs*)
-                (let ((table (attrs.node->subroot *attrs*)))
-                  (or (gethash node table)
-                      (when-let (p (attr-proxy node))
-                        (gethash p table)))))
+                (or (node-subroot node)
+                    (when-let (p (attr-proxy node))
+                      (node-subroot node))))
               (dominating-subroot attrs-root node)
               attrs-root)
         (update-subroot-mapping ()
@@ -536,23 +542,21 @@ DEST has a path, but if DEST is the node at that path."
    :weakness :key
    :size +node->subroot/initial-size+))
 
-(defun compute-node->subroot (node &key (table (make-node->subroot-table)) force)
+(defun compute-node->subroot (node &key
+                                     (table (make-node->subroot-table))
+                                     (live-subroots (make-hash-table))
+                                     force)
   "Recurse over NODE, computing a table from NODEs to their dominating subroots."
   (declare (optimize speed) (hash-table table))
   (when force
     (clrhash table))
-  (let ((first-time (= 0 (hash-table-count table)))
-        (live-subroots (make-hash-table :test 'eq)))
+  (clrhash live-subroots)
+  (let ((first-time (= 0 (hash-table-count table))))
     ;; Using `with-boolean' means we only actually dispatch once on
     ;; `first-time' outside the loop, so we aren't paying for needless
     ;; lookups on the first computation.
     (with-boolean (first-time)
-      (labels ((delete-dead-subroots ()
-                 (boolean-unless first-time
-                   (iter (for (node subroot) in-hashtable table)
-                         (unless (@ live-subroots subroot)
-                           (remhash node table)))))
-               (compute-node->subroot (node subroot)
+      (labels ((compute-node->subroot (node subroot)
                  (declare (optimize (debug 0))) ;tail recursion
                  (let ((node
                          (if (typep node 'node) node
@@ -583,17 +587,26 @@ DEST has a path, but if DEST is the node at that path."
                                 (dolist (c (children node))
                                   (compute-node->subroot c subroot)))))))))
         (compute-node->subroot node nil)
-        (delete-dead-subroots)
-        table))))
+        (values table live-subroots)))))
 
-(defun update-subroot-mapping (&optional (attrs *attrs*))
+(defun update-subroot-mapping (&key (attrs *attrs*))
   "Update the node-to-subroot mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
   (compute-node->subroot
    (attrs.root attrs)
-   :table (attrs.node->subroot attrs))
+   :table (attrs.node->subroot attrs)
+   :live-subroots (attrs.live-subroots attrs))
   attrs)
+
+(defun delete-dead-subroots (attrs)
+  "Delete nodes mapping to dead subroots."
+  (update-subroot-mapping :attrs attrs)
+  (let ((node->subroot (attrs.node->subroot attrs))
+        (live-subroots (attrs.live-subroots attrs)))
+    (iter (for (node subroot) in-hashtable node->subroot)
+          (unless (@ live-subroots subroot)
+            (remhash node node->subroot)))))
 
 (defun ensure-subroot-map (attrs)
   "Ensure a subroot map for ATTRS.
@@ -662,12 +675,11 @@ node proxied into the tree instead."
   (let* ((attrs *attrs*)
          (root (attrs-root attrs))
          (node->proxy (attrs.node->proxy *attrs*))
-         (node->subroot (attrs.node->subroot *attrs*))
          (proxy-subroot
            (progn
              ;; Update the subroot mapping before querying it.
-             (update-subroot-mapping attrs)
-             (@ node->subroot proxy))))
+             (update-subroot-mapping :attrs attrs)
+             (node-subroot proxy))))
     (when-let (real-proxy (@ node->proxy proxy))
       (when (@ node->proxy real-proxy)
         ;; This shouldn't be possible.
@@ -771,16 +783,15 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
   "Delete any invalid node->proxy mappings.
 Node-to-proxy mappings are invalid when the proxy is no longer in the
 tree, or when the node itself has been inserted into the tree."
-  (update-subroot-mapping)
-  (let ((node->proxy (attrs.node->proxy attrs))
-        (node->subroot (attrs.node->subroot attrs)))
+  (delete-dead-subroots attrs)
+  (let ((node->proxy (attrs.node->proxy attrs)))
     (iter (for (node proxy) in-hashtable node->proxy)
           ;; Delete proxies that no longer point into the tree.
-          (unless (@ node->subroot proxy)
+          (unless (node-subroot proxy)
             (remhash node node->proxy))
           ;; Delete proxies for nodes that have been inserted into the
           ;; tree.
-          (when (@ node->subroot node)
+          (when (node-subroot node)
             (remhash node node->proxy)))))
 
 (defun invalidate-subroots (attrs)
@@ -790,13 +801,12 @@ depend on invalid subroots."
   (delete-invalid-proxies attrs)
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
-        (node->subroot (attrs.node->subroot attrs))
         (removed (fset:empty-set)))
     (when (and subroot->attr-table subroot->deps)
       ;; Remove unreachable subroots from the table.
       (iter (for (subroot nil) in-hashtable subroot->attr-table)
             ;; Cheap reachability check.
-            (for reachable? = (gethash subroot node->subroot))
+            (for reachable? = (node-subroot subroot :attrs attrs))
             (unless reachable?
               (remhash subroot subroot->attr-table)
               (remhash subroot subroot->deps)
