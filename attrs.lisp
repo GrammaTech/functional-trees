@@ -862,7 +862,7 @@ This should be used if SUBROOT is mutated."
            (funcall fn)))))
 
 (defmacro with-record-subroot-deps ((node) &body body)
-  (with-thunk (body)
+  (with-thunk ((body :name record-subroot-deps))
     `(call/record-subroot-deps ,node ,body)))
 
 
