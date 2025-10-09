@@ -538,6 +538,7 @@ DEST has a path, but if DEST is the node at that path."
 
 (defun compute-node->subroot (node &key (table (make-node->subroot-table)) force)
   "Recurse over NODE, computing a table from NODEs to their dominating subroots."
+  (declare (optimize speed) (hash-table table))
   (when force
     (clrhash table))
   (let ((first-time (= 0 (hash-table-count table)))
