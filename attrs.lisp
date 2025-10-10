@@ -593,7 +593,10 @@ DEST has a path, but if DEST is the node at that path."
                                (t
                                 (setf (@ table node) subroot-id
                                       (@ live-subroots subroot-id) subroot)
-                                (dolist (c (children node))
+                                ;; We don't care about order so
+                                ;; there's no reason to actually
+                                ;; invoke `children`.
+                                (do-child-slot-nodes (c node)
                                   (compute-node->subroot-id c subroot)))))))))
         (compute-node->subroot-id node nil)
         (values table live-subroots)))))
