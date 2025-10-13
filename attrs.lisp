@@ -414,8 +414,13 @@ This holds at least the root of the attribute computation."
   (live-subroots (make-hash-table) :type hash-table))
 
 (defun node-subroot (node &key (attrs *attrs*))
-  (let ((subroot (@ (attrs.node->subroot attrs) node)))
-    (and (@ (attrs.live-subroots attrs) subroot)
+  (let* ((node->subroot (attrs.node->subroot attrs))
+         (subroot (@ node->subroot node)))
+    (and subroot
+         (or (@ (attrs.live-subroots attrs) subroot)
+             (prog1 nil
+               ;; Delete the dead mapping.
+               (remhash node node->subroot)))
          subroot)))
 
 (defsubst attrs-root (attrs)
