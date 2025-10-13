@@ -599,8 +599,8 @@ This should be done if the root has been mutated."
    :live-subroots (attrs.live-subroots attrs))
   attrs)
 
-(defun delete-dead-subroots (attrs)
-  "Delete nodes mapping to dead subroots."
+(defun delete-dead-subroot-mappings (attrs)
+  "Delete dead node-to-subroot mappings."
   (update-subroot-mapping :attrs attrs)
   (let ((node->subroot (attrs.node->subroot attrs))
         (live-subroots (attrs.live-subroots attrs)))
@@ -783,7 +783,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
   "Delete any invalid node->proxy mappings.
 Node-to-proxy mappings are invalid when the proxy is no longer in the
 tree, or when the node itself has been inserted into the tree."
-  (delete-dead-subroots attrs)
+  (delete-dead-subroot-mappings attrs)
   (let ((node->proxy (attrs.node->proxy attrs)))
     (iter (for (node proxy) in-hashtable node->proxy)
           ;; Delete proxies that no longer point into the tree.
