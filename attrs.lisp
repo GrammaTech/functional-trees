@@ -72,6 +72,7 @@
     :handle-circular-attribute
     :has-attribute-p
     :invalidate-subroot
+    :node-id
     :reachable?
     :update-subroot-mapping
     :session-shadowing
@@ -108,6 +109,11 @@ This can return multiple values.")
    "Return true if OLD and NEW have converged.")
   (:method ((attr t) x y)
     (equal x y)))
+
+(defgeneric node-id (x)
+  (:documentation "Unique ID of a node")
+  (:method ((ast node))
+    (serial-number ast)))
 
 (defclass circular-eval ()
   ((changep
@@ -248,7 +254,7 @@ Roots are immutable, so if we have previously computed attributes for
 them we can reuse them.
 
 Practically this has the effect that we do not have to to update
-the node->subroot table.")
+the node->subroot-id table.")
 
 (defplace cache-lookup (key)
   (gethash key *session-cache*))
@@ -264,8 +270,8 @@ Inheriting a session means that if there is already a session in
 progress for root A, and you try to start a session for root B, then
 if B is reachable from A the session for A is reused.")
 
-(def +node->subroot/initial-size+ 4099
-  "Initial size for the node->subroot table.
+(def +node->subroot-id/initial-size+ 4099
+  "Initial size for the node->subroot-id table.
 The value is heuristic, with the goal of minimizing the initial
 rehashing for large tables.")
 
@@ -397,31 +403,31 @@ The new subroot map should be fully independent of MAP."
 (defstruct-read-only (attrs
                       (:conc-name attrs.)
                       (:constructor make-attrs
-                          (root &aux (node->subroot
+                          (root &aux (node->subroot-id
                                       (if *enable-cross-session-cache*
-                                          (compute-node->subroot root)
-                                          (make-node->subroot-table))))))
+                                          (compute-node->subroot-id root)
+                                          (make-node->subroot-id-table))))))
   "An attribute session.
 This holds at least the root of the attribute computation."
   (root :type attrs-root)
   ;; This is only used if *enable-cross-session-cache* is nil.
   (table (make-weak-node-table) :type hash-table)
   (cachep *enable-cross-session-cache* :type boolean)
-  ;; Pre-computed table from nodes to their subroots.
-  (node->subroot :type hash-table)
-  ;; Track live subroots to avoid having to regularly walk the entire
-  ;; node->subroot table to purge them.
+  ;; Pre-computed table from nodes to the serial numbers of their
+  ;; subroots (as recorded in live-subroots). Only storing the serial
+  ;; numbers avoids needing a key-and-value weak hash table.
+  (node->subroot-id :type hash-table)
+  ;; Track live subroots (serial number to subroot).
   (live-subroots (make-hash-table) :type hash-table))
 
 (defun node-subroot (node &key (attrs *attrs*))
-  (let* ((node->subroot (attrs.node->subroot attrs))
-         (subroot (@ node->subroot node)))
-    (and subroot
-         (or (@ (attrs.live-subroots attrs) subroot)
+  (let* ((node->subroot-id (attrs.node->subroot-id attrs))
+         (sn (@ node->subroot-id node)))
+    (and sn
+         (or (@ (attrs.live-subroots attrs) sn)
              (prog1 nil
                ;; Delete the dead mapping.
-               (remhash node node->subroot)))
-         subroot)))
+               (remhash node node->subroot-id))))))
 
 (defsubst attrs-root (attrs)
   (attrs.root attrs))
@@ -541,14 +547,14 @@ DEST has a path, but if DEST is the node at that path."
           (update-subroot-mapping)
           (retry))))))
 
-(defun make-node->subroot-table ()
+(defun make-node->subroot-id-table ()
   (tg:make-weak-hash-table
    :test 'eq
    :weakness :key
-   :size +node->subroot/initial-size+))
+   :size +node->subroot-id/initial-size+))
 
-(defun compute-node->subroot (node &key
-                                     (table (make-node->subroot-table))
+(defun compute-node->subroot-id (node &key
+                                     (table (make-node->subroot-id-table))
                                      (live-subroots (make-hash-table))
                                      force)
   "Recurse over NODE, computing a table from NODEs to their dominating subroots."
@@ -561,57 +567,48 @@ DEST has a path, but if DEST is the node at that path."
     ;; `first-time' outside the loop, so we aren't paying for needless
     ;; lookups on the first computation.
     (with-boolean (first-time)
-      (labels ((compute-node->subroot (node subroot)
+      (labels ((compute-node->subroot-id (node subroot)
                  (declare (optimize (debug 0))) ;tail recursion
                  (let ((node
                          (if (typep node 'node) node
                              (fset:convert 'node node))))
                    (if (null subroot)
-                       (compute-node->subroot node node)
-                       (progn
+                       (compute-node->subroot-id node node)
+                       (let ((id (node-id subroot)))
                          (boolean-unless first-time
                            ;; If the subroot hasn't changed, the
                            ;; subroots of the children can't have
                            ;; changed and we don't need to walk them
                            ;; again.
                            (when (subroot? subroot)
-                             (let ((old-subroot (@ table node)))
-                               (when (eq old-subroot subroot)
-                                 (setf (@ live-subroots subroot) t)
-                                 (return-from compute-node->subroot)))))
+                             (let ((old-subroot-id (@ table node)))
+                               (when (eq old-subroot-id (node-id subroot))
+                                 (setf (@ live-subroots id) node)
+                                 (return-from compute-node->subroot-id)))))
                          (cond ((and (not (eq node subroot))
                                      (subroot? node))
                                 (when (and subroot (subroot? subroot))
                                   (error 'nested-subroots
                                          :outer subroot
                                          :inner node))
-                                (compute-node->subroot node node))
+                                (compute-node->subroot-id node node))
                                (t
-                                (setf (@ table node) subroot
-                                      (@ live-subroots subroot) t)
+                                (setf (@ table node) id
+                                      (@ live-subroots id) subroot)
                                 (dolist (c (children node))
-                                  (compute-node->subroot c subroot)))))))))
-        (compute-node->subroot node nil)
+                                  (compute-node->subroot-id c subroot)))))))))
+        (compute-node->subroot-id node nil)
         (values table live-subroots)))))
 
 (defun update-subroot-mapping (&key (attrs *attrs*))
   "Update the node-to-subroot mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
-  (compute-node->subroot
+  (compute-node->subroot-id
    (attrs.root attrs)
-   :table (attrs.node->subroot attrs)
+   :table (attrs.node->subroot-id attrs)
    :live-subroots (attrs.live-subroots attrs))
   attrs)
-
-(defun delete-dead-subroot-mappings (attrs)
-  "Delete dead node-to-subroot mappings."
-  (update-subroot-mapping :attrs attrs)
-  (let ((node->subroot (attrs.node->subroot attrs))
-        (live-subroots (attrs.live-subroots attrs)))
-    (iter (for (node subroot) in-hashtable node->subroot)
-          (unless (@ live-subroots subroot)
-            (remhash node node->subroot)))))
 
 (defun ensure-subroot-map (attrs)
   "Ensure a subroot map for ATTRS.
@@ -788,7 +785,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
   "Delete any invalid node->proxy mappings.
 Node-to-proxy mappings are invalid when the proxy is no longer in the
 tree, or when the node itself has been inserted into the tree."
-  (delete-dead-subroot-mappings attrs)
+  (update-subroot-mapping :attrs attrs)
   (let ((node->proxy (attrs.node->proxy attrs)))
     (iter (for (node proxy) in-hashtable node->proxy)
           ;; Delete proxies that no longer point into the tree.

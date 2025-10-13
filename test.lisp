@@ -2460,15 +2460,22 @@ a different caching policy."
          (project-box
            (make-instance 'project-box :project project)))
     (with-attr-table project-box
-      (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
-      (is (not (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))
+      (is (gethash cc-file-1
+                   (ft/attrs::attrs.node->subroot-id *attrs*)))
+      (is (not (gethash header-file-1
+                        (ft/attrs::attrs.node->subroot-id
+                         *attrs*))))
       (setf (project (ft/attrs:attrs-root*))
             (copy project :children (cons header-file-1 (children project))))
-      (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
-      (is (not (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))
+      (is (gethash cc-file-1
+                   (ft/attrs::attrs.node->subroot-id *attrs*)))
+      (is (not (gethash header-file-1
+                        (ft/attrs::attrs.node->subroot-id *attrs*))))
       (ft/attrs:update-subroot-mapping)
-      (is (gethash cc-file-1 (ft/attrs::attrs.node->subroot *attrs*)))
-      (is (gethash header-file-1 (ft/attrs::attrs.node->subroot *attrs*))))))
+      (is (gethash cc-file-1
+                   (ft/attrs::attrs.node->subroot-id *attrs*)))
+      (is (gethash header-file-1
+                   (ft/attrs::attrs.node->subroot-id *attrs*))))))
 
 (deftest test-thread-blocks ()
   "Test that serial numbers in spawned blocks are disjoint."
