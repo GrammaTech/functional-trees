@@ -111,9 +111,8 @@ This can return multiple values.")
     (equal x y)))
 
 (defgeneric node-id (x)
-  (:documentation "Unique ID of a node")
-  (:method ((ast node))
-    (serial-number ast)))
+  (:documentation "Unique ID of a node.
+This should be unique to the identity of the node (not a serial number)."))
 
 (defclass circular-eval ()
   ((changep
