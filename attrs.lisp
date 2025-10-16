@@ -416,6 +416,7 @@ This holds at least the root of the attribute computation."
   (live-subroots (make-hash-table) :type hash-table))
 
 (defun node-subroot (node &key (attrs *attrs*))
+  "Look up the subroot for a node."
   (let* ((node->subroot-id (attrs.node->subroot-id attrs))
          (sn (@ node->subroot-id node)))
     (and sn
