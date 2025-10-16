@@ -72,7 +72,6 @@
     :handle-circular-attribute
     :has-attribute-p
     :invalidate-subroot
-    :node-id
     :reachable?
     :update-subroot-mapping
     :session-shadowing
@@ -109,10 +108,6 @@ This can return multiple values.")
    "Return true if OLD and NEW have converged.")
   (:method ((attr t) x y)
     (equal x y)))
-
-(defgeneric node-id (x)
-  (:documentation "Unique ID of a node.
-This should be unique to the identity of the node (not a serial number)."))
 
 (defclass circular-eval ()
   ((changep
@@ -553,15 +548,17 @@ DEST has a path, but if DEST is the node at that path."
    :size +node->subroot-id/initial-size+))
 
 (defun compute-node->subroot-id (node &key
-                                     (table (make-node->subroot-id-table))
-                                     (live-subroots (make-hash-table))
-                                     force)
+                                        (table (make-node->subroot-id-table))
+                                        (live-subroots (make-hash-table))
+                                        force)
   "Recurse over NODE, computing a table from NODEs to their dominating subroots."
   (declare (optimize speed) (hash-table table))
   (when force
+    (clrhash live-subroots)
     (clrhash table))
-  (clrhash live-subroots)
-  (let ((first-time (= 0 (hash-table-count table))))
+  (let ((first-time (= 0 (hash-table-count table)))
+        (old-live-subroots (copy-hash-table live-subroots)))
+    (clrhash live-subroots)
     ;; Using `with-boolean' means we only actually dispatch once on
     ;; `first-time' outside the loop, so we aren't paying for needless
     ;; lookups on the first computation.
@@ -573,16 +570,16 @@ DEST has a path, but if DEST is the node at that path."
                              (fset:convert 'node node))))
                    (if (null subroot)
                        (compute-node->subroot-id node node)
-                       (let ((id (node-id subroot)))
+                       (let ((subroot-id (serial-number subroot)))
                          (boolean-unless first-time
-                           ;; If the subroot hasn't changed, the
-                           ;; subroots of the children can't have
-                           ;; changed and we don't need to walk them
-                           ;; again.
+                           ;; If the subroot hasn't changed (is
+                           ;; identical, per `eq'), then the subroots
+                           ;; of its descendants can't have changed
+                           ;; and we don't need to walk them again.
                            (when (subroot? subroot)
-                             (let ((old-subroot-id (@ table node)))
-                               (when (eq old-subroot-id (node-id subroot))
-                                 (setf (@ live-subroots id) node)
+                             (let ((old-subroot (@ old-live-subroots subroot-id)))
+                               (when (eq old-subroot subroot)
+                                 (setf (@ live-subroots subroot-id) subroot)
                                  (return-from compute-node->subroot-id)))))
                          (cond ((and (not (eq node subroot))
                                      (subroot? node))
@@ -592,8 +589,8 @@ DEST has a path, but if DEST is the node at that path."
                                          :inner node))
                                 (compute-node->subroot-id node node))
                                (t
-                                (setf (@ table node) id
-                                      (@ live-subroots id) subroot)
+                                (setf (@ table node) subroot-id
+                                      (@ live-subroots subroot-id) subroot)
                                 (dolist (c (children node))
                                   (compute-node->subroot-id c subroot)))))))))
         (compute-node->subroot-id node nil)

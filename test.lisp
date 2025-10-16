@@ -78,7 +78,6 @@
     :attrs-root
     :def-attr-fun
     :has-attribute-p
-    :node-id
     :subroot
     :subroot?
     :with-attr-table)
@@ -86,10 +85,6 @@
   (:export :test))
 (in-package :ft/test)
 (in-readtable :curry-compose-reader-macros)
-
-(defmethod node-id ((x node))
-  ;; Strictly for testing.
-  (serial-number x))
 
 ;;;; Additional infrastructure on node for testing.
 (defclass parent (node)
