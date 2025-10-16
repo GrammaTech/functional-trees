@@ -409,7 +409,8 @@ This holds at least the root of the attribute computation."
   (cachep *enable-cross-session-cache* :type boolean)
   ;; Pre-computed table from nodes to the serial numbers of their
   ;; subroots (as recorded in live-subroots). Only storing the serial
-  ;; numbers avoids needing a key-and-value weak hash table.
+  ;; numbers avoids needing a key-and-value weak hash table (which CCL
+  ;; doesn't support).
   (node->subroot-id :type hash-table)
   ;; Track live subroots (serial number to subroot).
   (live-subroots (make-hash-table) :type hash-table))
