@@ -51,30 +51,41 @@
                 :class-slots
                 :ensure-finalized)
   (:import-from :atomics)
-  (:export :copy :tree-copy
-           :copy-with-children-alist
-           :node :child-slots
-           :child-slot-specifiers
-           :serial-number
-           :descendant-map :path
-           :path-of-node
-           :rpath-to-node
-           :path-equalp
-           :path-equalp-butlast
-           :path-later-p
-           :parent
-           :predecessor
-           :successor
-           :children
-           :children-alist
-           :children-slot-specifier-alist
-           :do-tree :mapc :mapcar
-           :swap
-           :define-node-class :define-methods-for-node-class
-           :child-position-if
-           :child-position
-           :subst :subst-if :subst-if-not
-           :with-serial-number-block)
+  (:export
+    :child-position
+    :child-position-if
+    :child-slot-specifiers
+    :child-slots
+    :children
+    :children-alist
+    :children-slot-specifier-alist
+    :copy
+    :copy-with-children-alist
+    :define-methods-for-node-class
+    :define-node-class
+    :descendant-map
+    :do-tree
+    :insert-after
+    :mapc
+    :mapcar
+    :node
+    :parent
+    :path
+    :path-equalp
+    :path-equalp-butlast
+    :path-later-p
+    :path-of-node
+    :predecessor
+    :rpath-to-node
+    :serial-number
+    :splice-after
+    :subst
+    :subst-if
+    :subst-if-not
+    :successor
+    :swap
+    :tree-copy
+    :with-serial-number-block)
 
   (:documentation
    "Prototype implementation of functional trees w. finger objects"))
@@ -1525,6 +1536,28 @@ act on the root of the tree (the previous behavior)."
 (descend (splice :other-args ((values list)) :splice t) values)
 
 (descend (insert :other-args ((value t))) value)
+
+(defgeneric splice-over (tree location values)
+  (:documentation "Splice VALUES, replacing the node at LOCATION."))
+
+(descend (splice-over :other-args ((values list)) :replace t :splice t)
+  values)
+
+(defgeneric splice-after (tree old-node new-nodes)
+  (:documentation "Insert NEW-NODES after OLD-NODE.")
+  (:method ((tree node) (old-node node) (values list))
+    (splice-over tree old-node (cons old-node values)))
+  (:method ((tree node) (location t) (values list))
+    (if-let (old-node (lookup tree location))
+      (splice-after tree old-node values)
+      (if (and values (not (cdr values)))
+          (insert tree location (car values))
+          (splice tree location values)))))
+
+(defgeneric insert-after (tree location new-node)
+  (:documentation "Insert NEW-NODE after OLD-NODE.")
+  (:method (tree location new-node)
+    (splice-after tree location (list new-node))))
 
 (defgeneric swap (tree location-1 location-2)
   (:documentation "Swap the contents of LOCATION-1 and LOCATION-2 in TREE.")
