@@ -597,7 +597,8 @@ DEST has a path, but if DEST is the node at that path."
                                 ;; there's no reason to actually
                                 ;; invoke `children`.
                                 (do-child-slot-nodes (c node)
-                                  (compute-node->subroot-id c subroot)))))))))
+                                  (when (typep c 'node)
+                                    (compute-node->subroot-id c subroot))))))))))
         (compute-node->subroot-id node nil)
         (values table live-subroots)))))
 
@@ -724,7 +725,8 @@ node proxied into the tree instead."
     (labels ((set-proxy (node)
                (ensure-gethash node node->proxy proxy)
                (do-child-slot-nodes (c node)
-                 (set-proxy c))))
+                 (when (typep c 'node)
+                   (set-proxy c)))))
       (set-proxy node)))
   proxy)
 
