@@ -723,7 +723,8 @@ node proxied into the tree instead."
     ;; implicitly inherit PROXY (unless they have one already).
     (labels ((set-proxy (node)
                (ensure-gethash node node->proxy proxy)
-               (mapc #'set-proxy (children node))))
+               (do-child-slot-nodes (c node)
+                 (set-proxy c))))
       (set-proxy node)))
   proxy)
 
