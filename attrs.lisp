@@ -596,7 +596,7 @@ DEST has a path, but if DEST is the node at that path."
                                 ;; We don't care about order so
                                 ;; there's no reason to actually
                                 ;; invoke `children`.
-                                (do-child-slot-nodes (c node)
+                                (do-child-slot-children (c node)
                                   (when (typep c 'node)
                                     (compute-node->subroot-id c subroot))))))))))
         (compute-node->subroot-id node nil)
@@ -724,7 +724,7 @@ node proxied into the tree instead."
     ;; implicitly inherit PROXY (unless they have one already).
     (labels ((set-proxy (node)
                (ensure-gethash node node->proxy proxy)
-               (do-child-slot-nodes (c node)
+               (do-child-slot-children (c node)
                  (when (typep c 'node)
                    (set-proxy c)))))
       (set-proxy node)))

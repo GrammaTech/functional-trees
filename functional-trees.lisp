@@ -76,7 +76,7 @@
     :define-methods-for-node-class
     :define-node-class
     :descendant-map
-    :do-child-slot-nodes
+    :do-child-slot-children
     :do-tree
     :insert-after
     :mapc
@@ -507,7 +507,7 @@ its nodes.")
 (defrestore-cl-store (node stream)
   (cl-store::restore-type-object stream))
 
-(defun walk-child-slot-nodes (fn obj)
+(defun walk-child-slot-children (fn obj)
   "Invoke FN on the children of OBJ, as determined by walking child-slots.
 This bypasses `children' for cases where we don't care about the order
 of the children, or don't want to bother allocating the child list."
@@ -522,10 +522,10 @@ of the children, or don't want to bother allocating the child list."
             (dolist (child slot-value)
               (funcall fn child)))))))
 
-(serapeum:define-do-macro do-child-slot-nodes ((var obj &optional ret) &body body)
-  "Walk the children of OBJ like `walk-child-slot-nodes'."
+(serapeum:define-do-macro do-child-slot-children ((var obj &optional ret) &body body)
+  "Walk the children of OBJ like `walk-child-slot-children'."
   (with-thunk (body var)
-    `(walk-child-slot-nodes ,body ,obj)))
+    `(walk-child-slot-children ,body ,obj)))
 
 (define-compiler-macro children (node)
   `(locally (declare (notinline children))
