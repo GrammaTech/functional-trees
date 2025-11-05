@@ -1913,6 +1913,20 @@ diagnostic information on error or failure."
       (is (eql (attr.size-function t1) 5))
       (is (eql (attr.size-function t1) 5)))))
 
+(deftest test-non-node-children ()
+  "Test the presence of non-node children in nodes doesn't break attributes."
+  (let ((tree (make 'data-root
+                    :data 1
+                    :children (list nil (make 'data-root :data 2)))))
+    ;; We should be able to compute the node to subroot mapping.
+    (finishes
+      (with-attr-table tree))
+    ;; We should be able to assign proxies.
+    (finishes
+      (with-attr-table tree
+        (setf (ft/attrs:attr-proxy (make 'data-root :children (list nil)))
+              tree)))))
+
 (deftest test-has-attribute-p ()
   (let ((t1 (convert 'data-root '(a (b c) (d e)))))
     (is (not (has-attribute-p t1)))
