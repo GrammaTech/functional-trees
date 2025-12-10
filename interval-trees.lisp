@@ -2,6 +2,7 @@
   (:nicknames :ft/it)
   (:use :common-lisp :alexandria :iterate)
   (:shadowing-import-from :fset :convert)
+  (:import-from :serapeum :nlet)
   (:export
     :colliding-intervals
     :colliding-trees
@@ -279,6 +280,8 @@ in decreasing order of depth) if it exists."
 
 (defun intervals-of-itree (itree)
   "Return a fresh list of all the intervals in ITREE"
+  #+(or)
+  ;; Original non-tail-recursive version, for reference.
   (let ((intervals nil))
     (labels ((%walk (node)
                (iter (while node)
@@ -286,7 +289,29 @@ in decreasing order of depth) if it exists."
                      (push (cons (node-lo node) (node-hi node)) intervals)
                      (setf node (node-left node)))))
       (%walk (itree-root itree)))
-    intervals))
+    intervals)
+  (nlet %walk ((node (itree-root itree))
+               (intervals nil)
+               (node-stack nil)
+               (backtracking nil))
+    (cond ((null node)
+           intervals)
+          ((and (not backtracking) (node-right node))
+           (%walk (node-right node) intervals (cons node node-stack) nil))
+          ((node-left node)
+           (%walk
+            (node-left node)
+            (cons (cons (node-lo node) (node-hi node)) intervals)
+            node-stack
+            nil))
+          ((null node-stack)
+           (cons (cons (node-lo node) (node-hi node)) intervals))
+          (t
+           (%walk
+            (car node-stack)
+            (cons (cons (node-lo node) (node-hi node)) intervals)
+            (cdr node-stack)
+            t)))))
 
 (defun itree-replace-node (itree new-node path &optional (size-delta 0))
   "Replaces the node that was reached by PATH in ITREE with new-node.
