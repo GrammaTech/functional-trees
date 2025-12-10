@@ -48,7 +48,6 @@
     :nest
     :nlet
     :pop-assoc
-    :slot-value-safe
     :unbox
     :standard/context
     :vect
@@ -289,7 +288,9 @@ This is important; it controls subroot copying behavior."))
   "Carry forward (copying) the subroots from the old root."
   (lret ((result (call-next-method)))
     (if *enable-cross-session-cache*
-        (when-let (old-map (slot-value-safe root 'subroot-map))
+        (when-let (old-map
+                   (and (slot-boundp root 'subroot-map)
+                        (slot-value root 'subroot-map)))
           (setf (slot-value result 'subroot-map)
                 (if (boxp old-map) old-map (box old-map))))
         (slot-makunbound result 'subroot-map))))
