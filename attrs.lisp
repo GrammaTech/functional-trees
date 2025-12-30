@@ -570,12 +570,12 @@ DEST has a path, but if DEST is the node at that path."
 (defun compute-node->subroot-itree (root &key old-subroots
                                            old-subrootless-nodes
                                            old-itree
-                                    &aux (node (fset:convert 'node root)))
+                                    &aux (root-node (fset:convert 'node root)))
   (labels ((self-interval (node &aux (sn (serial-number node)))
              ;; "Rootless" asts are their own subroots.
              (cons sn sn))
-           (self-mapping (node)
-             (list (self-interval node) node))
+           (rootless-mapping (node)
+             (list (self-interval node) root-node))
            (subroot-intervals (subroot)
              (mapcar (lambda (interval)
                        (list interval subroot))
@@ -585,7 +585,7 @@ DEST has a path, but if DEST is the node at that path."
                  (fset:convert
                   'ft/it:itree
                   (append
-                   (mapcar #'self-mapping subrootless-nodes)
+                   (mapcar #'rootless-mapping subrootless-nodes)
                    (mappend #'subroot-intervals current-subroots)))
                  (let ((removed-intervals
                          (append
@@ -598,7 +598,7 @@ DEST has a path, but if DEST is the node at that path."
                            (set-difference/hash old-subroots current-subroots))))
                        (added-intervals
                          (append
-                          (mapcar #'self-mapping
+                          (mapcar #'rootless-mapping
                                   (set-difference/hash
                                    subrootless-nodes
                                    old-subrootless-nodes))
@@ -610,7 +610,7 @@ DEST has a path, but if DEST is the node at that path."
                      old-itree
                      removed-intervals)
                     added-intervals)))))
-    (mvlet* ((current-subroots subrootless-nodes (collect-subroots node))
+    (mvlet* ((current-subroots subrootless-nodes (collect-subroots root-node))
              (itree (build-itree current-subroots subrootless-nodes)))
       (values itree current-subroots subrootless-nodes))))
 
