@@ -605,6 +605,7 @@ DEST has a path, but if DEST is the node at that path."
                           (mappend
                            #'subroot-intervals
                            (set-difference/hash current-subroots old-subroots)))))
+                   ;; TODO Handle collisions more explicably?
                    (ft/it:itree-add-intervals
                     (ft/it::itree-remove-intervals
                      old-itree
