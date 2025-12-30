@@ -589,19 +589,15 @@ DEST has a path, but if DEST is the node at that path."
                    (mappend #'subroot-intervals current-subroots)))
                  (let ((removed-intervals
                          (append
-                          (mapcar #'self-interval
-                                  (set-difference/hash
-                                   old-subrootless-nodes
-                                   subrootless-nodes))
+                          ;; These refer to the old root, now trivially invalid.
+                          (mapcar #'self-interval old-subrootless-nodes)
                           (mappend
                            #'intervals-of-node
                            (set-difference/hash old-subroots current-subroots))))
                        (added-intervals
                          (append
-                          (mapcar #'rootless-mapping
-                                  (set-difference/hash
-                                   subrootless-nodes
-                                   old-subrootless-nodes))
+                          ;; Update to refer to the new root.
+                          (mapcar #'rootless-mapping subrootless-nodes)
                           (mappend
                            #'subroot-intervals
                            (set-difference/hash current-subroots old-subroots)))))
