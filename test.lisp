@@ -1925,7 +1925,7 @@ diagnostic information on error or failure."
     (finishes
       (with-attr-table tree
         (setf (ft/attrs:attr-proxy (make 'data-root :children (list nil)))
-              tree)))))
+              (convert 'node tree))))))
 
 (deftest test-has-attribute-p ()
   (let ((t1 (convert 'data-root '(a (b c) (d e)))))
@@ -2074,7 +2074,8 @@ they had proxies already."
     (is (equal (mapcar #'type-of (cons t2 (rpath-to-node t1 t2)))
                '(data-subroot data-subroot data-root)))
     (signals error
-      (with-attr-table t1))))
+      (with-attr-table t1
+        (mapcar #'ft/attrs::node-subroot t1)))))
 
 (def-attr-fun attr.3-fn ()
   (:method ((node node)) (attr.3-fn node)))
@@ -2524,22 +2525,15 @@ a different caching policy."
          (project-box
            (make-instance 'project-box :project project)))
     (with-attr-table project-box
-      (is (gethash cc-file-1
-                   (ft/attrs::attrs.node->subroot-id *attrs*)))
-      (is (not (gethash header-file-1
-                        (ft/attrs::attrs.node->subroot-id
-                         *attrs*))))
+      (is (ft/attrs::node-subroot cc-file-1))
+      (is (not (ft/attrs::node-subroot header-file-1)))
       (setf (project (ft/attrs:attrs-root*))
             (copy project :children (cons header-file-1 (children project))))
-      (is (gethash cc-file-1
-                   (ft/attrs::attrs.node->subroot-id *attrs*)))
-      (is (not (gethash header-file-1
-                        (ft/attrs::attrs.node->subroot-id *attrs*))))
+      (is (ft/attrs::node-subroot cc-file-1))
+      (is (not (ft/attrs::node-subroot header-file-1)))
       (ft/attrs:update-subroot-mapping)
-      (is (gethash cc-file-1
-                   (ft/attrs::attrs.node->subroot-id *attrs*)))
-      (is (gethash header-file-1
-                   (ft/attrs::attrs.node->subroot-id *attrs*))))))
+      (is (ft/attrs::node-subroot cc-file-1))
+      (is (ft/attrs::node-subroot header-file-1)))))
 
 (deftest test-thread-blocks ()
   "Test that serial numbers in spawned blocks are disjoint."

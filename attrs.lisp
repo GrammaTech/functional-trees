@@ -22,6 +22,10 @@
     :subst-if
     :subst-if-not)
   (:import-from
+    :functional-trees
+    :intervals-of-node
+    :set-difference/hash)
+  (:import-from
     :serapeum
     :->
     :@
@@ -48,6 +52,7 @@
     :nest
     :nlet
     :pop-assoc
+    :receive
     :unbox
     :standard/context
     :vect
@@ -210,6 +215,7 @@ values returned by the attribute function."
   (setf (approximation-visiting-p (cell-data memo-cell)) nil))
 
 (defun call/visit (memo-cell body-fn)
+  (declare (function body-fn))
   (let ((visiting-initially-p
           (approximation-visiting-p (cell-data memo-cell))))
     (mark-visiting memo-cell)
@@ -247,7 +253,7 @@ Roots are immutable, so if we have previously computed attributes for
 them we can reuse them.
 
 Practically this has the effect that we do not have to to update
-the node->subroot-id table.")
+the node to subroot mapping.")
 
 (defplace cache-lookup (key)
   (gethash key *session-cache*))
@@ -262,11 +268,6 @@ attributes can be dynamically nested when one depends on the other.")
 Inheriting a session means that if there is already a session in
 progress for root A, and you try to start a session for root B, then
 if B is reachable from A the session for A is reused.")
-
-(def +node->subroot-id/initial-size+ 4099
-  "Initial size for the node->subroot-id table.
-The value is heuristic, with the goal of minimizing the initial
-rehashing for large tables.")
 
 
 ;;; Classes
@@ -395,36 +396,39 @@ The new subroot map should be fully independent of MAP."
    :subroot->deps (copy-weak-node-table (subroot-map.subroot->deps map))
    :node->proxy (copy-weak-node-table (subroot-map.node->proxy map))))
 
-(defstruct-read-only (attrs
-                      (:conc-name attrs.)
-                      (:constructor make-attrs
-                          (root &aux (node->subroot-id
-                                      (if *enable-cross-session-cache*
-                                          (compute-node->subroot-id root)
-                                          (make-node->subroot-id-table))))))
+(defstruct (attrs
+            (:conc-name attrs.)
+            (:constructor make-attrs (root)))
   "An attribute session.
 This holds at least the root of the attribute computation."
-  (root :type attrs-root)
+  (root (error "No root") :type attrs-root :read-only t)
   ;; This is only used if *enable-cross-session-cache* is nil.
-  (table (make-weak-node-table) :type hash-table)
-  (cachep *enable-cross-session-cache* :type boolean)
-  ;; Pre-computed table from nodes to the serial numbers of their
-  ;; subroots (as recorded in live-subroots). Only storing the serial
-  ;; numbers avoids needing a key-and-value weak hash table (which CCL
-  ;; doesn't support).
-  (node->subroot-id :type hash-table)
-  ;; Track live subroots (serial number to subroot).
-  (live-subroots (make-hash-table) :type hash-table))
+  (table (make-weak-node-table) :type hash-table :read-only t)
+  (cachep *enable-cross-session-cache* :type boolean :read-only t)
+  (node->subroot
+   (if *enable-cross-session-cache*
+       (compute-node->subroot-itree root)
+       (fset:convert 'ft/it:itree nil))
+   :type ft/it::itree)
+  ;; Track live subroots.
+  (old-subroots nil :type list)
+  (old-subrootless nil :type list))
 
-(defun node-subroot (node &key (attrs *attrs*))
+(defun node-subroot (node &key (attrs *attrs*) (error t))
   "Look up the subroot for a node."
-  (let* ((node->subroot-id (attrs.node->subroot-id attrs))
-         (sn (@ node->subroot-id node)))
-    (and sn
-         (or (@ (attrs.live-subroots attrs) sn)
-             (prog1 nil
-               ;; Delete the dead mapping.
-               (remhash node node->subroot-id))))))
+  (setf node (fset:convert 'node node))
+  (when-let (itree-node
+             (ft/it::itree-find-node-splay
+              (attrs.node->subroot attrs)
+              (serial-number node)))
+    (let ((subroot (ft/it:node-data itree-node)))
+      (if (and (not (eql node subroot))
+               (subroot? node))
+          (and error
+               (error 'nested-subroots
+                      :outer subroot
+                      :inner node))
+          subroot))))
 
 (defsubst attrs-root (attrs)
   (attrs.root attrs))
@@ -504,7 +508,7 @@ attribute tables?"
     (let ((node (fset:convert 'node node)))
       (or (node-subroot node)
           (when-let (proxy (and proxy (attr-proxy node)))
-            (node-subroot node))))))
+            (node-subroot proxy))))))
 
 (defun reachable-from-root? (root dest &key (proxy t))
   "Is DEST reachable from ROOT? This is careful to check not just if
@@ -536,7 +540,7 @@ DEST has a path, but if DEST is the node at that path."
           (or (when (boundp '*attrs*)
                 (or (node-subroot node)
                     (when-let (p (attr-proxy node))
-                      (node-subroot node))))
+                      (node-subroot p))))
               (dominating-subroot attrs-root node)
               attrs-root)
         (update-subroot-mapping ()
@@ -544,78 +548,91 @@ DEST has a path, but if DEST is the node at that path."
           (update-subroot-mapping)
           (retry))))))
 
-(defun make-node->subroot-id-table ()
-  (tg:make-weak-hash-table
-   :test 'eq
-   :weakness :key
-   :size +node->subroot-id/initial-size+))
+(defun collect-subroots (node)
+  (declare (node node))
+  (let (subroots subrootless)
+    (labels ((collect-subroots (node)
+               (cond ((subroot? node)
+                      (push node subroots))
+                     ((typep node 'node)
+                      (push node subrootless)
+                      (handler-case
+                          (progn
+                            (dolist (c (children node))
+                              (collect-subroots c)))
+                        (error ()
+                          (do-child-slot-children (c node)
+                            (when (typep c 'node)
+                              (collect-subroots c)))))))))
+      (collect-subroots node))
+    (values subroots subrootless)))
 
-(defun compute-node->subroot-id (node &key
-                                        (table (make-node->subroot-id-table))
-                                        (live-subroots (make-hash-table))
-                                        force)
-  "Recurse over NODE, computing a table from NODEs to their dominating subroots."
-  (declare (optimize speed) (hash-table table))
-  (when force
-    (clrhash live-subroots)
-    (clrhash table))
-  (let ((first-time (= 0 (hash-table-count table)))
-        (old-live-subroots (copy-hash-table live-subroots)))
-    (clrhash live-subroots)
-    ;; Using `with-boolean' means we only actually dispatch once on
-    ;; `first-time' outside the loop, so we aren't paying for needless
-    ;; lookups on the first computation.
-    (with-boolean (first-time)
-      (labels ((compute-node->subroot-id (node subroot)
-                 (declare (optimize (debug 0))) ;tail recursion
-                 (let ((node
-                         (if (typep node 'node) node
-                             (fset:convert 'node node))))
-                   (if (null subroot)
-                       (compute-node->subroot-id node node)
-                       (let ((subroot-id (serial-number subroot)))
-                         (boolean-unless first-time
-                           ;; If the subroot hasn't changed (is
-                           ;; identical, per `eq'), then the subroots
-                           ;; of its descendants can't have changed
-                           ;; and we don't need to walk them again.
-                           (when (subroot? subroot)
-                             (let ((old-subroot (@ old-live-subroots subroot-id)))
-                               (when (eq old-subroot subroot)
-                                 (setf (@ live-subroots subroot-id) subroot)
-                                 (return-from compute-node->subroot-id)))))
-                         (cond ((and (not (eq node subroot))
-                                     (subroot? node))
-                                (when (and subroot (subroot? subroot))
-                                  (error 'nested-subroots
-                                         :outer subroot
-                                         :inner node))
-                                (compute-node->subroot-id node node))
-                               (t
-                                (setf (@ table node) subroot-id
-                                      (@ live-subroots subroot-id) subroot)
-                                ;; We don't care about order so
-                                ;; there's no reason to actually
-                                ;; invoke `children`.
-                                (handler-case
-                                    (dolist (c (children node))
-                                      (compute-node->subroot-id c subroot))
-                                  (error ()
-                                    (do-child-slot-children (c node)
-                                      (when (typep c 'node)
-                                        (compute-node->subroot-id c subroot))))))))))))
-        (compute-node->subroot-id node nil)
-        (values table live-subroots)))))
+(defun compute-node->subroot-itree (root &key old-subroots
+                                           old-subrootless-nodes
+                                           old-itree
+                                    &aux (node (fset:convert 'node root)))
+  (labels ((self-interval (node &aux (sn (serial-number node)))
+             ;; "Rootless" asts are their own subroots.
+             (cons sn sn))
+           (self-mapping (node)
+             (list (self-interval node) node))
+           (subroot-intervals (subroot)
+             (mapcar (lambda (interval)
+                       (list interval subroot))
+                     (intervals-of-node subroot)))
+           (build-itree (current-subroots subrootless-nodes)
+             (if (not (or old-subroots old-subrootless-nodes))
+                 (fset:convert
+                  'ft/it:itree
+                  (append
+                   (mapcar #'self-mapping subrootless-nodes)
+                   (mappend #'subroot-intervals current-subroots)))
+                 (let ((removed-intervals
+                         (append
+                          (mapcar #'self-interval
+                                  (set-difference/hash
+                                   old-subrootless-nodes
+                                   subrootless-nodes))
+                          (mappend
+                           #'intervals-of-node
+                           (set-difference/hash old-subroots current-subroots))))
+                       (added-intervals
+                         (append
+                          (mapcar #'self-mapping
+                                  (set-difference/hash
+                                   subrootless-nodes
+                                   old-subrootless-nodes))
+                          (mappend
+                           #'subroot-intervals
+                           (set-difference/hash current-subroots old-subroots)))))
+                   (ft/it:itree-add-intervals
+                    (ft/it::itree-remove-intervals
+                     old-itree
+                     removed-intervals)
+                    added-intervals)))))
+    (mvlet* ((current-subroots subrootless-nodes (collect-subroots node))
+             (itree (build-itree current-subroots subrootless-nodes)))
+      (values itree current-subroots subrootless-nodes))))
 
 (defun update-subroot-mapping (&key (attrs *attrs*))
   "Update the node-to-subroot mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
-  (compute-node->subroot-id
-   (attrs.root attrs)
-   :table (attrs.node->subroot-id attrs)
-   :live-subroots (attrs.live-subroots attrs))
-  attrs)
+  (with-accessors ((node->subroot attrs.node->subroot)
+                   (old-subrootless attrs.old-subrootless)
+                   (old-subroots attrs.old-subroots)
+                   (root attrs.root))
+      attrs
+    (receive (itree current-subroots subrootless-nodes)
+        (compute-node->subroot-itree
+         root
+         :old-itree node->subroot
+         :old-subroots old-subroots
+         :old-subrootless-nodes old-subrootless)
+      (setf node->subroot itree
+            old-subroots current-subroots
+            old-subrootless subrootless-nodes)
+      attrs)))
 
 (defun ensure-subroot-map (attrs)
   "Ensure a subroot map for ATTRS.
@@ -821,7 +838,8 @@ depend on invalid subroots."
       ;; Remove unreachable subroots from the table.
       (iter (for (subroot nil) in-hashtable subroot->attr-table)
             ;; Cheap reachability check.
-            (for reachable? = (node-subroot subroot :attrs attrs))
+            (for reachable?
+                 = (node-subroot subroot :attrs attrs :error nil))
             (unless reachable?
               (remhash subroot subroot->attr-table)
               (remhash subroot subroot->deps)
