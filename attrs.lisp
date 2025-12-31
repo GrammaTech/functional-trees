@@ -405,6 +405,8 @@ This holds at least the root of the attribute computation."
   ;; This is only used if *enable-cross-session-cache* is nil.
   (table (make-weak-node-table) :type hash-table :read-only t)
   (cachep *enable-cross-session-cache* :type boolean :read-only t)
+  ;; TODO Consider moving the subroot mapping into the subroot-map.
+  ;; That would enable getting rid of the session cache.
   (node->subroot
    (if *enable-cross-session-cache*
        (compute-node->subroot-itree root)
