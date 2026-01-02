@@ -617,21 +617,15 @@ DEST has a path, but if DEST is the node at that path."
   "Update the node-to-subroot mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
-  (with-accessors ((node->subroot attrs.node->subroot)
-                   (old-subrootless attrs.old-subrootless)
-                   (old-subroots attrs.old-subroots)
-                   (root attrs.root))
-      attrs
-    (receive (itree current-subroots subrootless-nodes)
+  (setf (values (attrs.node->subroot attrs)
+                (attrs.old-subroots attrs)
+                (attrs.old-subrootless attrs))
         (compute-node->subroot-itree
-         root
-         :old-itree node->subroot
-         :old-subroots old-subroots
-         :old-subrootless-nodes old-subrootless)
-      (setf node->subroot itree
-            old-subroots current-subroots
-            old-subrootless subrootless-nodes)
-      attrs)))
+         (attrs.root attrs)
+         :old-itree (attrs.node->subroot attrs)
+         :old-subroots (attrs.old-subroots attrs)
+         :old-subrootless-nodes (attrs.old-subrootless attrs)))
+  attrs)
 
 (defun ensure-subroot-map (attrs)
   "Ensure a subroot map for ATTRS.
