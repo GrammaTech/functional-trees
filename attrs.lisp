@@ -7,6 +7,7 @@
     :functional-trees/functional-trees
     :iterate
     :named-readtables)
+  (:import-from :bordeaux-threads)
   (:import-from :cl-store)
   (:import-from :closer-mop)
   (:import-from :fset)
@@ -247,6 +248,8 @@ attributes.")
 (defvar *enable-cross-session-cache* t
   "If non-nil, cache attributes across sessions.")
 
+(def +cache-lock+ (bt:make-lock))
+
 ;;; Use defparameter as we want the cache to be cleared if the system
 ;;; is reloaded.
 (defparameter *session-cache*
@@ -261,8 +264,13 @@ them we can reuse them.
 Practically this has the effect that we do not have to to update
 the node to subroot mapping.")
 
-(defplace cache-lookup (key)
-  (gethash key *session-cache*))
+(defun cache-lookup (key)
+  (bt:with-lock-held (+cache-lock+)
+    (gethash key *session-cache*)))
+
+(defun (setf cache-lookup) (value key)
+  (bt:with-lock-held (+cache-lock+)
+    (setf (gethash key *session-cache*) value)))
 
 (defvar *subroot-stack* nil
   "Stack of subroots whose attributes are being computed.
