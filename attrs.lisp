@@ -464,6 +464,8 @@ This holds at least the root of the attribute computation."
   (multiple-value-call #'make-weak-hash-table
     :weakness :key
     :test #'eq
+    #+sbcl
+    (values :synchronized t)
     (values-list args)))
 
 (defun copy-weak-node-table (table-in &rest args)
