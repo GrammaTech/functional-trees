@@ -411,6 +411,7 @@ some node.  Return NIL if there is no next node."
                          :lo1 lo :hi1 hi
                          :lo2 (node-lo node) :hi2 (node-hi node))))
 
+;;; NB This is only used for testing.
 (defun merge-intervals (interval-list)
   "Combine intervals with the same datum.  Assumes INTERVAL-LIST
 is fresh and can be modified."
