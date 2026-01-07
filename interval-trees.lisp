@@ -55,7 +55,7 @@ for integer intervals."))
          itree-find-node-splay
          itree-find-node-path))
 
-(defstruct node
+(defstruct (node (:copier nil))
   (left nil :type (or null node) :read-only t)
   (right nil :type (or null node) :read-only t)
   (lo (error "No lo!") :type bound :read-only t)
