@@ -41,6 +41,45 @@ for integer intervals."))
 ;;; Interval trees here represent sets of disjoint intervals
 ;;; of integers
 
+#+sbcl
+(declaim (sb-ext:start-block
+          ;; Most of these are only used outside of here for testing.
+          colliding-intervals
+          colliding-trees
+          insert-node
+          interval-collision-error
+          interval1-trees
+          interval2-trees
+          intervals-of-itree
+          itree-add-intervals
+          itree-delete
+          itree-delete-node
+          itree-find
+          itree-find-node
+          itree-find-node-path
+          itree-find-node-splay
+          itree-glb
+          itree-insert
+          itree-insert*
+          itree-lub
+          itree-merge-root-nodes
+          itree-remove-interval
+          itree-remove-intervals
+          itree-root
+          (setf itree-root)
+          itree-size
+          make-itree
+          max-node
+          merge-intervals
+          min-node
+          node
+          node-data
+          node-hi
+          node-key
+          node-left
+          node-lo
+          node-right))
+
 (deftype bound ()
   "The type of endpoints of the intervals"
   '(integer 0 (#.(1- (ash 1 61)))))
@@ -76,12 +115,12 @@ for integer intervals."))
   (root nil :type (or null node))
   (size 0 :type bound :read-only t))
 
-(defgeneric nodes (tree)
-  (:documentation "Returns the nodes in TREE")
-  (:method ((obj itree)) (nodes (itree-root obj)))
-  (:method ((obj null)) nil)
-  (:method ((obj node))
-    (append (nodes (node-left obj)) (list obj) (nodes (node-right obj)))))
+(defun nodes (obj)
+  "Returns the nodes in TREE"
+  (etypecase obj
+    (null nil)
+    (node (append (nodes (node-left obj)) (list obj) (nodes (node-right obj))))
+    (itree (nodes (itree-root obj)))))
 
 (defmethod print-object ((obj itree) s)
   (if *print-readably*
@@ -434,73 +473,72 @@ is fresh and can be modified."
                        datum next-datum)))))
        (list (list (cons lo hi) datum))))))
 
-(defgeneric itree-merge-root-nodes (tree &key test)
-  (:documentation
+(defun itree-merge-root-nodes (tree &key (test #'eql))
   "Merge the root node with preceding or following
 nodes if they (1) have abutting intervals, and (2)
-have data satisfying the TEST comparison function.")
-  (:method ((tree itree) &key (test #'eql))
-    ;; Merge before root
-    (let ((root (itree-root tree))
-          (size (itree-size tree))
-          (test (ensure-function test)))
-      (if root
-          (let ((root-data (node-data root))
-                (root-lo (node-lo root))
-                (root-hi (node-hi root))
-                (root-left (node-left root))
-                (root-right (node-right root)))
-            (declare (type bound root-lo root-hi size))
-            (block nil
-              (labels ((%max-left (n &optional moves)
-                         (declare (optimize (debug 0))) ;tail recursion
-                         (unless n (return))
-                         (if (null (node-right n))
-                             (progn
-                               (when (or (< (1+ (node-hi n)) root-lo)
-                                         (not (funcall test (node-data n) root-data)))
-                                 (return))
-                               ;; Merge this node into root
-                               (decf size)
-                               (setf root-lo (node-lo n))
-                               (reduce
-                                (lambda (right move)
-                                  (move-node move
-                                             (node-left move)
-                                             right))
-                                moves
-                                :initial-value (node-left n)))
-                             (%max-left (node-right n) (cons n moves)))))
-                (setf root-left (%max-left root-left))))
-            (block nil
-              (labels ((%max-right (n &optional moves)
-                         (declare (optimize (debug 0))) ;tail recursion
-                         (unless n (return))
-                         (if (null (node-left n))
-                             (progn
-                               (when (or (< (1+ root-hi) (node-lo n))
-                                         (not (funcall test root-data (node-data n))))
-                                 (return))
-                               ;; Merge this node into root
-                               (decf size)
-                               (setf root-hi (node-hi n))
-                               (reduce
-                                (lambda (left move)
-                                  (move-node move
-                                             left
-                                             (node-right move)))
-                                moves
-                                :initial-value (node-right n)))
-                             (%max-right (node-left n) (cons n moves)))))
-                (setf root-right (%max-right root-right))))
-            (if (< size (itree-size tree))
-                (let ((new-root (make-node :data root-data
-                                           :lo root-lo
-                                           :hi root-hi
-                                           :left root-left :right root-right)))
-                  (make-itree :root new-root :size size))
+have data satisfying the TEST comparison function."
+  (declare (itree tree))
+  ;; Merge before root
+  (let ((root (itree-root tree))
+        (size (itree-size tree))
+        (test (ensure-function test)))
+    (if root
+        (let ((root-data (node-data root))
+              (root-lo (node-lo root))
+              (root-hi (node-hi root))
+              (root-left (node-left root))
+              (root-right (node-right root)))
+          (declare (type bound root-lo root-hi size))
+          (block nil
+            (labels ((%max-left (n &optional moves)
+                       (declare (optimize (debug 0))) ;tail recursion
+                       (unless n (return))
+                       (if (null (node-right n))
+                           (progn
+                             (when (or (< (1+ (node-hi n)) root-lo)
+                                       (not (funcall test (node-data n) root-data)))
+                               (return))
+                             ;; Merge this node into root
+                             (decf size)
+                             (setf root-lo (node-lo n))
+                             (reduce
+                              (lambda (right move)
+                                (move-node move
+                                           (node-left move)
+                                           right))
+                              moves
+                              :initial-value (node-left n)))
+                           (%max-left (node-right n) (cons n moves)))))
+              (setf root-left (%max-left root-left))))
+          (block nil
+            (labels ((%max-right (n &optional moves)
+                       (declare (optimize (debug 0))) ;tail recursion
+                       (unless n (return))
+                       (if (null (node-left n))
+                           (progn
+                             (when (or (< (1+ root-hi) (node-lo n))
+                                       (not (funcall test root-data (node-data n))))
+                               (return))
+                             ;; Merge this node into root
+                             (decf size)
+                             (setf root-hi (node-hi n))
+                             (reduce
+                              (lambda (left move)
+                                (move-node move
+                                           left
+                                           (node-right move)))
+                              moves
+                              :initial-value (node-right n)))
+                           (%max-right (node-left n) (cons n moves)))))
+              (setf root-right (%max-right root-right))))
+          (if (< size (itree-size tree))
+              (let ((new-root (make-node :data root-data
+                                         :lo root-lo
+                                         :hi root-hi
+                                         :left root-left :right root-right)))
+                (make-itree :root new-root :size size))
               tree))
-          tree))))
+        tree)))
 
 (defun itree-insert (tree lo hi data
                           &aux (new-node
@@ -640,6 +678,9 @@ overlaps one already in the tree."
                (setf lo (1+ n-hi)))))))
   itree)
 
+#+sbcl
+(declaim (sb-ext:end-block))
+
 ;;; utility functions
 
 (defmethod convert ((to-type (eql 'list)) (tree itree) &key)
@@ -660,3 +701,4 @@ overlaps one already in the tree."
         ((cons (cons bound bound) (cons t null))
          (setf tree (itree-insert tree (caar i) (cdar i) (cadr i))))))
     tree))
+
