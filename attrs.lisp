@@ -83,6 +83,7 @@
     :subroot?
     :uncomputed-attr
     :unreachable-node
+    :with-ensure-attr-session
     :with-attr-session
     :with-attr-table))
 
@@ -750,6 +751,7 @@ node proxied into the tree instead."
   proxy)
 
 (defun call/attr-session (root fn &key
+                                    ensure
                                     (inherit *inherit-default*)
                                     (shadow t)
                                     (cache *enable-cross-session-cache*))
@@ -758,6 +760,10 @@ ROOT might be an attrs instance itself.
 
 If the active attrs instance has ROOT for its root, it is not
 replaced.
+
+ENSURE only ensures that some attribute session is active. If there is
+an attribute session, this is equivalent to `(funcall fn)'. All other
+options are discarded and ignored.
 
 If CACHE is non-nil, attributes may be cached across sessions.
 
@@ -771,6 +777,8 @@ SHADOW T -> No error
 SHADOW nil, INHERIT nil -> Error on shadowing
 SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
   (declare (optimize (debug 0)))
+  (when (and ensure (boundp '*attrs*))
+    (return-from call/attr-session (funcall fn)))
   (let* ((new nil)
          (*enable-cross-session-cache* cache)
          (*attrs*
@@ -917,6 +925,15 @@ This should be used if SUBROOT is mutated."
   "Like `with-attr-table', but allowing keyword arguments."
   (with-thunk (body)
     `(call/attr-session ,root ,body ,@args)))
+
+(defmacro with-ensure-attr-session
+    ((root &rest args &key &allow-other-keys)
+     &body body)
+  (with-thunk (body)
+    `(if (boundp '*attrs*)
+         ,body
+         (with-attr-sesion (,root :shadow nil :inherit t ,@args)
+           ,@body))))
 
 (defmacro def-attr-fun (name (&rest optional-args) &body methods)
   "Define an attribute.
