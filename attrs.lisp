@@ -844,7 +844,7 @@ depend on invalid subroots."
             (unless reachable?
               (remhash subroot subroot->attr-table)
               (remhash subroot subroot->deps)
-              (callf #'fset:with removed subroot)))
+              (fset:includef removed subroot)))
       ;; Recursively uncache any subroot that depends on an
       ;; unreachable subroot.
       (iter (for newly-removed-count =
@@ -856,7 +856,7 @@ depend on invalid subroots."
                                         (not (gethash dep subroot->attr-table)))))
                          (remhash subroot subroot->deps)
                          (remhash subroot subroot->attr-table)
-                         (callf #'fset:with removed subroot)
+                         (fset:includef removed subroot)
                          (sum 1))))
             (until (zerop newly-removed-count))))
     removed))
