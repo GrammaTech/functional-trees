@@ -853,30 +853,29 @@ depend on invalid subroots."
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
         (removed (fset:empty-set)))
-    (when (and subroot->attr-table subroot->deps)
-      ;; Remove unreachable subroots from the table.
-      (iter (for (subroot nil) in-hashtable subroot->attr-table)
-            ;; Cheap reachability check.
-            (for reachable?
-                 = (node-subroot subroot :attrs attrs :error nil))
-            (unless reachable?
-              (remhash subroot subroot->attr-table)
-              (remhash subroot subroot->deps)
-              (fset:includef removed subroot)))
-      ;; Recursively uncache any subroot that depends on an
-      ;; unreachable subroot.
-      (iter (for newly-removed-count =
-                 (iter (for (subroot deps) in-hashtable subroot->deps)
-                       (when (iter (for ptr in deps)
-                                   (for dep = (tg:weak-pointer-value ptr))
-                                   (thereis
-                                    (or (null dep) ;Already GC'd.
-                                        (not (gethash dep subroot->attr-table)))))
-                         (remhash subroot subroot->deps)
-                         (remhash subroot subroot->attr-table)
-                         (fset:includef removed subroot)
-                         (sum 1))))
-            (until (zerop newly-removed-count))))
+    ;; Remove unreachable subroots from the table.
+    (iter (for (subroot nil) in-hashtable subroot->attr-table)
+          ;; Cheap reachability check.
+          (for reachable?
+               = (node-subroot subroot :attrs attrs :error nil))
+          (unless reachable?
+            (remhash subroot subroot->attr-table)
+            (remhash subroot subroot->deps)
+            (fset:includef removed subroot)))
+    ;; Recursively uncache any subroot that depends on an
+    ;; unreachable subroot.
+    (iter (for newly-removed-count =
+               (iter (for (subroot deps) in-hashtable subroot->deps)
+                     (when (iter (for ptr in deps)
+                                 (for dep = (tg:weak-pointer-value ptr))
+                                 (thereis
+                                  (or (null dep) ;Already GC'd.
+                                      (not (gethash dep subroot->attr-table)))))
+                       (remhash subroot subroot->deps)
+                       (remhash subroot subroot->attr-table)
+                       (fset:includef removed subroot)
+                       (sum 1))))
+          (until (zerop newly-removed-count)))
     removed))
 
 (defun invalidate-subroot (subroot &key (attrs (bound-value '*attrs*)))
