@@ -1263,7 +1263,7 @@ If not there, invoke the thunk THUNK and memoize the values returned."
               ((approximation-finalized-p cell-data)
                (setf cell-data (approximation-values cell-data))
                (values-list cell-data))
-              ;; We're not in a circle and need to starta new one.
+              ;; We're not in a circle and need to start a new one.
               ((not *circle*)
                (start-new-circle node cell thunk))
               ;; We're in a circle and encoutering the attribute for
