@@ -827,6 +827,24 @@ tree, or when the node itself has been inserted into the tree."
           (when (node-subroot node)
             (remhash node node->proxy)))))
 
+(defun dump-subroot-dependency-graph (attrs)
+  "Extract the subroot dependency graph from ATTRS for debugging."
+  (let ((seen (fset:empty-ch-set))
+        (subroot->attr-table (attrs.subroot->attr-table attrs))
+        (subroot->deps (attrs.subroot->deps attrs)))
+    (labels ((subroot-deps (subroot)
+               (if (fset:lookup seen subroot)
+                   `(:circle ,subroot)
+                   (progn
+                     (fset:includef seen subroot)
+                     (cons subroot
+                           (mapcar (lambda (dep)
+                                     (subroot-deps
+                                      (tg:weak-pointer-value dep)))
+                                   (gethash subroot subroot->deps)))))))
+      (iter (for (subroot nil) in-hash-table subroot->attr-table)
+            (collect (subroot-deps subroot))))))
+
 (defun invalidate-subroots (attrs)
   "Recursively invalidate subroots in ATTRS.
 Invalid subroots are either unreachable subroots, or
