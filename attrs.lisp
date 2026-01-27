@@ -847,7 +847,7 @@ tree, or when the node itself has been inserted into the tree."
                                      (subroot-deps
                                       (tg:weak-pointer-value dep)))
                                    (gethash subroot subroot->deps)))))))
-      (iter (for (subroot nil) in-hash-table subroot->attr-table)
+      (iter (for (subroot nil) in-hashtable subroot->attr-table)
             (collect (subroot-deps subroot))))))
 
 (defun invalidate-subroots (attrs)
