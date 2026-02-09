@@ -454,7 +454,9 @@ multiple operations.")
   (:method ((obj hash-table) &key &allow-other-keys) (copy-hash-table obj))
   (:method ((obj list) &key &allow-other-keys) (copy-list obj))
   (:method ((obj sequence) &key &allow-other-keys) (copy-seq obj))
-  (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj)))
+  (:method ((obj symbol) &key &allow-other-keys) (copy-symbol obj))
+  (:method ((obj pathname) &rest args &key &allow-other-keys)
+    (apply #'make-pathname :defaults obj args)))
 
 (defgeneric copy-with-children-alist (obj children-alist &rest args)
   (:documentation "Perform a copy of node OBJ, with children-alist being
