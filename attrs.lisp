@@ -62,6 +62,7 @@
     :*approximation*
     :*attrs*
     :*enable-cross-session-cache*
+    :*frozen*
     :*max-circular-iterations*
     :attr-missing
     :attr-proxy
@@ -73,6 +74,7 @@
     :def-attr-fun
     :divergent-attribute
     :finalize-approximation
+    :frozen-attributes
     :handle-circular-attribute
     :has-attribute-p
     :invalidate-subroot
@@ -233,6 +235,9 @@ values returned by the attribute function."
 
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
+
+(defparameter *frozen* nil
+  "When non-nil, signal an error if an attribute is recomputed.")
 
 (defvar *attribute-trail* nil
   "Holds a stack-allocated list of (fn-name . node) pairs currently
@@ -813,7 +818,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
     ;; The session is "new" if the root was unknown. But it could
     ;; still have a subroot map attached. If so, make sure it's up to
     ;; date.
-    (when (and cache new)
+    (when (and (not *frozen*) cache new)
       (invalidate-subroots *attrs*))
     (funcall fn)))
 
@@ -1066,6 +1071,8 @@ function on it if not found at first."
           (approximation
            (return-from cached-attr-fn
              (values-list (approximation-values (cdr p)))))))
+      (when (and *frozen* (not (attr-proxy node)))
+        (error 'frozen-attributes :fn fn-name :node node))
       (attr-missing fn-name node)
       (setf (values alist p)
             (retrieve-memoized-attr-fn node fn-name table))
@@ -1302,6 +1309,19 @@ If not there, invoke the thunk THUNK and memoize the values returned."
 (define-condition node-attribute-error (attribute-error)
   ((node :initarg :node :reader attribute-error-node)
    (fn :initarg :fn :reader attribute-error-function)))
+
+(define-condition frozen-attributes (node-attribute-error)
+  ()
+  (:report (lambda (c s)
+             (with-slots (fn node) c
+               (format s
+                       "Attempt to compute ~s on ~a ~
+                        (proxy: ~a, reachable: ~a), ~
+                        but attributes are frozen."
+                       fn
+                       node
+                       (attr-proxy node)
+                       (reachable? node))))))
 
 (define-condition attr-proxy-error (node-attribute-error)
   ((node :initarg :node
