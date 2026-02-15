@@ -822,7 +822,9 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
            (if shadowing? nil *circle*))
          (*subroot-stack*
            ;; Don't continue cycles in the outer attribute session.
-           (if shadowing? nil *subroot-stack*)))
+           (if shadowing? nil *subroot-stack*))
+         (*frozen*
+           (if shadowing? nil *frozen*)))
     (unless (eql cache (attrs.cachep *attrs*))
       (error 'incompatible-cache-option))
     ;; The session is "new" if the root was unknown. But it could
