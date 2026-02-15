@@ -1225,6 +1225,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (if (and cell (listp (cell-data cell)))
        ;; Already final.
        (values-list (cell-data cell)))
+   (if (and *frozen* (not (attr-proxy node)))
+       (error 'frozen-attributes :fn fn-name :node node))
    ;; Stack of attributes being computed.
    (let* ((trail-pair (cons fn-name node))
           (*attribute-trail*
