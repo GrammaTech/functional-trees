@@ -63,7 +63,7 @@
     :*approximation*
     :*attrs*
     :*enable-cross-session-cache*
-    :*frozen*
+    :*read-only*
     :*max-circular-iterations*
     :attr-missing
     :attr-proxy
@@ -75,7 +75,7 @@
     :def-attr-fun
     :divergent-attribute
     :finalize-approximation
-    :frozen-attributes
+    :read-only-attributes
     :handle-circular-attribute
     :has-attribute-p
     :invalidate-subroot
@@ -237,7 +237,7 @@ values returned by the attribute function."
 (defvar-unbound *attrs*
   "Holds the current attribute session.")
 
-(defparameter *frozen* nil
+(defparameter *read-only* nil
   "When non-nil, signal an error if an attribute is recomputed.")
 
 (defvar *attribute-trail* nil
@@ -769,7 +769,8 @@ node proxied into the tree instead."
                                     ensure
                                     (inherit *inherit-default*)
                                     (shadow t)
-                                    (cache *enable-cross-session-cache*))
+                                    (cache *enable-cross-session-cache*)
+                                    (read-only *read-only*))
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
 
@@ -823,14 +824,14 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
          (*subroot-stack*
            ;; Don't continue cycles in the outer attribute session.
            (if shadowing? nil *subroot-stack*))
-         (*frozen*
-           (if shadowing? nil *frozen*)))
+         (*read-only*
+           (if shadowing? read-only *read-only*)))
     (unless (eql cache (attrs.cachep *attrs*))
       (error 'incompatible-cache-option))
     ;; The session is "new" if the root was unknown. But it could
     ;; still have a subroot map attached. If so, make sure it's up to
     ;; date.
-    (when (and (not *frozen*) cache new)
+    (when (and (not *read-only*) cache new)
       (invalidate-subroots *attrs*))
     (funcall fn)))
 
@@ -1083,8 +1084,8 @@ function on it if not found at first."
           (approximation
            (return-from cached-attr-fn
              (values-list (approximation-values (cdr p)))))))
-      (when (and *frozen* (not (attr-proxy node)))
-        (error 'frozen-attributes :fn fn-name :node node))
+      (when (and *read-only* (not (attr-proxy node)))
+        (error 'read-only-attributes :fn fn-name :node node))
       (attr-missing fn-name node)
       (setf (values alist p)
             (retrieve-memoized-attr-fn node fn-name table))
@@ -1227,8 +1228,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
    (if (and cell (listp (cell-data cell)))
        ;; Already final.
        (values-list (cell-data cell)))
-   (if (and *frozen* (not (attr-proxy node)))
-       (error 'frozen-attributes :fn fn-name :node node))
+   (if (and *read-only* (not (attr-proxy node)))
+       (error 'read-only-attributes :fn fn-name :node node))
    ;; Stack of attributes being computed.
    (let* ((trail-pair (cons fn-name node))
           (*attribute-trail*
@@ -1324,14 +1325,14 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   ((node :initarg :node :reader attribute-error-node)
    (fn :initarg :fn :reader attribute-error-function)))
 
-(define-condition frozen-attributes (node-attribute-error)
+(define-condition read-only-attributes (node-attribute-error)
   ()
   (:report (lambda (c s)
              (with-slots (fn node) c
                (format s
                        "Attempt to compute ~s on ~a ~
                         (proxy: ~a, reachable: ~a), ~
-                        but attributes are frozen."
+                        but attributes are read-only."
                        fn
                        node
                        (attr-proxy node)
