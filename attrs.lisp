@@ -410,6 +410,12 @@ The new subroot map should be fully independent of MAP."
    :subroot->deps (copy-weak-node-table (subroot-map.subroot->deps map))
    :node->proxy (copy-weak-node-table (subroot-map.node->proxy map))))
 
+(defstruct-read-only (subroot-mapping (:conc-name subroot-mapping.))
+  (itree :type ft/it::itree)
+  ;; Track live subroots.
+  (old-subroots nil :type list)
+  (old-subrootless nil :type list))
+
 (defstruct (attrs
             (:conc-name attrs.)
             (:constructor make-attrs (root)))
@@ -421,21 +427,20 @@ This holds at least the root of the attribute computation."
   (cachep *enable-cross-session-cache* :type boolean :read-only t)
   ;; TODO Consider moving the subroot mapping into the subroot-map.
   ;; That would enable getting rid of the session cache.
-  (node->subroot
-   (if *enable-cross-session-cache*
-       (compute-node->subroot-itree root)
-       (fset:convert 'ft/it:itree nil))
-   :type ft/it::itree)
-  ;; Track live subroots.
-  (old-subroots nil :type list)
-  (old-subrootless nil :type list))
+  (subroot-mapping
+   (make-subroot-mapping
+    :itree
+    (if *enable-cross-session-cache*
+        (compute-node->subroot-itree root)
+        (fset:convert 'ft/it:itree nil)))))
 
 (defun node-subroot (node &key (attrs *attrs*) (error t))
   "Look up the subroot for a node."
   (setf node (fset:convert 'node node))
   (when-let (itree-node
              (ft/it::itree-find-node-splay
-              (attrs.node->subroot attrs)
+              (subroot-mapping.itree
+               (attrs.subroot-mapping attrs))
               (serial-number node)))
     (let ((subroot (ft/it:node-data itree-node)))
       (if (and (not (eql node subroot))
@@ -640,17 +645,21 @@ DEST has a path, but if DEST is the node at that path."
       (values itree current-subroots subrootless-nodes))))
 
 (defun update-subroot-mapping (&key (attrs *attrs*))
-  "Update the node-to-subroot mapping of ATTRS.
+  "Update the node-to-subroot old-mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
-  (setf (values (attrs.node->subroot attrs)
-                (attrs.old-subroots attrs)
-                (attrs.old-subrootless attrs))
-        (compute-node->subroot-itree
-         (attrs.root attrs)
-         :old-itree (attrs.node->subroot attrs)
-         :old-subroots (attrs.old-subroots attrs)
-         :old-subrootless-nodes (attrs.old-subrootless attrs)))
+  (mvlet* ((old-mapping (attrs.subroot-mapping attrs))
+           (itree old-subroots old-subrootless
+            (compute-node->subroot-itree
+             (attrs.root attrs)
+             :old-itree (subroot-mapping.itree old-mapping)
+             :old-subroots (subroot-mapping.old-subroots old-mapping)
+             :old-subrootless-nodes (subroot-mapping.old-subrootless old-mapping))))
+    (setf (attrs.subroot-mapping attrs)
+          (make-subroot-mapping
+           :itree itree
+           :old-subroots old-subroots
+           :old-subrootless old-subrootless)))
   attrs)
 
 (defun ensure-subroot-map (attrs)
