@@ -329,28 +329,27 @@ in decreasing order of depth) if it exists."
                      (setf node (node-left node)))))
       (%walk (itree-root itree)))
     intervals)
-  (nlet %walk ((node (itree-root itree))
-               (intervals nil)
-               (node-stack nil)
-               (backtracking nil))
-    (cond ((null node)
-           intervals)
-          ((and (not backtracking) (node-right node))
-           (%walk (node-right node) intervals (cons node node-stack) nil))
-          ((node-left node)
-           (%walk
-            (node-left node)
-            (cons (cons (node-lo node) (node-hi node)) intervals)
-            node-stack
-            nil))
-          ((null node-stack)
-           (cons (cons (node-lo node) (node-hi node)) intervals))
-          (t
-           (%walk
-            (car node-stack)
-            (cons (cons (node-lo node) (node-hi node)) intervals)
-            (cdr node-stack)
-            t)))))
+  (let ((node-stack (make-array 100 :adjustable t :fill-pointer 0)))
+    (nlet %walk ((node (itree-root itree))
+                 (intervals nil)
+                 (backtracking nil))
+      (cond ((null node)
+             intervals)
+            ((and (not backtracking) (node-right node))
+             (vector-push-extend node node-stack)
+             (%walk (node-right node) intervals nil))
+            ((node-left node)
+             (%walk
+              (node-left node)
+              (cons (cons (node-lo node) (node-hi node)) intervals)
+              nil))
+            ((emptyp node-stack)
+             (cons (cons (node-lo node) (node-hi node)) intervals))
+            (t
+             (%walk
+              (vector-pop node-stack)
+              (cons (cons (node-lo node) (node-hi node)) intervals)
+              t))))))
 
 (defun itree-replace-node (itree new-node path &optional (size-delta 0))
   "Replaces the node that was reached by PATH in ITREE with new-node.
