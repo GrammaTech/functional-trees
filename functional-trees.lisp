@@ -1562,6 +1562,10 @@ act on the root of the tree (the previous behavior)."
                :replace t)
   value)
 
+(defmethod with :around ((tree node) (location node) &optional value)
+  (if (eq location value) tree
+      (call-next-method)))
+
 (descend (less :extra-args (&optional (arg2 nil arg2p))
                :checks ((declare (ignore arg2))
                         (fset::check-two-arguments arg2p 'less 'node))
