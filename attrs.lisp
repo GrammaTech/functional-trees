@@ -707,6 +707,7 @@ node proxied into the tree instead."
                :node node)))))
 
 (defun (setf attr-proxy) (proxy node)
+  "Make PROXY NODE's proxy."
   (let* ((attrs *attrs*)
          (root (attrs-root attrs))
          (node->proxy (attrs.node->proxy *attrs*))
@@ -715,6 +716,7 @@ node proxied into the tree instead."
              ;; Update the subroot mapping before querying it.
              (update-subroot-mapping :attrs attrs)
              (node-subroot proxy))))
+    ;; Can't proxy a node with a proxy, so resolve it.
     (when-let (real-proxy (@ node->proxy proxy))
       (when (@ node->proxy real-proxy)
         ;; This shouldn't be possible.
@@ -723,7 +725,6 @@ node proxied into the tree instead."
                :proxy proxy))
       (return-from attr-proxy
         (setf (attr-proxy node) real-proxy)))
-    ;; Can't proxy a node with a proxy.
     ;; A node can't proxy itself.
     (when (eq proxy node)
       (error 'self-proxy
