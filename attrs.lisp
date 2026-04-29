@@ -568,20 +568,30 @@ DEST has a path, but if DEST is the node at that path."
 
 (defun collect-subroots (node)
   (declare (node node))
-  (let (subroots subrootless)
-    (labels ((collect-subroots (node)
-               (cond ((subroot? node)
-                      (push node subroots))
-                     ((typep node 'node)
-                      (push node subrootless)
-                      (handler-case
-                          (progn
-                            (dolist (c (children node))
-                              (collect-subroots c)))
-                        (error ()
-                          (do-child-slot-children (c node)
-                            (when (typep c 'node)
-                              (collect-subroots c)))))))))
+  ;; While nodes can only appear in once place in the tree, it is
+  ;; *not* guaranteed that they cannot appear more than once in the
+  ;; return value of `children'. On the other hand, we don't want to
+  ;; bypass `children' in the general case, as that may result in much
+  ;; worse performance. So we have to guard against duplication.
+  (let (subroots subrootless (seen (make-hash-table)))
+    (labels ((seen? (node)
+               (or (@ seen node)
+                   (prog1 nil
+                     (setf (@ seen node) t))))
+             (collect-subroots (node)
+               (unless (seen? node)
+                 (cond ((subroot? node)
+                        (push node subroots))
+                       ((typep node 'node)
+                        (push node subrootless)
+                        (handler-case
+                            (progn
+                              (dolist (c (children node))
+                                (collect-subroots c)))
+                          (error ()
+                            (do-child-slot-children (c node)
+                              (when (typep c 'node)
+                                (collect-subroots c))))))))))
       (collect-subroots node))
     (values subroots subrootless)))
 
