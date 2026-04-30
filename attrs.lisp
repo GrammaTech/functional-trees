@@ -579,19 +579,19 @@ DEST has a path, but if DEST is the node at that path."
                    (prog1 nil
                      (setf (@ seen node) t))))
              (collect-subroots (node)
-               (unless (seen? node)
-                 (cond ((subroot? node)
-                        (push node subroots))
-                       ((typep node 'node)
-                        (push node subrootless)
-                        (handler-case
-                            (progn
-                              (dolist (c (children node))
-                                (collect-subroots c)))
-                          (error ()
-                            (do-child-slot-children (c node)
-                              (when (typep c 'node)
-                                (collect-subroots c))))))))))
+               (cond ((seen? node) nil)
+                     ((subroot? node)
+                      (push node subroots))
+                     ((typep node 'node)
+                      (push node subrootless)
+                      (handler-case
+                          (progn
+                            (dolist (c (children node))
+                              (collect-subroots c)))
+                        (error ()
+                          (do-child-slot-children (c node)
+                            (when (typep c 'node)
+                              (collect-subroots c)))))))))
       (collect-subroots node))
     (values subroots subrootless)))
 
