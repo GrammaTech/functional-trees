@@ -293,6 +293,15 @@ potentially faster."
       ;; this be an error?
       (slot-value obj (slot-specifier-slot spec))))
 
+(defun (setf slot-specifier-value) (value obj spec)
+  (declare (optimize speed (safety 1) (debug 0))
+           (node obj)
+           (slot-specifier spec))
+  (if (eq (class-of obj) (slot-specifier-class spec))
+      (setf (standard-instance-access obj (slot-specifier-location spec))
+            value)
+      (setf (slot-value obj (slot-specifier-slot spec)) spec)))
+
 (defmethod convert ((to-type (eql 'node)) (node node) &key)
   node)
 
@@ -942,32 +951,31 @@ Duplicates are allowed in both lists."
 
 ;;; TODO -- specialize this in define-node-class
 (defmethod tree-copy ((node node))
-  (let* ((child-slots (child-slots node))
-         (slots (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot)))
-                           (class-slots (class-of node))))
-         (slot-names (remove-if (lambda (s) (or (eql s 'serial-number)
-                                                (eql s 'descendant-map)))
-                                (cl:mapcar #'slot-definition-name slots)))
-         (initializers (mappend (lambda (slot)
-                                  (and (slot-boundp node slot)
-                                       (list (make-keyword slot)
-                                             (slot-value node slot))))
-                                slot-names))
-         (new-node (apply #'make-instance (class-of node)
-                          initializers)))
+  (let* ((slots
+           (remove-if (lambda (slot) (eql :class (slot-definition-allocation slot)))
+                      (class-slots (class-of node))))
+         (slot-names
+           (remove-if (lambda (s) (or (eql s 'serial-number)
+                                 (eql s 'descendant-map)))
+                      (cl:mapcar #'slot-definition-name slots)))
+         (initializers
+           (mappend (lambda (slot)
+                      (and (slot-boundp node slot)
+                           (list (make-keyword slot)
+                                 (slot-value node slot))))
+                    slot-names))
+         (new-node
+           (apply #'make-instance (class-of node)
+                  initializers)))
     ;; Now write over the child slots
     ;; This is ok, as the descendant-map slot is uninitialized
-    (iter (for c in child-slots)
-          (if (consp c)
-              (destructuring-bind (child-slot-name . arity) c
-                (if (eql arity 1)
-                    ;; Special case: a singleton child
-                    (setf (slot-value new-node child-slot-name)
-                          (tree-copy (slot-value new-node child-slot-name)))
-                    (setf (slot-value new-node child-slot-name)
-                          (cl:mapcar #'tree-copy (slot-value new-node child-slot-name)))))
-              (setf (slot-value new-node c)
-                    (cl:mapcar #'tree-copy (slot-value new-node c)))))
+    (iter (for c in (child-slot-specifiers node))
+          (if (eql (slot-specifier-arity c) 1)
+              ;; Special case: a singleton child
+              (setf (slot-specifier-value new-node c)
+                    (tree-copy (slot-specifier-value new-node c)))
+              (setf (slot-specifier-value new-node c)
+                    (cl:mapcar #'tree-copy (slot-specifier-value new-node c)))))
     new-node))
 
 (defun childs-list (node slot)
