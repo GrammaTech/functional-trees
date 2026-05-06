@@ -61,6 +61,7 @@
                 :slot-definition-allocation
                 :slot-definition-initform
                 :slot-definition-initargs
+                :slot-definition-location
                 :class-slots
                 :ensure-finalized)
   (:import-from :atomics)
@@ -265,11 +266,18 @@ specifies a specific number of children held in the slot.")
 converted to a list of slot-specifier objects"))
     (:documentation "A node in a tree."))
 
-  (defstruct-read-only slot-specifier
+  (defstruct-read-only (slot-specifier
+                        (:constructor make-slot-specifier
+                            (&key class slot arity
+                             &aux (location
+                                   (slot-definition-location
+                                    (find slot (class-slots class)
+                                          :key #'slot-definition-name))))))
     "Object that represents the slots of a class"
     (class :type class)
     (slot :type symbol)
-    (arity :type (integer 0))))
+    (arity :type (integer 0))
+    (location)))
 
 (defmethod convert ((to-type (eql 'node)) (node node) &key)
   node)
