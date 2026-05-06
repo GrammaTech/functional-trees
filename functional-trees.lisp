@@ -342,16 +342,6 @@ is true (the default.)")
 (defun slot-spec-arity (slot-spec)
   (or (and (consp slot-spec) (cdr slot-spec)) 0))
 
-(defgeneric slot-spec-of-slot (obj slot &optional error?)
-  (:documentation "Returns the slot spec pair of a slot in OBJ.  If ERROR? is
-true (the default) signal an error if SLOT is not a child slot of OBJ.
-Otherwise, in that case return NIL.")
-  (:method ((obj node) (slot symbol) &optional (error? t))
-    (dolist (p (child-slots obj)
-             (when error? (error "Not a child slot of ~a: ~a" obj slot)))
-      (etypecase p
-        (symbol (when (eql p slot) (return p)))
-        (cons (when (eql (car p) slot) (return p)))))))
 
 ;;;; Core functional tree definitions.
 (deftype path ()
