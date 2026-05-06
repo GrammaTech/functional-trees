@@ -62,6 +62,7 @@
                 :slot-definition-initform
                 :slot-definition-initargs
                 :slot-definition-location
+                :standard-instance-access
                 :class-slots
                 :ensure-finalized)
   (:import-from :atomics)
@@ -278,6 +279,20 @@ converted to a list of slot-specifier objects"))
     (slot :type symbol)
     (arity :type (integer 0))
     (location)))
+
+(defun slot-specifier-value (obj spec)
+  "Look up the value in OBJ of slot specifier SPEC.
+Equivalent to (slot-value obj (slot-specifier-name spec)), but
+potentially faster."
+  (declare (optimize speed (safety 1) (debug 0))
+           (node obj)
+           (slot-specifier spec))
+  (if (eq (class-of obj) (slot-specifier-class spec))
+      (standard-instance-access obj (slot-specifier-location spec))
+      ;; The case where the specifiers are inherited from another
+      ;; class. (Since class allocations are not per-class). Should
+      ;; this be an error?
+      (slot-value obj (slot-specifier-slot spec))))
 
 (defmethod convert ((to-type (eql 'node)) (node node) &key)
   node)
@@ -563,7 +578,7 @@ of NODE to their members.")
 of NODE to their members")
   (:method ((node node))
     (cl:mapcar (lambda (ss)
-                 (let ((v (slot-value node (slot-specifier-slot ss))))
+                 (let ((v (slot-specifier-value node ss)))
                    (if (eql (slot-specifier-arity ss) 1)
                      (if v (list ss v) (list ss))
                      (cons ss v))))
@@ -769,7 +784,9 @@ telling the user to use (setf (@ ... :<slot>) ...)"
            (iter outer
                  (for slot-spec in (child-slot-specifiers node))
                  (let* ((slot (slot-specifier-slot slot-spec))
-                        (val (slot-value node slot)))
+                        (val
+                          (progn (slot-value node slot)
+                                 (slot-specifier-value node slot-spec))))
                    (if (listp val)
                        (iter (for v in val)
                              (in outer

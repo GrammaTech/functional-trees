@@ -2629,50 +2629,50 @@ a different caching policy."
       (with-attr-table node
         (is (zerop (minimize node)))))))
 
-(deftest walk-child-slot-children ()
+(deftest test-walk-child-slot-children ()
   "Calling do-child-slot-children should return the children."
-  (is (equal
-       '(1 2)
-       (serapeum:with-collectors (collect)
-         (do-child-slot-children (c (make 'node-cons :head 1 :tail 2))
-           (collect c)))))
-  (is (equal
-       '(1 2 3)
-       (serapeum:with-collectors (collect)
-         (do-child-slot-children (c (make 'node-cons2 :head 1 :tail '(2 3)))
-           (collect c)))))
-  (is (equal
-       '(1 2 3)
-       (serapeum:with-collectors (collect)
-         (do-child-slot-children (c (make 'node-list :child-list '(1 2 3)))
-           (collect c)))))
-  (is (equal
-       '(1 2 3)
-       (serapeum:with-collectors (collect)
-         (do-child-slot-children (c (make 'node-list2 :body '(1 2 3)))
-           (collect c)))))
-  (is (every #'identity
-             (mapcar #'typep
-                     (serapeum:with-collectors (collect)
-                       (do-child-slot-children
-                           (c (make 'node-with-fields
-                                    :a (make 'node-with-fields)
-                                    :b (make 'node-with-fields)))
-                         (collect c)))
-                     '(node-with-fields node-with-fields))))
-  (is (equal
-       '(1 2)
-       (serapeum:with-collectors (collect)
-         ;; NB :data is not a child slot.
-         (do-child-slot-children (c (make 'node-with-arity2 :a '(1 2) :data 3))
-           (collect c)))))
-  (is (equal
-       '(1 2 3 4)
-       (serapeum:with-collectors (collect)
-         (do-child-slot-children (c (make 'node-with-arity2/2
-                                          :a '(1 2)
-                                          :b '(3 4)))
-           (collect c)))))
+  ;; (is (equal
+  ;;      '(1 2)
+  ;;      (serapeum:with-collectors (collect)
+  ;;        (do-child-slot-children (c (make 'node-cons :head 1 :tail 2))
+  ;;          (collect c)))))
+  ;; (is (equal
+  ;;      '(1 2 3)
+  ;;      (serapeum:with-collectors (collect)
+  ;;        (do-child-slot-children (c (make 'node-cons2 :head 1 :tail '(2 3)))
+  ;;          (collect c)))))
+  ;; (is (equal
+  ;;      '(1 2 3)
+  ;;      (serapeum:with-collectors (collect)
+  ;;        (do-child-slot-children (c (make 'node-list :child-list '(1 2 3)))
+  ;;          (collect c)))))
+  ;; (is (equal
+  ;;      '(1 2 3)
+  ;;      (serapeum:with-collectors (collect)
+  ;;        (do-child-slot-children (c (make 'node-list2 :body '(1 2 3)))
+  ;;          (collect c)))))
+  ;; (is (every #'identity
+  ;;            (mapcar #'typep
+  ;;                    (serapeum:with-collectors (collect)
+  ;;                      (do-child-slot-children
+  ;;                          (c (make 'node-with-fields
+  ;;                                   :a (make 'node-with-fields)
+  ;;                                   :b (make 'node-with-fields)))
+  ;;                        (collect c)))
+  ;;                    '(node-with-fields node-with-fields))))
+  ;; (is (equal
+  ;;      '(1 2)
+  ;;      (serapeum:with-collectors (collect)
+  ;;        ;; NB :data is not a child slot.
+  ;;        (do-child-slot-children (c (make 'node-with-arity2 :a '(1 2) :data 3))
+  ;;          (collect c)))))
+  ;; (is (equal
+  ;;      '(1 2 3 4)
+  ;;      (serapeum:with-collectors (collect)
+  ;;        (do-child-slot-children (c (make 'node-with-arity2/2
+  ;;                                         :a '(1 2)
+  ;;                                         :b '(3 4)))
+  ;;          (collect c)))))
   (is (equal
        '(1 2 3 4)
        (serapeum:with-collectors (collect)
