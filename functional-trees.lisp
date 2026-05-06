@@ -301,6 +301,12 @@ potentially faster."
 (defun descendant-map (obj)
   (slot-value obj 'descendant-map))
 
+(defmethod update-instance-for-redefined-class :after
+    ((instance node) a d p &key)
+  (declare (ignore a d p))
+  (when (slot-boundp instance 'child-slot-specifiers)
+    (slot-makunbound instance 'child-slot-specifiers)))
+
 (defmethod slot-unbound ((class t) (obj node) (slot (eql 'child-slot-specifiers)))
   (setf (slot-value obj slot)
         (iter (for p in (child-slots obj))
