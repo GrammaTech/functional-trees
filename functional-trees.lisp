@@ -14,6 +14,7 @@
   (:nicknames :ft :functional-trees/functional-trees)
   (:use :common-lisp :alexandria :iterate :cl-store :bordeaux-threads)
   (:import-from :serapeum
+                :defstruct-read-only
                 :with-item-key-function
                 :with-two-arg-test
                 :with-boolean
@@ -264,19 +265,11 @@ specifies a specific number of children held in the slot.")
 converted to a list of slot-specifier objects"))
     (:documentation "A node in a tree."))
 
-  (defclass slot-specifier ()
-    ((class :reader slot-specifier-class
-            :initarg :class
-            :documentation "The class to which the slot belongs")
-     (slot :reader slot-specifier-slot
-           :initarg :slot
-           :type symbol
-           :documentation "The name of the slot")
-     (arity :reader slot-specifier-arity
-            :type (integer 0)
-            :initarg :arity
-            :documentation "The arity of the slot"))
-    (:documentation "Object that represents the slots of a class")))
+  (defstruct-read-only slot-specifier
+    "Object that represents the slots of a class"
+    (class :type class)
+    (slot :type symbol)
+    (arity :type (integer 0))))
 
 (defmethod convert ((to-type (eql 'node)) (node node) &key)
   node)
@@ -284,9 +277,6 @@ converted to a list of slot-specifier objects"))
 (declaim (inline descendant-map))
 (defun descendant-map (obj)
   (slot-value obj 'descendant-map))
-
-(defun make-slot-specifier (&rest args)
-  (apply #'make-instance 'slot-specifier args))
 
 (defmethod slot-unbound ((class t) (obj node) (slot (eql 'child-slot-specifiers)))
   (setf (slot-value obj slot)
