@@ -73,7 +73,6 @@
     :child-slots
     :children
     :children-alist
-    :children-slot-specifier-alist
     :copy
     :copy-with-children-alist
     :define-methods-for-node-class
@@ -277,7 +276,7 @@ converted to a list of slot-specifier objects"))
     "Object that represents the slots of a class"
     (class :type class)
     (slot :type symbol)
-    (arity :type (integer 0))
+    (arity :type (and fixnum unsigned-byte))
     (location)))
 
 (defun slot-specifier-value (obj spec)
@@ -334,13 +333,10 @@ is true (the default.)")
           (when error?
             (error "Not a slot in ~a: ~a" obj slot))))))
 
-(declaim (inline slot-spec-slot slot-spec-arity child-list))
+(declaim (inline slot-spec-slot child-list))
 
 (defun slot-spec-slot (slot-spec)
   (if (consp slot-spec) (car slot-spec) slot-spec))
-
-(defun slot-spec-arity (slot-spec)
-  (or (and (consp slot-spec) (cdr slot-spec)) 0))
 
 
 ;;;; Core functional tree definitions.
@@ -525,9 +521,9 @@ of the children, or don't want to bother allocating the child list."
   (declare (optimize speed (debug 0))
            (node obj))
   (let ((fn (ensure-function fn)))
-    (dolist (slot-spec (child-slots obj))
-      (let ((slot-value (slot-value obj (slot-spec-slot slot-spec))))
-        (if (eql 1 (slot-spec-arity slot-spec))
+    (dolist (slot-spec (child-slot-specifiers obj))
+      (let ((slot-value (slot-specifier-value obj slot-spec)))
+        (if (eql 1 (slot-specifier-arity slot-spec))
             (when slot-value
               (funcall fn slot-value))
             (dolist (child slot-value)
@@ -546,38 +542,20 @@ of the children, or don't want to bother allocating the child list."
   (:documentation "Return all children of NODE.")
   (:method ((node node))
     (mappend (lambda (slot-spec)
-               (multiple-value-bind (slot arity)
-                   (etypecase slot-spec
-                     (cons (values (car slot-spec) (cdr slot-spec)))
-                     (symbol (values slot-spec 0)))
-                 (if (eql 1 arity)
-                     (list (slot-value node slot))
-                     (slot-value node slot))))
-             (child-slots node))))
+               (if (eql 1 (slot-specifier-arity slot-spec))
+                   (list (slot-specifier-value node slot-spec))
+                   (slot-specifier-value node slot-spec)))
+             (child-slot-specifiers node))))
 
 (defgeneric children-alist (node)
   (:documentation "Return an alist mapping child slots
 of NODE to their members.")
   (:method ((node node))
     (cl:mapcar (lambda (slot-spec)
-                 (multiple-value-bind (slot arity)
-                     (etypecase slot-spec
-                       (cons (values (car slot-spec) (cdr slot-spec)))
-                       (symbol (values slot-spec 0)))
-                   (if (eql 1 arity)
-                       (list slot (slot-value node slot))
-                       (cons slot (slot-value node slot)))))
-               (child-slots node))))
-
-(defgeneric children-slot-specifier-alist (node)
-  (:documentation "Return an alist mapping child slot specifiers
-of NODE to their members")
-  (:method ((node node))
-    (cl:mapcar (lambda (ss)
-                 (let ((v (slot-specifier-value node ss)))
-                   (if (eql (slot-specifier-arity ss) 1)
-                     (if v (list ss v) (list ss))
-                     (cons ss v))))
+                 (let ((slot (slot-specifier-slot slot-spec)))
+                   (if (eql 1 (slot-specifier-arity slot-spec))
+                       (list slot (slot-specifier-value node slot-spec))
+                       (cons slot (slot-specifier-value node slot-spec)))))
                (child-slot-specifiers node))))
 
 (defun expand-children-defmethod (class child-slots)
@@ -586,6 +564,8 @@ of NODE to their members")
      ;; singleton arity slots in `(list ...)'.  Down the line
      ;; perhaps something smarter that takes advantage of the
      ;; known size of some--maybe all--slots would be better.
+
+     ;; TODO Use slot locations?
      (append ,@(cl:mapcar (lambda (form)
                             (destructuring-bind (slot . arity)
                                 (etypecase form
@@ -710,9 +690,9 @@ telling the user to use (setf (@ ... :<slot>) ...)"
 (defmethod slot-unbound ((class t) (obj node) (slot-name (eql 'size)))
   ;; Avoid invoking `children'
   (let ((size 1))
-    (dolist (slot-spec (child-slots obj))
-      (let ((slot-value (slot-value obj (slot-spec-slot slot-spec))))
-        (if (eql 1 (slot-spec-arity slot-spec))
+    (dolist (slot-spec (child-slot-specifiers obj))
+      (let ((slot-value (slot-specifier-value obj slot-spec)))
+        (if (eql 1 (slot-specifier-arity slot-spec))
             (incf size (size slot-value))
             (dolist (child slot-value)
               (incf size (size child))))))
@@ -1092,8 +1072,9 @@ Return nil if NODE is equal to ROOT or is not in the subtree of ROOT.")
       (second (member node (children parent))))))
 
 (defun child-list (node slot-spec)
-  (let ((children (slot-value node (slot-spec-slot slot-spec))))
-    (if (eql 1 (slot-spec-arity slot-spec))
+  (declare (slot-specifier slot-spec))
+  (let ((children (slot-specifier-value node slot-spec)))
+    (if (eql 1 (slot-specifier-arity slot-spec))
         (list children)
         children)))
 
@@ -1189,13 +1170,13 @@ into subtrees."))
 code duplication here before."
   ;; TODO: change this to work with slot-specifier objects
   `(defmethod ,name ((node node) (index list) (fn function))
-     (let* ((child-slots (child-slots node)))
+     (let* ((child-slots (child-slot-specifiers node)))
        (declare (type fixnum))
        (dolist (child-slot child-slots)
-         (let ((name (slot-spec-slot child-slot)))
-           (if (eql 1 (slot-spec-arity child-slot))
+         (let ((name (slot-specifier-slot child-slot)))
+           (if (eql 1 (slot-specifier-arity child-slot))
                ;; Single arity just add slot name.
-               (,child-op (slot-value node name)
+               (,child-op (slot-specifier-value node child-slot)
                           ;; TODO: precompute this keyword in slot-spec
                           (list* name index)
                           fn)
@@ -1214,7 +1195,7 @@ code duplication here before."
 (defmethod map-children ((node t) (fn function)) nil)
 
 (defmethod map-children ((node node) (fn function))
-  (let ((child-slots (child-slots node)))
+  (let ((child-slots (child-slot-specifiers node)))
     (dolist (child-slot child-slots)
       (dolist (child (child-list node child-slot))
         (pure-traverse-tree child fn)))))
@@ -1229,6 +1210,7 @@ returning a plist suitable for passing to COPY"))
 (defmethod mapcar-children ((node node) (fn function))
   (mappend
    (lambda (child-slot &aux modifiedp)
+     (declare (slot-specifier child-slot))
      (let* ((children
               (cl:mapcar (lambda (child)
                            (let ((new (traverse-tree child fn)))
@@ -1237,7 +1219,7 @@ returning a plist suitable for passing to COPY"))
                          (child-list node child-slot)))
             (arg
               ;; Adjust the children list for special arities.
-              (case (slot-spec-arity child-slot)
+              (case (slot-specifier-arity child-slot)
                 ;; Unpack a single-arity child from the list.
                 (1
                  (let ((child (car children)))
@@ -1250,9 +1232,9 @@ returning a plist suitable for passing to COPY"))
                 (0 (mappend #'ensure-list children)))))
        (when modifiedp
          ;; TODO: precompute keyword in slot spec
-         (list (make-keyword (slot-spec-slot child-slot))
+         (list (make-keyword (slot-specifier-slot child-slot))
                arg))))
-   (child-slots node)))
+   (child-slot-specifiers node)))
 
 (defgeneric node-valid (node)
   (:documentation "True if the tree rooted at NODE have EQL unique
@@ -1504,11 +1486,10 @@ act on the root of the tree (the previous behavior)."
                 ;; (format t "(integer 0)~%")
                 (reduce
                  (lambda (i child-slot)
+                   (declare (slot-specifier child-slot))
                    (nest
-                    (let* ((slot (if (consp child-slot)
-                                     (car child-slot)
-                                     child-slot))
-                           (children (slot-value tree slot))
+                    (let* ((slot (slot-specifier-slot child-slot))
+                           (children (slot-specifier-value tree child-slot))
                            (account (if (listp children) (length children) 1))))
                     (if (>= i account) (- i account))
                     (return-from ,name
@@ -1519,7 +1500,7 @@ act on the root of the tree (the previous behavior)."
                                                      ,@(arg-values other-args)))
                                         (subseq children (1+ i)))
                                 ,@new)))))
-                 (child-slots tree)
+                 (child-slot-specifiers tree)
                  :initial-value (car path)))))
            (t ;; must be (<symbol> . <index>)
             (assert (symbolp (car path)))
@@ -1533,21 +1514,14 @@ act on the root of the tree (the previous behavior)."
          (declare (ignorable ,@vars))
          ,@checks
          (reduce (lambda (i child-slot)
-                   (let* ((slot (if (consp child-slot)
-                                    (car child-slot)
-                                    child-slot))
-                          (children (slot-value tree slot))
-                          (account (cond
-                                     ;; Explicit arity
-                                     ((and (consp child-slot)
-                                           ;; Explicit arity of 0
-                                           ;; means unspecified hence
-                                           ;; '(integer 1).
-                                           (typep (cdr child-slot) '(integer 1)))
-                                      (cdr child-slot))
-                                     ;; Populated children
-                                     ((listp children) (length children))
-                                     (t 1))))
+                   (declare (slot-specifier child-slot))
+                   (let* ((slot (slot-specifier-slot child-slot))
+                          (children (slot-specifier-value tree child-slot))
+                          (account
+                            (cond ((eql (slot-specifier-arity child-slot) 1)
+                                   1)
+                                  ((listp children) (length children))
+                                  (t 1))))
                      (if (>= i account)
                          (- i account)
                          (return-from ,name
@@ -1558,7 +1532,7 @@ act on the root of the tree (the previous behavior)."
                                                 ,@(arg-values other-args))
                                          ,@new)
                                      ,@new))))))
-                 (child-slots tree)
+                 (child-slot-specifiers tree)
                  :initial-value i)
          (error ,(format nil "Cannot ~a beyond end of children." name)))
        (defmethod ,name ((list list) (i integer) ,@other-args ,@extra-args)
