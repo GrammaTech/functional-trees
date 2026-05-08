@@ -318,7 +318,9 @@ potentially faster."
 
 (defmethod slot-unbound ((class t) (obj node) (slot (eql 'child-slot-specifiers)))
   (setf (slot-value obj slot)
-        (iter (for p in (child-slots obj))
+        ;; We're only interested in the actual value of the slot, not
+        ;; any methods that have been written for `child-slots'.
+        (iter (for p in (slot-value obj 'child-slots))
               (collecting
                (etypecase p
                  (symbol (make-slot-specifier
