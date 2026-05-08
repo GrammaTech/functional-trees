@@ -28,7 +28,7 @@ object of which represents a node in a tree. Here are its slots:
 
 Slots with :CLASS allocation:
   CHILD-SLOTS                    = NIL
-  CHILD-SLOT-SPECIFIERS          = #<unbound slot>
+  CHILD-SLOT-SPECIFIERS          = NIL
 Slots with :INSTANCE allocation:
   DESCENDANT-MAP                 = #<unbound slot>
   SERIAL-NUMBER                  = 1
@@ -161,7 +161,7 @@ This method may be used to easily create a functional tree from a list.
 
 Slots with :CLASS allocation:
   CHILD-SLOTS                    = ((THEN . 1) ELSE)
-  CHILD-SLOT-SPECIFIERS          = #<unbound slot>
+  CHILD-SLOT-SPECIFIERS          = (#<FUNCTIONAL-TREES::SLOT-SPECIFIER THEN 1>..
 Slots with :INSTANCE allocation:
   DESCENDANT-MAP                 = #<unbound slot>
   SERIAL-NUMBER                  = 7
