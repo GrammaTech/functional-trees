@@ -300,7 +300,8 @@ potentially faster."
   (if (eq (class-of obj) (slot-specifier-class spec))
       (setf (standard-instance-access obj (slot-specifier-location spec))
             value)
-      (setf (slot-value obj (slot-specifier-slot spec)) spec)))
+      (setf (slot-value obj (slot-specifier-slot spec))
+            value)))
 
 (defmethod convert ((to-type (eql 'node)) (node node) &key)
   node)
