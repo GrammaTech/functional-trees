@@ -278,6 +278,8 @@ converted to a list of slot-specifier objects"))
     (slot :type symbol)
     (arity :type (and fixnum unsigned-byte))
     (location)))
+    ;; TODO Unclear if this is always a fixnum -- source indicates it
+    ;; could be a cons?
 
 (defun slot-specifier-value (obj spec)
   "Look up the value in OBJ of slot specifier SPEC.
