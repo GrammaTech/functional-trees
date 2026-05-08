@@ -269,17 +269,20 @@ converted to a list of slot-specifier objects"))
   (defstruct-read-only (slot-specifier
                         (:constructor make-slot-specifier
                             (&key class slot arity
-                             &aux (location
-                                   (slot-definition-location
-                                    (find slot (class-slots class)
-                                          :key #'slot-definition-name))))))
+                             &aux
+                               (location
+                                (slot-definition-location
+                                 (find slot (class-slots class)
+                                       :key #'slot-definition-name)))
+                               (keyword (make-keyword slot)))))
     "Object that represents the slots of a class"
     (class :type class)
     (slot :type symbol)
     (arity :type (and fixnum unsigned-byte))
-    (location)))
     ;; TODO Unclear if this is always a fixnum -- source indicates it
     ;; could be a cons?
+    (location)
+    (keyword :type keyword)))
 
 (defun slot-specifier-value (obj spec)
   "Look up the value in OBJ of slot specifier SPEC.
@@ -484,7 +487,7 @@ used to initialize some children")
     (apply #'copy obj (nconc (mapcan (lambda (p)
                                        (typecase (car p)
                                          (slot-specifier
-                                          (list (make-keyword (slot-specifier-slot (car p)))
+                                          (list (slot-specifier-keyword (car p))
                                                 (if (eql (slot-specifier-arity (car p)) 1)
                                                     (cadr p)
                                                     (cdr p))))
@@ -1244,8 +1247,7 @@ returning a plist suitable for passing to COPY"))
                 ;; lists.
                 (0 (mappend #'ensure-list children)))))
        (when modifiedp
-         ;; TODO: precompute keyword in slot spec
-         (list (make-keyword (slot-specifier-slot child-slot))
+         (list (slot-specifier-keyword child-slot)
                arg))))
    (child-slot-specifiers node)))
 
@@ -1501,12 +1503,11 @@ act on the root of the tree (the previous behavior)."
                  (lambda (i child-slot)
                    (declare (slot-specifier child-slot))
                    (nest
-                    (let* ((slot (slot-specifier-slot child-slot))
-                           (children (slot-specifier-value tree child-slot))
+                    (let* ((children (slot-specifier-value tree child-slot))
                            (account (if (listp children) (length children) 1))))
                     (if (>= i account) (- i account))
                     (return-from ,name
-                      (copy tree (make-keyword slot)
+                      (copy tree (slot-specifier-keyword child-slot)
                             (if (listp children)
                                 (append (subseq children 0 i)
                                         (list (,name (nth i children) (cdr path)
@@ -1528,8 +1529,7 @@ act on the root of the tree (the previous behavior)."
          ,@checks
          (reduce (lambda (i child-slot)
                    (declare (slot-specifier child-slot))
-                   (let* ((slot (slot-specifier-slot child-slot))
-                          (children (slot-specifier-value tree child-slot))
+                   (let* ((children (slot-specifier-value tree child-slot))
                           (account
                             (cond ((eql (slot-specifier-arity child-slot) 1)
                                    1)
@@ -1538,7 +1538,7 @@ act on the root of the tree (the previous behavior)."
                      (if (>= i account)
                          (- i account)
                          (return-from ,name
-                           (copy tree (make-keyword slot)
+                           (copy tree (slot-specifier-keyword child-slot)
                                  (if children
                                      (if (listp children)
                                          (,name children i
