@@ -789,7 +789,8 @@ telling the user to use (setf (@ ... :<slot>) ...)"
          (sn (serial-number node)))
     (setf (slot-value node 'descendant-map)
           (if (< (size node) *size-threshold*)
-              (sort (coerce (cons (list (cons sn sn) nil) intervals) 'vector)
+              (sort (coerce (cons (list (cons sn sn) nil) intervals)
+                            'simple-vector)
                     #'<
                     :key #'caar)
               (convert 'ft/it:itree (cons (list (cons sn sn) nil) intervals))))))
@@ -800,8 +801,7 @@ telling the user to use (setf (@ ... :<slot>) ...)"
     (let ((dm (descendant-map node)))
       (etypecase dm
         (ft/it:itree (ft/it:intervals-of-itree dm))
-        (vector
-         (map 'list #'car dm)))))
+        (simple-vector (map 'list #'car dm)))))
   (:method ((node t)) nil))
 
 (defun add-slot-to-intervals (intervals slot)
@@ -991,15 +991,18 @@ Duplicates are allowed in both lists."
     (if (listp val) val (list val))))
 
 (defun child-slot-with-sn (node sn)
+  (declare (optimize speed))
   (let ((map (descendant-map node)))
     (etypecase map
       (ft/it:itree
        (when-let ((itree-node (ft/it::itree-find-node-splay map sn)))
          (ft/it:node-data itree-node)))
-      (vector
+      (simple-vector
        (let ((idx (bisect-left map `((nil . ,sn)) #'< :key #'cdar)))
+         (declare (array-index idx))
          (when (< idx (length map))
-           (destructuring-bind ((start . end) slot) (aref map idx)
+           (destructuring-bind ((start . end) slot) (svref map idx)
+             (declare (fixnum start end))
              (when (<= start sn end)
                slot))))))))
 
