@@ -1011,7 +1011,8 @@ Duplicates are allowed in both lists."
 with the same serial number as NODE, as a list of nodes.  Note that this does
 not include NODE itself.
 
-Also return the node found.  If no such node is in the tree, return NIL NIL, or
+Also return the node found and the lookup path (list of slots and
+positions). If no such node is in the tree, return NIL NIL NIL, or
 signal an error if ERROR is true.")
   (:method ((root node) (node node) &key error)
     (rpath-to-node root (serial-number node) :error error))
@@ -1019,26 +1020,39 @@ signal an error if ERROR is true.")
     (unless (eql (serial-number root) sn)
       (let ((node root)
             (rpath nil)
-            (child-slot (child-slot-with-sn root sn)))
+            (reverse-lookup-path nil)
+            (slot (child-slot-with-sn root sn)))
         (iter (while node)
-              (unless child-slot
+              (unless slot
                 (if error
                     (error "Serial number ~a not found in tree ~a" sn root)
-                    (return (values nil nil))))
+                    (return (values nil nil nil))))
               (push node rpath)
-              (iter (for child-node in (childs-list node child-slot))
-                    (when (typep child-node 'node)
-                      (when (eql (serial-number child-node) sn)
-                        (return-from rpath-to-node (values rpath child-node)))
-                      (let ((grandchild-slot (child-slot-with-sn child-node sn)))
-                        (when grandchild-slot
-                          (setf child-slot grandchild-slot
-                                node child-node)
-                          (return))))
-                    (finally
-                     ;; This should never happen if the tree is well formed
-                     (error "Could not find child with sn ~a in slot ~a"
-                            sn child-slot))))))))
+              (let* ((v (slot-value node slot))
+                     (listp (listp v)))
+                (iter (for child-node in (if listp v (list v)))
+                      (for pos from 0)
+                      (when (typep child-node 'node)
+                        ;; We found it, we're done.
+                        (when (eql (serial-number child-node) sn)
+                          (return-from rpath-to-node
+                            (values rpath
+                                    child-node
+                                    (cons (if listp (cons slot pos) slot)
+                                          reverse-lookup-path))))
+                        ;; We found the right node to descend into,
+                        ;; stop iterating the children.
+                        (let ((grandchild-slot (child-slot-with-sn child-node sn)))
+                          (when grandchild-slot
+                            (push (if listp (cons slot pos) slot)
+                                  reverse-lookup-path)
+                            (setf slot grandchild-slot
+                                  node child-node)
+                            (return))))
+                      (finally
+                       ;; This should never happen if the tree is well formed
+                       (error "Could not find child with sn ~a in slot ~a"
+                              sn slot)))))))))
 
 (defgeneric path-of-node (root node &key error)
   (:documentation "Return the path from ROOT to NODE, in a form
@@ -1047,26 +1061,11 @@ return NIL, unless ERROR is true, in which case error.")
   (:method ((root node) (node node) &key (error nil))
     (path-of-node root (serial-number node) :error error))
   (:method ((root node) (serial-number integer) &key (error nil))
-    (multiple-value-bind (rpath found) (rpath-to-node root serial-number)
+    (multiple-value-bind (rpath found reverse-lookup-path)
+        (rpath-to-node root serial-number :error error)
+      (declare (ignore rpath))
       (if found
-          ;; Translate the rpath to actual path
-          (let ((child found)
-                (path nil))
-            (iter (for a in rpath)
-                  (let ((slot (child-slot-with-sn a (serial-number child))))
-                    (assert slot () "Could not find SLOT of ~a in descendant map of ~a" child a)
-                    (let ((v (slot-value a slot)))
-                      (push
-                       (if (listp v)
-                           (let ((pos (position child v)))
-                             (assert pos () "Could not find ~a in slot ~a of ~a" child slot a)
-                             (cons slot pos))
-                           (progn
-                             (assert (eq v child) () "Child ~a is not the value of slot ~a of ~a" child slot a)
-                             slot))
-                       path)))
-                  (setf child a))
-            path)
+          (reverse reverse-lookup-path)
           (if error (error "Could not find ~a in ~a" serial-number root) nil)))))
 
 (defgeneric parent (root node)
