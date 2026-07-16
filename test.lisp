@@ -2159,7 +2159,7 @@ subroot->attr mappings and mutate them, visibly to other subroots."
       (is (not (eql t1 t2)))
       (let ((*attr-run*))
         (flet ((test-attr-run (should-run?)
-                 (ft/attrs:with-attr-session (t2 :cache (not should-run?))
+                 (ft/attrs:with-attr-session (t2)
                    (is (subroot? (first (children t1))))
                    (is (eql (first (children t1))
                             (first (children t2))))
@@ -2171,7 +2171,8 @@ subroot->attr mappings and mutate them, visibly to other subroots."
                    (is *attr-run*)
                    (is (eql 5 (attr.5-fun t2))))))
           (is (test-attr-run nil))
-          (is (test-attr-run t))))
+          ;; (is (test-attr-run t))
+          ))
       t2)))
 
 (defclass project (parent attrs-root)
@@ -2278,77 +2279,69 @@ subroot->attr mappings and mutate them, visibly to other subroots."
                         header-file-1
                         header-file-2
                         header-file-3))))
-    ;; Test with and without cross-session caching.
-    (dolist (cache '(t nil))
-      ;; Test that changing one .cc file doesn't change them all.
-      (let* ((old-alist
-               (ft/attrs:with-attr-session (project :cache cache)
-                 (prog1 (symbol-table-alist project)
-                   ;; Check the project has a symbol table.
-                   (is (trivial-symbol-table project))
-                   ;; Check dependencies were correctly calculated.
-                   (is (depends-on? cc-file-1 header-file-1))
-                   (is (not (depends-on? cc-file-1 header-file-2)))
-                   (is (depends-on? cc-file-2 header-file-1))
-                   (is (depends-on? cc-file-2 header-file-2))
-                   (is (not (depends-on? cc-file-3 header-file-1)))
-                   (is (depends-on? cc-file-3 header-file-2))
-                   (is (depends-on? header-file-2 header-file-3)))))
-             (new-cc-file (tree-copy cc-file-1))
-             (new-project
-               (with project
-                     cc-file-1
-                     new-cc-file))
-             (new-alist
-               (ft/attrs:with-attr-session (new-project :cache cache)
-                 (symbol-table-alist new-project))))
-        (is (not (eql new-project project))
-            "The project must have changed")
-        (is (not (eql cc-file-1
-                      (is (find (name cc-file-1)
-                                (children new-project)
-                                :key #'name))))
-            "The cc file must have changed")
-        (dolist (file (list cc-file-2 cc-file-3 header-file-1 header-file-2))
-          (let ((old-st (is (cdr (assoc (name file) old-alist :test #'equal))))
-                (new-st (is (cdr (assoc (name file) new-alist :test #'equal)))))
-            (if (not cache)
-                (is (not (eql old-st new-st))
-                    "Unchanged files must not have the same symbol table")
-                (is (eql old-st new-st)
-                    "Unchanged files must have the same symbol table"))))
-        (is (not (eql-for-key (name cc-file-1) old-alist new-alist))
-            "Changed files must have new symbol tables"))
-      (let* ((old-alist
-               (ft/attrs:with-attr-session (project :cache cache)
-                 (symbol-table-alist project)))
-             (new-header-file (tree-copy header-file-1))
-             (new-project
-               (with project header-file-1 new-header-file))
-             (new-alist
-               (ft/attrs:with-attr-session (new-project :cache cache)
-                 (symbol-table-alist new-project))))
-        (is (not (eql new-project project))
-            "The project must have changed")
-        (is (not (eql header-file-1
-                      (is (find (name header-file-1)
-                                (children new-project)
-                                :key #'name))))
-            "The header file must have changed")
-        (is (path-of-node new-project new-header-file))
-        (is (not (path-of-node new-project header-file-1)))
-        (dolist (file (list cc-file-3 header-file-2))
-          (if (not cache)
-              (is (not (eql-for-key (name file) old-alist new-alist))
-                  "All symbol tables must be changed.")
-              (is (eql-for-key (name file) old-alist new-alist)
-                  "Unrelated symbol tables must be left alone.")))
-        (dolist (file (list header-file-1))
-          (is (not (eql-for-key (name file) old-alist new-alist))
-              "The header file must be recalculated."))
-        (dolist (file (list cc-file-1 cc-file-2))
-          (is (not (eql-for-key (name file) old-alist new-alist))
-              "The dependencies must be recalculated."))))))
+    ;; Test that changing one .cc file doesn't change them all.
+    (let* ((old-alist
+             (ft/attrs:with-attr-session (project)
+               (prog1 (symbol-table-alist project)
+                 ;; Check the project has a symbol table.
+                 (is (trivial-symbol-table project))
+                 ;; Check dependencies were correctly calculated.
+                 (is (depends-on? cc-file-1 header-file-1))
+                 (is (not (depends-on? cc-file-1 header-file-2)))
+                 (is (depends-on? cc-file-2 header-file-1))
+                 (is (depends-on? cc-file-2 header-file-2))
+                 (is (not (depends-on? cc-file-3 header-file-1)))
+                 (is (depends-on? cc-file-3 header-file-2))
+                 (is (depends-on? header-file-2 header-file-3)))))
+           (new-cc-file (tree-copy cc-file-1))
+           (new-project
+             (with project
+                   cc-file-1
+                   new-cc-file))
+           (new-alist
+             (ft/attrs:with-attr-session (new-project)
+               (symbol-table-alist new-project))))
+      (is (not (eql new-project project))
+          "The project must have changed")
+      (is (not (eql cc-file-1
+                    (is (find (name cc-file-1)
+                              (children new-project)
+                              :key #'name))))
+          "The cc file must have changed")
+      (dolist (file (list cc-file-2 cc-file-3 header-file-1 header-file-2))
+        (let ((old-st (is (cdr (assoc (name file) old-alist :test #'equal))))
+              (new-st (is (cdr (assoc (name file) new-alist :test #'equal)))))
+          (is (eql old-st new-st)
+              "Unchanged files must have the same symbol table")))
+      (is (not (eql-for-key (name cc-file-1) old-alist new-alist))
+          "Changed files must have new symbol tables"))
+    (let* ((old-alist
+             (ft/attrs:with-attr-session (project)
+               (symbol-table-alist project)))
+           (new-header-file (tree-copy header-file-1))
+           (new-project
+             (with project header-file-1 new-header-file))
+           (new-alist
+             (ft/attrs:with-attr-session (new-project)
+               (symbol-table-alist new-project))))
+      (is (not (eql new-project project))
+          "The project must have changed")
+      (is (not (eql header-file-1
+                    (is (find (name header-file-1)
+                              (children new-project)
+                              :key #'name))))
+          "The header file must have changed")
+      (is (path-of-node new-project new-header-file))
+      (is (not (path-of-node new-project header-file-1)))
+      (dolist (file (list cc-file-3 header-file-2))
+        (is (eql-for-key (name file) old-alist new-alist)
+            "Unrelated symbol tables must be left alone."))
+      (dolist (file (list header-file-1))
+        (is (not (eql-for-key (name file) old-alist new-alist))
+            "The header file must be recalculated."))
+      (dolist (file (list cc-file-1 cc-file-2))
+        (is (not (eql-for-key (name file) old-alist new-alist))
+            "The dependencies must be recalculated.")))))
 
 (defclass root-wrapper (node attrs-root)
   ((root :reader root-wrapper-root :initarg :root))
@@ -2423,44 +2416,20 @@ introducing spurious dependencies."
       ;; What we want to avoid is the blue root still being on the
       ;; subroot stack when we recurse and compute the red subroot, or
       ;; vice versa.
-      (ft/attrs:with-attr-session (tree :cache nil)
+      (ft/attrs:with-attr-session (tree)
         (is (eql :red
                  (node-color-attr red-child)))
         (is (eql :blue
                  (node-color-attr blue-child)))
         (is (not (depends-on? blue-subroot red-subroot)))
         (is (not (depends-on? red-subroot blue-subroot))))
-      (ft/attrs:with-attr-session (tree :cache nil)
+      (ft/attrs:with-attr-session (tree)
         (is (eql :blue
                  (node-color-attr blue-child)))
         (is (eql :red
                  (node-color-attr red-child)))
         (is (not (depends-on? blue-subroot red-subroot)))
         (is (not (depends-on? red-subroot blue-subroot)))))))
-
-(deftest inherit-with-inhibit ()
-  "Test that we signal errors when trying to inherit from a session with
-a different caching policy."
-  (signals error
-    (let ((ast (make-instance 'data-root)))
-      (ft/attrs:with-attr-session (ast :cache t)
-        (ft/attrs:with-attr-session (ast :cache nil :inherit t)))))
-  (finishes
-    (let ((ast (make-instance 'data-root)))
-      (ft/attrs:with-attr-session (ast :cache t)
-        (ft/attrs:with-attr-session (ast :cache nil :inherit nil)))))
-  (finishes
-    (let ((ast (make-instance 'data-root)))
-      (ft/attrs:with-attr-session (ast :cache nil)
-        (ft/attrs:with-attr-session (ast :cache nil :inherit t)))))
-  (finishes
-    (let ((ast (make-instance 'data-root)))
-      (ft/attrs:with-attr-session (ast :cache nil)
-        (ft/attrs:with-attr-session (ast :cache t :inherit nil)))))
-  (signals error
-    (let ((ast (make-instance 'data-root)))
-      (ft/attrs:with-attr-session (ast :cache nil)
-        (ft/attrs:with-attr-session (ast :cache t :inherit t))))))
 
 (deftest serialize-attrs ()
   (let* ((root (make-instance 'attrs-root :subroot-map (ft/attrs::make-subroot-map)))

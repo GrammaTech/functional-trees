@@ -62,7 +62,6 @@
   (:export
     :*approximation*
     :*attrs*
-    :*enable-cross-session-cache*
     :*read-only*
     :*max-circular-iterations*
     :attr-missing
@@ -245,33 +244,6 @@ values returned by the attribute function."
 being calculated, useful when diagnosing circular dependencies between
 attributes.")
 
-(defvar *enable-cross-session-cache* t
-  "If non-nil, cache attributes across sessions.")
-
-(def +cache-lock+ (bt:make-lock))
-
-;;; Use defparameter as we want the cache to be cleared if the system
-;;; is reloaded.
-(defparameter *session-cache*
-  (tg:make-weak-hash-table
-   :test 'eq
-   :weakness :key
-   :weakness-matters t)
-  "Global (weak) cache of attribute sessions.
-Roots are immutable, so if we have previously computed attributes for
-them we can reuse them.
-
-Practically this has the effect that we do not have to to update
-the node to subroot mapping.")
-
-(defun cache-lookup (key)
-  (bt:with-lock-held (+cache-lock+)
-    (gethash key *session-cache*)))
-
-(defun (setf cache-lookup) (value key)
-  (bt:with-lock-held (+cache-lock+)
-    (setf (gethash key *session-cache*) value)))
-
 (defvar *subroot-stack* nil
   "Stack of subroots whose attributes are being computed.
 While subroots cannot be nested in the node tree, computation of their
@@ -302,13 +274,11 @@ This is important; it controls subroot copying behavior."))
 (defmethod copy :around ((root attrs-root) &key)
   "Carry forward (copying) the subroots from the old root."
   (lret ((result (call-next-method)))
-    (if *enable-cross-session-cache*
-        (when-let (old-map
-                   (and (slot-boundp root 'subroot-map)
-                        (slot-value root 'subroot-map)))
-          (setf (slot-value result 'subroot-map)
-                (if (boxp old-map) old-map (box old-map))))
-        (slot-makunbound result 'subroot-map))))
+    (when-let (old-map
+               (and (slot-boundp root 'subroot-map)
+                    (slot-value root 'subroot-map)))
+      (setf (slot-value result 'subroot-map)
+            (if (boxp old-map) old-map (box old-map))))))
 
 (defclass subroot ()
   ()
@@ -323,13 +293,20 @@ This is for convenience and entirely equivalent to specializing
   (:method ((x subroot))
     t))
 
+(defstruct-read-only (subroot-mapping (:conc-name subroot-mapping.))
+  (itree (fset:convert 'ft/it::itree nil) :type ft/it::itree)
+  ;; Track live subroots.
+  (old-subroots nil :type list)
+  (old-subrootless nil :type list))
+
 (defstruct-read-only (subroot-map
                       (:conc-name subroot-map.)
                       (:constructor
                           make-subroot-map
                           (&key (subroot->attr-table (make-weak-node-table))
                              (subroot->deps (make-weak-node-table))
-                             (node->proxy (make-weak-node-table)))))
+                             (node->proxy (make-weak-node-table))
+                             (subroot-mapping (make-subroot-mapping)))))
   "Data structure associated with a root to track its subroots."
   ;; Table from subroots to attributes
   (subroot->attr-table :type hash-table)
@@ -337,7 +314,8 @@ This is for convenience and entirely equivalent to specializing
   (subroot->deps :type hash-table)
   ;; Table of node proxies. These may be stored as attribute values so
   ;; they need to be copied along with the subroots.
-  (node->proxy :type hash-table))
+  (node->proxy :type hash-table)
+  (subroot-mapping :type subroot-mapping))
 
 (defmethod print-object ((self subroot-map) stream)
   (print-unreadable-object (self stream :type t :identity t)))
@@ -400,39 +378,27 @@ table is a fresh table."
           (setf (@ table subroot)
                 (copy-cow-table attr-table)))))
 
-(-> copy-subroot-map (subroot-map) subroot-map)
-(defun copy-subroot-map (map)
+(defun copy-subroot-map
+    (map
+     &key
+       (subroot->attr-table (copy-subroot->attr-table (subroot-map.subroot->attr-table map)))
+       (subroot->deps (copy-weak-node-table (subroot-map.subroot->deps map)))
+       (node->proxy (copy-weak-node-table (subroot-map.node->proxy map)))
+       (subroot-mapping (copy-structure (subroot-map.subroot-mapping map))))
   "Copy MAP and its constituent tables.
 The new subroot map should be fully independent of MAP."
   (make-subroot-map
-   :subroot->attr-table
-   (copy-subroot->attr-table (subroot-map.subroot->attr-table map))
-   :subroot->deps (copy-weak-node-table (subroot-map.subroot->deps map))
-   :node->proxy (copy-weak-node-table (subroot-map.node->proxy map))))
-
-(defstruct-read-only (subroot-mapping (:conc-name subroot-mapping.))
-  (itree :type ft/it::itree)
-  ;; Track live subroots.
-  (old-subroots nil :type list)
-  (old-subrootless nil :type list))
+   :subroot->attr-table subroot->attr-table
+   :subroot->deps subroot->deps
+   :node->proxy node->proxy
+   :subroot-mapping subroot-mapping))
 
 (defstruct (attrs
             (:conc-name attrs.)
             (:constructor make-attrs (root)))
   "An attribute session.
 This holds at least the root of the attribute computation."
-  (root (error "No root") :type attrs-root :read-only t)
-  ;; This is only used if *enable-cross-session-cache* is nil.
-  (table (make-weak-node-table) :type hash-table :read-only t)
-  (cachep *enable-cross-session-cache* :type boolean :read-only t)
-  ;; TODO Consider moving the subroot mapping into the subroot-map.
-  ;; That would enable getting rid of the session cache.
-  (subroot-mapping
-   (make-subroot-mapping
-    :itree
-    (if *enable-cross-session-cache*
-        (compute-node->subroot-itree root)
-        (fset:convert 'ft/it:itree nil)))))
+  (root (error "No root") :type attrs-root :read-only t))
 
 (defun node-subroot (node &key (attrs *attrs*) (error t))
   "Look up the subroot for a node."
@@ -440,7 +406,8 @@ This holds at least the root of the attribute computation."
   (when-let (itree-node
              (ft/it::itree-find-node-splay
               (subroot-mapping.itree
-               (attrs.subroot-mapping attrs))
+               (subroot-map.subroot-mapping
+                (ensure-subroot-map attrs)))
               (serial-number node)))
     (let ((subroot (ft/it:node-data itree-node)))
       (if (and (not (eql node subroot))
@@ -648,18 +615,31 @@ DEST has a path, but if DEST is the node at that path."
   "Update the node-to-subroot old-mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
-  (mvlet* ((old-mapping (attrs.subroot-mapping attrs))
-           (itree old-subroots old-subrootless
-            (compute-node->subroot-itree
-             (attrs.root attrs)
-             :old-itree (subroot-mapping.itree old-mapping)
-             :old-subroots (subroot-mapping.old-subroots old-mapping)
-             :old-subrootless-nodes (subroot-mapping.old-subrootless old-mapping))))
-    (setf (attrs.subroot-mapping attrs)
-          (make-subroot-mapping
-           :itree itree
-           :old-subroots old-subroots
-           :old-subrootless old-subrootless)))
+  (symbol-macrolet
+      ((subroot-map (slot-value (attrs-root attrs) 'subroot-map)))
+    (mvlet* ((subroot-map (ensure-subroot-map attrs))
+             (old-mapping (subroot-map.subroot-mapping subroot-map))
+             (itree old-subroots old-subrootless
+              (compute-node->subroot-itree
+               (attrs.root attrs)
+               :old-itree (subroot-mapping.itree old-mapping)
+               :old-subroots (subroot-mapping.old-subroots old-mapping)
+               :old-subrootless-nodes (subroot-mapping.old-subrootless old-mapping))))
+      (setf (slot-value (attrs-root attrs) 'subroot-map)
+            (copy-subroot-map
+             subroot-map
+             ;; Don't copy the tables.
+             :subroot->attr-table
+             (subroot-map.subroot->attr-table subroot-map)
+             :subroot->deps
+             (subroot-map.subroot->deps subroot-map)
+             :node->proxy
+             (subroot-map.node->proxy subroot-map)
+             :subroot-mapping
+             (make-subroot-mapping
+              :itree itree
+              :old-subroots old-subroots
+              :old-subrootless old-subrootless)))))
   attrs)
 
 (defun ensure-subroot-map (attrs)
@@ -689,9 +669,7 @@ function is called, the root of ATTRs will have its own subroot map."
   (subroot-map.node->proxy (ensure-subroot-map attrs)))
 
 (defun node-attr-table (node)
-  (if *enable-cross-session-cache*
-      (cow-table (current-subroot node))
-      (attrs.table *attrs*)))
+  (cow-table (current-subroot node)))
 
 (defun cow-table (subroot)
   "Get the attr table for SUBROOT in the current session.
@@ -718,7 +696,7 @@ This is useful for when, say, we need to answer a query with a node,
 but the actual node in the tree is somehow unsuitable. We can return a
 node proxied into the tree instead."
   (lret ((proxy (@ (attrs.node->proxy *attrs*) node)))
-    (when (and proxy *enable-cross-session-cache*)
+    (when proxy
       (unless (reachable? proxy :use-attrs t)
         (error 'unreachable-proxy
                :root (attrs-root*)
@@ -789,7 +767,6 @@ node proxied into the tree instead."
                                     ensure
                                     (inherit *inherit-default*)
                                     (shadow t)
-                                    (cache *enable-cross-session-cache*)
                                     (read-only *read-only*))
   "Invoke FN with an attrs instance for ROOT.
 ROOT might be an attrs instance itself.
@@ -800,8 +777,6 @@ replaced.
 ENSURE only ensures that some attribute session is active. If there is
 an attribute session, this is equivalent to `(funcall fn)'. All other
 options are discarded and ignored.
-
-If CACHE is non-nil, attributes may be cached across sessions.
 
 If INHERIT is non-nil, the dynamically enclosing attr session may be
 reused if ROOT is reachable from the outer session's root.
@@ -815,13 +790,10 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
   (declare (optimize (debug 0)))
   (when (and ensure (boundp '*attrs*))
     (return-from call/attr-session (funcall fn)))
-  (let* ((new nil)
-         (shadowing? nil)
-         (*enable-cross-session-cache* cache)
+  (let* ((shadowing? nil)
          (*attrs*
            (cond
              ((typep root 'attrs) root)
-             ((and cache (cache-lookup root)))
              ((and (boundp '*attrs*)
                    inherit
                    (reachable? root :from (attrs-root *attrs*)))
@@ -834,10 +806,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
                      :inherit inherit))
              (t
               (lret ((attrs (make-attrs root)))
-                (when cache
-                  (setf (cache-lookup root) attrs))
-                (setf new t
-                      shadowing? t)))))
+                (setf shadowing? t)))))
          (*circle*
            ;; Don't continue cycles in the outer attribute session.
            (if shadowing? nil *circle*))
@@ -846,12 +815,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
            (if shadowing? nil *subroot-stack*))
          (*read-only*
            (if shadowing? read-only *read-only*)))
-    (unless (eql cache (attrs.cachep *attrs*))
-      (error 'incompatible-cache-option))
-    ;; The session is "new" if the root was unknown. But it could
-    ;; still have a subroot map attached. If so, make sure it's up to
-    ;; date.
-    (when (and (not *read-only*) cache new)
+    (unless *read-only*
       (invalidate-subroots *attrs*))
     (funcall fn)))
 
@@ -944,9 +908,7 @@ This should be used if SUBROOT is mutated."
                     (subroot-deps depender)))))))
 
 (defun call/record-subroot-deps (node fn &aux (root (attrs-root*)))
-  (cond ((not *enable-cross-session-cache*)
-         (funcall fn))
-        ((eql node root)
+  (cond ((eql node root)
          ;; If we are computing top-down (after an attr-missing call),
          ;; mask the subroot stack.
          (let ((*subroot-stack* nil))
@@ -1487,13 +1449,6 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                outer
                inherit
                inner)))))
-
-(define-condition incompatible-cache-option (attribute-error)
-  ()
-  (:report
-   (lambda (c s)
-     (declare (ignore c))
-     (format s "Cannot inherit with differing values for caching"))))
 
 (defgeneric attr-missing (fn-name node)
   (:documentation
