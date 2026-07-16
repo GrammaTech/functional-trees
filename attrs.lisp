@@ -293,7 +293,7 @@ This is for convenience and entirely equivalent to specializing
   (:method ((x subroot))
     t))
 
-(defstruct-read-only (subroot-mapping (:conc-name subroot-mapping.))
+(defstruct-read-only (node->subroot (:conc-name node->subroot.))
   (itree (fset:convert 'ft/it::itree nil) :type ft/it::itree)
   ;; Track live subroots.
   (old-subroots nil :type list)
@@ -306,7 +306,7 @@ This is for convenience and entirely equivalent to specializing
                           (&key (subroot->attr-table (make-weak-node-table))
                              (subroot->deps (make-weak-node-table))
                              (node->proxy (make-weak-node-table))
-                             (subroot-mapping (make-subroot-mapping)))))
+                             (node->subroot (make-node->subroot)))))
   "Data structure associated with a root to track its subroots."
   ;; Table from subroots to attributes
   (subroot->attr-table :type hash-table)
@@ -315,7 +315,7 @@ This is for convenience and entirely equivalent to specializing
   ;; Table of node proxies. These may be stored as attribute values so
   ;; they need to be copied along with the subroots.
   (node->proxy :type hash-table)
-  (subroot-mapping :type subroot-mapping))
+  (node->subroot :type node->subroot))
 
 (defmethod print-object ((self subroot-map) stream)
   (print-unreadable-object (self stream :type t :identity t)))
@@ -384,14 +384,14 @@ table is a fresh table."
        (subroot->attr-table (copy-subroot->attr-table (subroot-map.subroot->attr-table map)))
        (subroot->deps (copy-weak-node-table (subroot-map.subroot->deps map)))
        (node->proxy (copy-weak-node-table (subroot-map.node->proxy map)))
-       (subroot-mapping (copy-structure (subroot-map.subroot-mapping map))))
+       (node->subroot (copy-structure (subroot-map.node->subroot map))))
   "Copy MAP and its constituent tables.
 The new subroot map should be fully independent of MAP."
   (make-subroot-map
    :subroot->attr-table subroot->attr-table
    :subroot->deps subroot->deps
    :node->proxy node->proxy
-   :subroot-mapping subroot-mapping))
+   :node->subroot node->subroot))
 
 (defstruct (attrs
             (:conc-name attrs.)
@@ -405,8 +405,8 @@ This holds at least the root of the attribute computation."
   (setf node (fset:convert 'node node))
   (when-let (itree-node
              (ft/it::itree-find-node-splay
-              (subroot-mapping.itree
-               (subroot-map.subroot-mapping
+              (node->subroot.itree
+               (subroot-map.node->subroot
                 (ensure-subroot-map attrs)))
               (serial-number node)))
     (let ((subroot (ft/it:node-data itree-node)))
@@ -615,31 +615,29 @@ DEST has a path, but if DEST is the node at that path."
   "Update the node-to-subroot old-mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
-  (symbol-macrolet
-      ((subroot-map (slot-value (attrs-root attrs) 'subroot-map)))
-    (mvlet* ((subroot-map (ensure-subroot-map attrs))
-             (old-mapping (subroot-map.subroot-mapping subroot-map))
-             (itree old-subroots old-subrootless
-              (compute-node->subroot-itree
-               (attrs.root attrs)
-               :old-itree (subroot-mapping.itree old-mapping)
-               :old-subroots (subroot-mapping.old-subroots old-mapping)
-               :old-subrootless-nodes (subroot-mapping.old-subrootless old-mapping))))
-      (setf (slot-value (attrs-root attrs) 'subroot-map)
-            (copy-subroot-map
-             subroot-map
-             ;; Don't copy the tables.
-             :subroot->attr-table
-             (subroot-map.subroot->attr-table subroot-map)
-             :subroot->deps
-             (subroot-map.subroot->deps subroot-map)
-             :node->proxy
-             (subroot-map.node->proxy subroot-map)
-             :subroot-mapping
-             (make-subroot-mapping
-              :itree itree
-              :old-subroots old-subroots
-              :old-subrootless old-subrootless)))))
+  (mvlet* ((subroot-map (ensure-subroot-map attrs))
+           (old-mapping (subroot-map.node->subroot subroot-map))
+           (itree old-subroots old-subrootless
+            (compute-node->subroot-itree
+             (attrs.root attrs)
+             :old-itree (node->subroot.itree old-mapping)
+             :old-subroots (node->subroot.old-subroots old-mapping)
+             :old-subrootless-nodes (node->subroot.old-subrootless old-mapping))))
+    (setf (slot-value (attrs-root attrs) 'subroot-map)
+          (copy-subroot-map
+           subroot-map
+           ;; Don't copy the tables.
+           :subroot->attr-table
+           (subroot-map.subroot->attr-table subroot-map)
+           :subroot->deps
+           (subroot-map.subroot->deps subroot-map)
+           :node->proxy
+           (subroot-map.node->proxy subroot-map)
+           :node->subroot
+           (make-node->subroot
+            :itree itree
+            :old-subroots old-subroots
+            :old-subrootless old-subrootless))))
   attrs)
 
 (defun ensure-subroot-map (attrs)
