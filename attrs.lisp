@@ -307,7 +307,12 @@ This is for convenience and entirely equivalent to specializing
                              (subroot->deps (make-weak-node-table))
                              (node->proxy (make-weak-node-table))
                              (node->subroot (make-node->subroot)))))
-  "Data structure associated with a root to track its subroots."
+  "Data structure associated with a root to track its subroots.
+
+We use weak tables so we can avoid having to invalidate out of date
+subroot mapppings every time a project is copied (expensive). Instead
+we delay evaluating them until the first time they are actually
+accessed. In the meantime the weak hash tables prevent memory leaks."
   ;; Table from subroots to attributes
   (subroot->attr-table :type hash-table)
   ;; Table from subroots to dependencies
@@ -336,11 +341,12 @@ This is for convenience and entirely equivalent to specializing
     (setf (cow-table.hash-table-copied-p cow-table) t))
   cow-table)
 
-(defun copy-cow-table (cow-table)
+(defun copy-cow-table (cow-table &key (copy-fn #'copy-weak-node-table))
   "Copy COW-TABLE without copying the wrapped hash table."
   (make-cow-table
    :hash-table (cow-table.hash-table cow-table)
-   :hash-table-copied-p nil))
+   :hash-table-copied-p nil
+   :copy-fn copy-fn))
 
 (defun cow-table.ref (cow-table key)
   "Lookup KEY in COW-TABLE's wrapped hash table."
@@ -372,13 +378,26 @@ This is for convenience and entirely equivalent to specializing
     (cow-table
      (setf (cow-table.ref table key) value))))
 
+(defsubst copy-cons (cons)
+  (cons (car cons) (cdr cons)))
+
+(defun copy-attr-table (table)
+  "Copy the node->attributes table.
+This ensures that all the cells are copied so copies can't stomp on
+each other."
+  (lret ((table (copy-weak-node-table table)))
+    (serapeum:do-hash-table (node alist table)
+      (when alist
+        (setf (@ table node)
+              (mapcar #'copy-cons alist))))))
+
 (defun copy-subroot->attr-table (table)
   "Copy the table from subroots to attr tables, ensuring each attr
 table is a fresh table."
   (lret ((table (copy-weak-node-table table)))
     (iter (for (subroot attr-table) in-hashtable table)
           (setf (@ table subroot)
-                (copy-cow-table attr-table)))))
+                (copy-cow-table attr-table :copy-fn #'copy-attr-table)))))
 
 (defun copy-subroot-map
     (map
