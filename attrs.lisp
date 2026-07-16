@@ -325,12 +325,14 @@ This is for convenience and entirely equivalent to specializing
             (:copier nil))
   "COW (copy-on-write) wrapper for a hash table."
   (hash-table (make-weak-node-table) :type hash-table)
-  (hash-table-copied-p nil :type boolean))
+  (hash-table-copied-p nil :type boolean)
+  (copy-fn #'copy-weak-node-table :type function))
 
 (defun cow-table.on-write (cow-table)
   "Do the actual on-write copy."
   (unless (cow-table.hash-table-copied-p cow-table)
-    (callf #'copy-weak-node-table (cow-table.hash-table cow-table))
+    (callf (cow-table.copy-fn cow-table)
+           (cow-table.hash-table cow-table))
     (setf (cow-table.hash-table-copied-p cow-table) t))
   cow-table)
 
