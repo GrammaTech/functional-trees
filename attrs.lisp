@@ -843,15 +843,26 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
 Node-to-proxy mappings are invalid when the proxy is no longer in the
 tree, or when the node itself has been inserted into the tree."
   (update-subroot-mapping :attrs attrs)
-  (let ((node->proxy (attrs.node->proxy attrs)))
-    (iter (for (node proxy) in-hashtable node->proxy)
-          ;; Delete proxies that no longer point into the tree.
-          (unless (node-subroot proxy)
-            (remhash node node->proxy))
-          ;; Delete proxies for nodes that have been inserted into the
-          ;; tree.
-          (when (node-subroot node)
-            (remhash node node->proxy)))))
+  (macrolet ((with-locked-hash-table ((hash-table) &body body)
+               ;; TODO May not be needed with SBCL >= 2.6.2.
+               #+sbcl
+               `(sb-ext:with-locked-hash-table (,hash-table)
+                  ,@body)
+               #-sbcl
+               `(serapeum:synchronized (,hash-table) ,@body)))
+    (let ((node->proxy (attrs.node->proxy attrs)))
+      (with-locked-hash-table (node->proxy)
+        (iter (for (node proxy) in-hashtable node->proxy)
+              ;; Bug in SBCL weak hash tables? Array of zeros.
+              ;; (unless (typep node 'node)
+              ;;   (next-iteration))
+              (when (or (null
+                         ;; Proxies that no longer point into the tree.
+                         (node-subroot proxy))
+                        ;; Proxies for nodes that have since been inserted
+                        ;; into the tree.
+                        (node-subroot node))
+                (remhash node node->proxy)))))))
 
 (defun dump-subroot-dependency-graph (attrs)
   "Extract the subroot dependency graph from ATTRS for debugging."
