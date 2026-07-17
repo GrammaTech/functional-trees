@@ -294,6 +294,7 @@ This is for convenience and entirely equivalent to specializing
     t))
 
 (defstruct-read-only (node->subroot (:conc-name node->subroot.))
+  "Track node to live subroot mappings."
   (itree (fset:convert 'ft/it::itree nil) :type ft/it::itree)
   ;; Track live subroots.
   (old-subroots nil :type list)
@@ -331,6 +332,7 @@ accessed. In the meantime the weak hash tables prevent memory leaks."
   "COW (copy-on-write) wrapper for a hash table."
   (hash-table (make-weak-node-table) :type hash-table)
   (hash-table-copied-p nil :type boolean)
+  ;; The function used to do the actual copying on write.
   (copy-fn #'copy-weak-node-table :type function))
 
 (defun cow-table.on-write (cow-table)
@@ -408,6 +410,8 @@ table is a fresh table."
        (node->subroot (copy-structure (subroot-map.node->subroot map))))
   "Copy MAP and its constituent tables.
 The new subroot map should be fully independent of MAP."
+  ;; TODO If we invalidated the subroots on copy, we wouldn't need the
+  ;; weak hash tables. But that contradicts copying the table lazily.
   (make-subroot-map
    :subroot->attr-table subroot->attr-table
    :subroot->deps subroot->deps
