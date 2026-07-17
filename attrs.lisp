@@ -669,10 +669,11 @@ function is called, the root of ATTRs will have its own subroot map."
     (assert (slot-exists-p root 'subroot-map))
     (with-slots (subroot-map) root
       (if (slot-boundp root 'subroot-map)
-          (if (typep subroot-map 'subroot-map)
-              subroot-map
-              (setf subroot-map
-                    (copy-subroot-map (unbox subroot-map))))
+          (etypecase subroot-map
+            (subroot-map subroot-map)
+            (box
+             (setf subroot-map
+                   (copy-subroot-map (unbox subroot-map)))))
           (setf subroot-map (make-subroot-map))))))
 
 (defsubst attrs.subroot->attr-table (attrs)
