@@ -345,6 +345,7 @@ accessed. In the meantime the weak hash tables prevent memory leaks."
 
 (defun copy-cow-table (cow-table &key (copy-fn #'copy-weak-node-table))
   "Copy COW-TABLE without copying the wrapped hash table."
+  (declare (cow-table cow-table))
   (make-cow-table
    :hash-table (cow-table.hash-table cow-table)
    :hash-table-copied-p nil
