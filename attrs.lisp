@@ -664,17 +664,24 @@ This should be done if the root has been mutated."
 (defun ensure-subroot-map (attrs)
   "Ensure a subroot map for ATTRS.
 This implements the subroot map copy-on-write behavior: after this
-function is called, the root of ATTRs will have its own subroot map."
+function is called, the root of ATTRs will have its own subroot map.
+
+Return T as a second value if the map was copied."
   (let ((root (attrs-root attrs)))
     (assert (slot-exists-p root 'subroot-map))
     (with-slots (subroot-map) root
       (if (slot-boundp root 'subroot-map)
           (etypecase subroot-map
-            (subroot-map subroot-map)
+            (subroot-map
+             (values subroot-map nil))
             (box
-             (setf subroot-map
-                   (copy-subroot-map (unbox subroot-map)))))
-          (setf subroot-map (make-subroot-map))))))
+             (values
+              (setf subroot-map
+                    (copy-subroot-map (unbox subroot-map)))
+              t)))
+          (values
+           (setf subroot-map (make-subroot-map))
+           t)))))
 
 (defsubst attrs.subroot->attr-table (attrs)
   "Ensure the subroots table for ATTRS."
@@ -836,7 +843,8 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
          (*read-only*
            (if shadowing? read-only *read-only*)))
     (unless *read-only*
-      (invalidate-subroots *attrs*))
+      (when (nth-value 1 (ensure-subroot-map *attrs*))
+        (invalidate-subroots *attrs*)))
     (funcall fn)))
 
 (defun delete-invalid-proxies (attrs)
@@ -886,7 +894,9 @@ tree, or when the node itself has been inserted into the tree."
 (defun invalidate-subroots (attrs)
   "Recursively invalidate subroots in ATTRS.
 Invalid subroots are either unreachable subroots, or
-depend on invalid subroots."
+depend on invalid subroots.
+
+Note this is also responsible for the initial node->subroot mapping."
   (delete-invalid-proxies attrs)
   (let ((subroot->attr-table (attrs.subroot->attr-table attrs))
         (subroot->deps (attrs.subroot->deps attrs))
