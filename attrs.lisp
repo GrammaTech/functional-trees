@@ -271,21 +271,24 @@ This is important; it controls subroot copying behavior."))
           (call-next-method)
           :key #'closer-mop:slot-definition-name))
 
-(defmethod copy :around ((root attrs-root) &key)
-  "Carry forward (copying) the subroots from the old root."
-  (lret ((result (call-next-method)))
-    (when-let (old-map
-               (and (slot-boundp root 'subroot-map)
-                    (slot-value root 'subroot-map)))
-      (setf (slot-value result 'subroot-map)
-            (if (boxp old-map) old-map (box old-map))))))
-
 (defclass subroot ()
   ()
   (:documentation "Mixin that marks a class as a subroot.
 This is for convenience and entirely equivalent to specializing
 `subroot?' to return non-nil."))
 
+(defmethod copy :around ((root attrs-root) &key)
+  "Carry forward (copying) the subroots from the old root."
+  (lret ((result (call-next-method)))
+    (if (slot-boundp root 'subroot-map)
+        (let ((old-map (slot-value root 'subroot-map)))
+          (setf (slot-value result 'subroot-map)
+                (etypecase old-map
+                  (box (setf (slot-value result 'subroot-map) old-map))
+                  (subroot-map
+                   ;; Mark old-map as needed copying before access.
+                   (box old-map)))))
+        (slot-makunbound result 'subroot-map))))
 (defgeneric subroot? (x)
   (:documentation "Is X a subroot?")
   (:method ((x t))
