@@ -289,6 +289,7 @@ This is for convenience and entirely equivalent to specializing
                    ;; Mark old-map as needed copying before access.
                    (box old-map)))))
         (slot-makunbound result 'subroot-map))))
+
 (defgeneric subroot? (x)
   (:documentation "Is X a subroot?")
   (:method ((x t))
@@ -399,7 +400,7 @@ each other."
 
 (defun copy-subroot->attr-table (table)
   "Copy the table from subroots to attr tables, ensuring each attr
-table is a fresh table."
+table is independent."
   (lret ((table (copy-weak-node-table table)))
     (iter (for (subroot attr-table) in-hashtable table)
           (setf (@ table subroot)
@@ -408,10 +409,16 @@ table is a fresh table."
 (defun copy-subroot-map
     (map
      &key
-       (subroot->attr-table (copy-subroot->attr-table (subroot-map.subroot->attr-table map)))
-       (subroot->deps (copy-weak-node-table (subroot-map.subroot->deps map)))
-       (node->proxy (copy-weak-node-table (subroot-map.node->proxy map)))
-       (node->subroot (copy-structure (subroot-map.node->subroot map))))
+       (subroot->attr-table
+        (copy-subroot->attr-table (subroot-map.subroot->attr-table map)))
+       (subroot->deps
+        (copy-weak-node-table (subroot-map.subroot->deps map)))
+       (node->proxy
+        (copy-weak-node-table (subroot-map.node->proxy map)))
+       ;; The node->subroot struct only contains immutable data
+       ;; structures.
+       (node->subroot
+        (copy-structure (subroot-map.node->subroot map))))
   "Copy MAP and its constituent tables.
 The new subroot map should be fully independent of MAP."
   ;; TODO If we invalidated the subroots on copy, we wouldn't need the
@@ -426,7 +433,7 @@ The new subroot map should be fully independent of MAP."
             (:conc-name attrs.)
             (:constructor make-attrs (root)))
   "An attribute session.
-This holds at least the root of the attribute computation."
+This holds the root of the attribute computation."
   (root (error "No root") :type attrs-root :read-only t))
 
 (defun node-subroot (node &key (attrs *attrs*) (error t))
@@ -436,7 +443,7 @@ This holds at least the root of the attribute computation."
              (ft/it::itree-find-node-splay
               (node->subroot.itree
                (subroot-map.node->subroot
-                (ensure-subroot-map attrs)))
+                (require-subroot-map attrs)))
               (serial-number node)))
     (let ((subroot (ft/it:node-data itree-node)))
       (if (and (not (eql node subroot))
@@ -461,7 +468,8 @@ This holds at least the root of the attribute computation."
 ;;; Subroot implementation
 
 (defun make-weak-node-table (&rest args)
-  "Make a weak 'eq hash table."
+  "Make a weak 'eq hash table.
+On SBCL, make the table synchronized."
   (multiple-value-call #'make-weak-hash-table
     :weakness :key
     :test #'eq
@@ -471,7 +479,9 @@ This holds at least the root of the attribute computation."
 
 (defun copy-weak-node-table (table-in &rest args)
   "Copy a weak 'eq hash table."
-  (let ((table-out (apply #'make-weak-node-table :size (hash-table-size table-in) args)))
+  (lret ((table-out
+          (apply #'make-weak-node-table :size (hash-table-size table-in)
+                 args)))
     (iter (for (k v) in-hashtable table-in)
           (setf (gethash k table-out) v))
     table-out))
@@ -644,7 +654,7 @@ DEST has a path, but if DEST is the node at that path."
   "Update the node-to-subroot old-mapping of ATTRS.
 This should be done if the root has been mutated."
   (declare (attrs attrs))
-  (mvlet* ((subroot-map (ensure-subroot-map attrs))
+  (mvlet* ((subroot-map (require-subroot-map attrs))
            (old-mapping (subroot-map.node->subroot subroot-map))
            (itree old-subroots old-subrootless
             (compute-node->subroot-itree
@@ -669,12 +679,13 @@ This should be done if the root has been mutated."
             :old-subrootless old-subrootless))))
   attrs)
 
-(defun ensure-subroot-map (attrs)
+(defun initialize-subroot-map (attrs)
   "Ensure a subroot map for ATTRS.
 This implements the subroot map copy-on-write behavior: after this
 function is called, the root of ATTRs will have its own subroot map.
 
-Return T as a second value if the map was copied."
+Return T as a second value if the map is not reused (was copied or is
+new)."
   (let ((root (attrs-root attrs)))
     (assert (slot-exists-p root 'subroot-map))
     (with-slots (subroot-map) root
@@ -691,17 +702,27 @@ Return T as a second value if the map was copied."
            (setf subroot-map (make-subroot-map))
            t)))))
 
+(defun require-subroot-map (attrs)
+  "Require a subroot map for ATTRS."
+  (let ((root (attrs-root attrs)))
+    (assert (slot-exists-p root 'subroot-map))
+    (with-slots (subroot-map) root
+      (if (and (slot-boundp root 'subroot-map)
+               (typep subroot-map 'subroot-map))
+          subroot-map
+          (error "Subroot map not initialized in: ~a" attrs)))))
+
 (defsubst attrs.subroot->attr-table (attrs)
   "Ensure the subroots table for ATTRS."
-  (subroot-map.subroot->attr-table (ensure-subroot-map attrs)))
+  (subroot-map.subroot->attr-table (require-subroot-map attrs)))
 
 (defsubst attrs.subroot->deps (attrs)
   "Ensure the subroot dependencies table for ATTRS."
-  (subroot-map.subroot->deps (ensure-subroot-map attrs)))
+  (subroot-map.subroot->deps (require-subroot-map attrs)))
 
 (defsubst attrs.node->proxy (attrs)
   "Ensure the attr proxy table for ATTRS."
-  (subroot-map.node->proxy (ensure-subroot-map attrs)))
+  (subroot-map.node->proxy (require-subroot-map attrs)))
 
 (defun node-attr-table (node)
   (cow-table (current-subroot node)))
@@ -851,7 +872,7 @@ SHADOW nil, INHERIT T -> Error on shadowing, unless inherited"
          (*read-only*
            (if shadowing? read-only *read-only*)))
     (unless *read-only*
-      (when (nth-value 1 (ensure-subroot-map *attrs*))
+      (when (nth-value 1 (initialize-subroot-map *attrs*))
         (invalidate-subroots *attrs*)))
     (funcall fn)))
 
@@ -1451,7 +1472,8 @@ If not there, invoke the thunk THUNK and memoize the values returned."
                      (uncomputed-attr-function condition)
                      (uncomputed-attr-node condition)
                      'attr-missing
-                     (reachable? (uncomputed-attr-node condition))))))
+                     (reachable? (uncomputed-attr-node condition)
+                                 :proxy nil)))))
 
 (defun check-attrs-bound (fn-name)
   (unless (boundp '*attrs*)

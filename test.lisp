@@ -2457,18 +2457,18 @@ introducing spurious dependencies."
     (is (not (eql root3 root4)))
     ;; Access the maps, forcing copies.
     (with-attr-table root3
-      (ft/attrs::ensure-subroot-map *attrs*))
+      (ft/attrs::require-subroot-map *attrs*))
     (with-attr-table root4
-      (ft/attrs::ensure-subroot-map *attrs*))
+      (ft/attrs::require-subroot-map *attrs*))
     (is (typep (slot-value root3 'ft/attrs::subroot-map)
                'ft/attrs::subroot-map))
     (is (typep (slot-value root4 'ft/attrs::subroot-map)
                'ft/attrs::subroot-map))
     (is (not (eql
               (with-attr-table root3
-                (ft/attrs::ensure-subroot-map *attrs*))
+                (ft/attrs::require-subroot-map *attrs*))
               (with-attr-table root4
-                (ft/attrs::ensure-subroot-map *attrs*)))))))
+                (ft/attrs::require-subroot-map *attrs*)))))))
 
 (defclass project-box (attrs-root)
   ((project
