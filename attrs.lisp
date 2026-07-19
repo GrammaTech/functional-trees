@@ -1468,12 +1468,14 @@ If not there, invoke the thunk THUNK and memoize the values returned."
   ((node :reader uncomputed-attr-node)
    (fn :reader uncomputed-attr-function))
   (:report (lambda (condition stream)
-             (format stream "Uncomputed attr function ~a on node ~a (~s did not work)~%Present in tree: ~:[NO~;YES~]"
+             (format stream "Uncomputed attr function ~a on node ~a (~s did not work)~%Present in tree: ~:[NO~;YES~]~%As proxy: ~:[NO~;YES~]"
                      (uncomputed-attr-function condition)
                      (uncomputed-attr-node condition)
                      'attr-missing
                      (reachable? (uncomputed-attr-node condition)
-                                 :proxy nil)))))
+                                 :proxy nil)
+                     (reachable? (uncomputed-attr-node condition)
+                                 :proxy t)))))
 
 (defun check-attrs-bound (fn-name)
   (unless (boundp '*attrs*)
