@@ -385,9 +385,6 @@ accessed. In the meantime the weak hash tables prevent memory leaks."
     (cow-table
      (setf (cow-table.ref table key) value))))
 
-(defsubst copy-cons (cons)
-  (cons (car cons) (cdr cons)))
-
 (defun copy-attr-table (table)
   "Copy the node->attributes table.
 This ensures that all the cells are copied so copies can't stomp on
@@ -395,8 +392,7 @@ each other."
   (lret ((table (copy-weak-node-table table)))
     (serapeum:do-hash-table (node alist table)
       (when alist
-        (setf (@ table node)
-              (mapcar #'copy-cons alist))))))
+        (callf #'copy-alist (@ table node))))))
 
 (defun copy-subroot->attr-table (table)
   "Copy the table from subroots to attr tables, ensuring each attr
