@@ -284,7 +284,7 @@ This is for convenience and entirely equivalent to specializing
         (let ((old-map (slot-value root 'subroot-map)))
           (setf (slot-value result 'subroot-map)
                 (etypecase old-map
-                  (box (setf (slot-value result 'subroot-map) old-map))
+                  (box old-map)
                   (subroot-map
                    ;; Mark old-map as needed copying before access.
                    (box old-map)))))
